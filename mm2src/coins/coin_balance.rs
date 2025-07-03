@@ -482,61 +482,6 @@ pub mod common_impl {
             accounts: Vec::with_capacity(accounts.len() + 1),
         };
 
-        // FIXME: Here if this specific requested account was not found, we create it and `enable_hd_account` for it. But other accounts
-        //        are not taken into account. Note that this check in the preceding commit was `accounts.is_empty()`.
-        if accounts.get(&path_to_address.account_id).is_none() {
-            // Is seems that we couldn't find any HD account from the HD wallet storage.
-            drop(accounts);
-            info!(
-                "{} HD wallet hasn't been enabled before. Create default HD account",
-                coin.ticker()
-            );
-
-            // Create new HD account.
-            let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id))
-                .await
-                .map_mm_err()?;
-            let scan_new_addresses = matches!(
-                params.scan_policy,
-                EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
-            );
-
-            let account_balance = enable_hd_account(
-                coin,
-                hd_wallet,
-                &mut new_account,
-                path_to_address.chain,
-                &address_scanner,
-                scan_new_addresses,
-                params.min_addresses_number.max(Some(path_to_address.address_id + 1)),
-            )
-            .await?;
-            drop(new_account);
-
-            if coin.is_trezor() {
-                let enabled_address =
-                    hd_wallet
-                        .get_enabled_address()
-                        .await
-                        .ok_or(EnableCoinBalanceError::NewAddressDerivingError(
-                            NewAddressDerivingError::Internal(
-                                "Couldn't find enabled address after it has already been enabled".to_string(),
-                            ),
-                        ))?;
-                coin.received_enabled_address_from_hw_wallet(enabled_address)
-                    .await
-                    .map_err(|e| {
-                        EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                            "Coin rejected the enabled address derived from the hardware wallet: {}",
-                            e
-                        )))
-                    })?;
-            }
-            // Todo: The enabled address should be indicated in the response.
-            result.accounts.push(account_balance);
-            return Ok(result);
-        }
-
         debug!(
             "{} HD accounts were found on {} coin activation",
             accounts.len(),
@@ -564,7 +509,40 @@ pub mod common_impl {
             .await?;
             result.accounts.push(account_balance);
         }
+        let account_of_enabled_address_exists = accounts.contains_key(&path_to_address.account_id);
         drop(accounts);
+
+        // Make sure that the account of the enabled address is available, or create it otherwise.
+        if !account_of_enabled_address_exists {
+            // Is seems that we couldn't find the account for the enabled address in the HD wallet storage.
+            info!(
+                "account={} hasn't been enabled before, enabling it now for coin={}",
+                path_to_address.account_id,
+                coin.ticker()
+            );
+
+            // Create new HD account.
+            let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id))
+                .await
+                .map_mm_err()?;
+            let scan_new_addresses = matches!(
+                params.scan_policy,
+                EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
+            );
+
+            let account_balance = enable_hd_account(
+                coin,
+                hd_wallet,
+                &mut new_account,
+                path_to_address.chain,
+                &address_scanner,
+                scan_new_addresses,
+                params.min_addresses_number.max(Some(path_to_address.address_id + 1)),
+            )
+            .await?;
+
+            result.accounts.push(account_balance);
+        }
 
         if coin.is_trezor() {
             let enabled_address =
@@ -586,6 +564,7 @@ pub mod common_impl {
                 })?;
         }
 
+        // Todo: The enabled address should be indicated in the response.
         Ok(result)
     }
 
