@@ -263,8 +263,6 @@ where
     // the purpose'/coin_type' fields in the coins cnofig without changing the ticker.
     // TODO: This is a temporary solution that fixes the issue. But we might wanna re-design how accounts
     //       are loaded from the database (loading only the single account the user asked for and not all accounts).
-    // FIXME: What about collecting unmatching xpubs and deleting them. So that they never clutter the space of
-    //        the new HD wallet associated with this coin ticker.
     let mut bad_accounts = Vec::new();
     let accounts = accounts.into_iter().filter(|account| {
         let mut account_der_path = coin_der_path.clone();
