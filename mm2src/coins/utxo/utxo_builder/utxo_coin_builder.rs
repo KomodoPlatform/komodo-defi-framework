@@ -321,7 +321,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
                 hd_wallet_rmd160,
                 hd_wallet_storage,
                 derivation_path: path_to_coin,
-                // FIXME: With this set to no accounts, now surely the fixme below holds and will fail.
                 accounts: HDAccountsMutex::new(Default::default()),
                 enabled_address: self.activation_params().path_to_address,
                 gap_limit,
