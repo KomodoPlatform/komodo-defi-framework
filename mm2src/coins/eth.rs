@@ -833,16 +833,14 @@ impl EthPrivKeyBuildPolicy {
     }
 }
 
-impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
-    type Error = String;
-
-    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
+impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    fn from(policy: PrivKeyBuildPolicy) -> EthPrivKeyBuildPolicy {
         match policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
-            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
-            PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
+            PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
             PrivKeyBuildPolicy::WalletConnect { session_topic } => {
-                Ok(EthPrivKeyBuildPolicy::WalletConnect { session_topic })
+                EthPrivKeyBuildPolicy::WalletConnect { session_topic }
             },
         }
     }
@@ -6877,8 +6875,7 @@ pub async fn get_eth_address(
     } else {
         PrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err()?
     }
-    .try_into()
-    .map_err(GetEthAddressError::Internal)?;
+    .into();
 
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None, None)
