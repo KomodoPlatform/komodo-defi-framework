@@ -6561,18 +6561,14 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`.
-    let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
-    // Make sure not to allow new activation methods that are not supported for legacy ETH coin activation.
-    match priv_key_policy {
-        EthPrivKeyBuildPolicy::WalletConnect { .. } => {
+    let priv_key_policy = match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
+        PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
+        PrivKeyBuildPolicy::WalletConnect { .. } => {
             return ERR!("WalletConnect private key policy is not supported for legacy ETH coin activation");
         },
-        #[cfg(target_arch = "wasm32")]
-        EthPrivKeyBuildPolicy::Metamask { .. } => {
-            return ERR!("Metamask private key policy is not supported for legacy ETH coin activation");
-        },
-        _ => {},
-    }
+    };
 
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
