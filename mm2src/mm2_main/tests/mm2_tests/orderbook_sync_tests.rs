@@ -1551,6 +1551,9 @@ fn test_expirable_order() {
     let mm_bob_conf = Mm2TestConf::seednode(bob_passphrase, &coins);
     let mm_bob = MarketMakerIt::start(mm_bob_conf.conf, mm_bob_conf.rpc_password, None).unwrap();
 
+    block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+
     let expiration_min = 1;
     let _ = block_on(set_price(
         &mm_bob,
