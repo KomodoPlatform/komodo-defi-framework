@@ -255,8 +255,8 @@ impl From<i32> for MmNumber {
 }
 
 /// Useful for tests
-impl From<&'static str> for MmNumber {
-    fn from(str: &'static str) -> MmNumber {
+impl From<&str> for MmNumber {
+    fn from(str: &str) -> MmNumber {
         let num: BigDecimal = str.parse().expect("Input should be string representing decimal num");
         num.into()
     }

@@ -52,7 +52,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, H264, H520, U256};
+use ethereum_types::{Address as EthAddress, H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -309,6 +309,7 @@ pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFun
 pub type ValidateTakerPaymentSpendPreimageResult = MmResult<(), ValidateTakerPaymentSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+pub type Ticker = String;
 
 // Constants for logs used in tests
 pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";
@@ -4590,18 +4591,26 @@ pub enum CustomTokenError {
         fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateTickerInConfig { ticker_in_config: String },
+    DuplicateTickerInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateContractInConfig { ticker_in_config: String },
+    DuplicateContractInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token is already activated, ticker: {}, contract address: {}",
         ticker,
         contract_address
     )]
-    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
+    TokenWithSameContractAlreadyActivated {
+        ticker: String,
+        contract_address: String,
+    },
+    InvalidTokenAddress,
 }
 
 impl CoinProtocol {
@@ -4667,7 +4676,11 @@ impl CoinProtocol {
         // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
         // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
         // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
-        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(
+            ctx,
+            platform,
+            &EthAddress::from_str(contract_address).map_err(|_| MmError::new(CustomTokenError::InvalidTokenAddress))?,
+        ) {
             return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
                 ticker_in_config: existing_ticker,
             }));

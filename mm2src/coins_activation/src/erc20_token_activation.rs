@@ -72,6 +72,7 @@ impl TryFromCoinProtocol for Erc20Protocol {
                 contract_address,
             } => {
                 let token_addr = valid_addr_from_str(&contract_address).map_err(|_| CoinProtocol::ERC20 {
+                    // TODO: maybe add error description to this err (we're losing 'Invalid address checksum' here)
                     platform: platform.clone(),
                     contract_address,
                 })?;

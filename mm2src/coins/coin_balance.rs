@@ -510,6 +510,27 @@ pub mod common_impl {
                 params.min_addresses_number.max(Some(path_to_address.address_id + 1)),
             )
             .await?;
+            drop(new_account);
+
+            if coin.is_trezor() {
+                let enabled_address =
+                    hd_wallet
+                        .get_enabled_address()
+                        .await
+                        .ok_or(EnableCoinBalanceError::NewAddressDerivingError(
+                            NewAddressDerivingError::Internal(
+                                "Couldn't find enabled address after it has already been enabled".to_string(),
+                            ),
+                        ))?;
+                coin.received_enabled_address_from_hw_wallet(enabled_address)
+                    .await
+                    .map_err(|e| {
+                        EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
+                            "Coin rejected the enabled address derived from the hardware wallet: {}",
+                            e
+                        )))
+                    })?;
+            }
             // Todo: The enabled address should be indicated in the response.
             result.accounts.push(account_balance);
             return Ok(result);
@@ -541,6 +562,27 @@ pub mod common_impl {
             )
             .await?;
             result.accounts.push(account_balance);
+        }
+        drop(accounts);
+
+        if coin.is_trezor() {
+            let enabled_address =
+                hd_wallet
+                    .get_enabled_address()
+                    .await
+                    .ok_or(EnableCoinBalanceError::NewAddressDerivingError(
+                        NewAddressDerivingError::Internal(
+                            "Couldn't find enabled address after it has already been enabled".to_string(),
+                        ),
+                    ))?;
+            coin.received_enabled_address_from_hw_wallet(enabled_address)
+                .await
+                .map_err(|e| {
+                    EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
+                        "Coin rejected the enabled address derived from the hardware wallet: {}",
+                        e
+                    )))
+                })?;
         }
 
         Ok(result)
