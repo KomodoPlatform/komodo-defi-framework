@@ -3,7 +3,7 @@ use crate::{eth::{u256_to_big_decimal, Erc20TokenDetails},
             hd_wallet::AddrToString,
             BalanceError, CoinWithDerivationMethod};
 use common::{executor::Timer, log, Future01CompatExt};
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
 use mm2_number::BigDecimal;
 
@@ -133,7 +133,7 @@ async fn fetch_balance(
     let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| BalanceFetchError {
         ticker: token_ticker.clone(),
         address: address.addr_to_string(),
-        error: e.into(),
+        error: e.map(BalanceError::from),
     })?;
 
     Ok(BalanceData {
@@ -204,7 +204,7 @@ impl EventStreamer for EthBalanceEventStreamer {
                             }));
                             cache
                                 .entry(res.ticker.clone())
-                                .or_insert_with(HashMap::new)
+                                .or_default()
                                 .insert(res.address, res.balance);
                         },
                         Err(err) => {

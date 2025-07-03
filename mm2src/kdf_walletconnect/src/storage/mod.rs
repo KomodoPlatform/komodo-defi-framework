@@ -13,11 +13,13 @@ use crate::{error::WalletConnectError, session::Session};
 
 #[async_trait]
 pub(crate) trait WalletConnectStorageOps {
-    type Error: std::fmt::Debug + NotMmError + NotEqual + Send;
+    type Error: std::fmt::Debug + NotMmError + Send;
 
     async fn init(&self) -> MmResult<(), Self::Error>;
+    #[expect(dead_code)]
     async fn is_initialized(&self) -> MmResult<bool, Self::Error>;
     async fn save_session(&self, session: &Session) -> MmResult<(), Self::Error>;
+    #[allow(dead_code)]
     async fn get_session(&self, topic: &Topic) -> MmResult<Option<Session>, Self::Error>;
     async fn get_all_sessions(&self) -> MmResult<Vec<Session>, Self::Error>;
     async fn delete_session(&self, topic: &Topic) -> MmResult<(), Self::Error>;

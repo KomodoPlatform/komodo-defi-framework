@@ -292,7 +292,8 @@ impl MarketCoinOps for TendermintToken {
             let balance_denom = coin
                 .platform_coin
                 .account_balance_for_denom(&coin.platform_coin.account_id, coin.denom.to_string())
-                .await?;
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -383,11 +384,13 @@ impl MmCoin for TendermintToken {
 
             let (base_denom_balance, base_denom_balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &platform.protocol_info.denom, token.decimals())
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let (balance_denom, balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
                 (
@@ -405,7 +408,7 @@ impl MmCoin for TendermintToken {
                 }
 
                 (
-                    sat_from_big_decimal(&req.amount, token.decimals())?,
+                    sat_from_big_decimal(&req.amount, token.decimals()).map_mm_err()?,
                     req.amount.clone(),
                     req.amount,
                 )
@@ -430,7 +433,8 @@ impl MmCoin for TendermintToken {
                     None => Some(
                         platform
                             .get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
-                            .await?,
+                            .await
+                            .map_mm_err()?,
                     ),
                 }
             } else {
@@ -470,7 +474,8 @@ impl MmCoin for TendermintToken {
                     &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
 
@@ -489,7 +494,7 @@ impl MmCoin for TendermintToken {
 
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
-            let account_info = platform.account_info(&account_id).await?;
+            let account_info = platform.account_info(&account_id).await.map_mm_err()?;
 
             let tx = platform
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)

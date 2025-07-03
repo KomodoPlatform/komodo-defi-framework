@@ -8,6 +8,7 @@ use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::SpawnFuture;
 use common::log::LogState;
+use derive_more::Display;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, ChannelMonitorUpdateStatus, Watch};
 use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure,
@@ -110,7 +111,8 @@ pub fn init_keys_manager(platform: &Platform) -> EnableLightningResult<Arc<KeysM
         .coin
         .as_ref()
         .priv_key_policy
-        .activated_key_or_err()?
+        .activated_key_or_err()
+        .map_mm_err()?
         .private()
         .secret
         .into();

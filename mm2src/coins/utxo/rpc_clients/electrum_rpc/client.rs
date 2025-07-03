@@ -427,8 +427,10 @@ impl ElectrumClient {
                             final_response = Some((address, response));
                         }
                         client.connection_manager.not_needed(connection.address());
-                        if !send_to_all && final_response.is_some() {
-                            return Ok(final_response.unwrap());
+                        if !send_to_all {
+                            if let Some(response) = final_response {
+                                return Ok(response);
+                            }
                         }
                     },
                     Err(e) => {
@@ -610,7 +612,12 @@ impl ElectrumClient {
     // This method should always be used if the block headers are saved to the DB
     async fn get_tx_height_from_storage(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
         let tx_hash = tx.hash().reversed();
-        let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
+        let blockhash = self
+            .get_verbose_transaction(&tx_hash.into())
+            .compat()
+            .await
+            .map_mm_err()?
+            .blockhash;
         Ok(self
             .block_headers_storage()
             .get_block_height_by_hash(blockhash.into())
@@ -688,7 +695,7 @@ impl ElectrumClient {
         &self,
         tx: &UtxoTx,
     ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
-        let height = self.get_tx_height_from_storage(tx).await?;
+        let height = self.get_tx_height_from_storage(tx).await.map_mm_err()?;
 
         let merkle_branch = self
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
@@ -699,7 +706,7 @@ impl ElectrumClient {
                 err: err.to_string(),
             })?;
 
-        let header = self.block_header_from_storage(height).await?;
+        let header = self.block_header_from_storage(height).await.map_mm_err()?;
 
         Ok((merkle_branch, header, height))
     }
@@ -730,7 +737,7 @@ impl ElectrumClient {
                         }
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
-                        serialized.extend(headers.hex.0.into_iter());
+                        serialized.extend(headers.hex.0);
                         drop_mutability!(serialized);
                         let mut reader =
                             Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
@@ -1068,7 +1075,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     }
                     let len = CompactInteger::from(res.count);
                     let mut serialized = serialize(&len).take();
-                    serialized.extend(res.hex.0.into_iter());
+                    serialized.extend(res.hex.0);
                     let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                     let headers = reader.read_list::<BlockHeader>()?;
                     let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();

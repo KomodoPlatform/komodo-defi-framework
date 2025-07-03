@@ -61,7 +61,7 @@ use rpc::v1::types::H256 as H256Json;
 use secp256k1::PublicKey as Secp256k1Pubkey;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
-use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
@@ -322,7 +322,8 @@ async fn process_orders_keep_alive(
         P2PRequest::Ordermatch(req),
         propagated_from_peer.clone(),
     )
-    .await?
+    .await
+    .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
             "No response was received from peer {} for SyncPubkeyOrderbookState request!",
@@ -545,7 +546,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         None => return,
     };
 
-    if pubkey_state.trie_roots.get(alb_pair).is_none() {
+    if !pubkey_state.trie_roots.contains_key(alb_pair) {
         return;
     }
 
@@ -639,6 +640,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct TryFromBytesError(String);
 
@@ -838,6 +840,7 @@ impl<Key: Eq + std::hash::Hash, V1> DeltaOrFullTrie<Key, V1> {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum TrieDiffHistoryError {
     TrieDbError(Box<trie_db::TrieError<H64, sp_trie::Error>>),
@@ -1012,11 +1015,11 @@ fn test_alb_ordered_pair() {
 
 #[allow(dead_code)]
 pub fn parse_orderbook_pair_from_topic(topic: &str) -> Option<(&str, &str)> {
-    let mut split = topic.split(|maybe_sep| maybe_sep == TOPIC_SEPARATOR);
+    let mut split = topic.split(TOPIC_SEPARATOR);
     match split.next() {
         Some(ORDERBOOK_PREFIX) => match split.next() {
             Some(maybe_pair) => {
-                let colon = maybe_pair.find(|maybe_colon| maybe_colon == ':');
+                let colon = maybe_pair.find(':');
                 match colon {
                     Some(index) => {
                         if index + 1 < maybe_pair.len() {
@@ -1227,7 +1230,7 @@ impl TakerRequest {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Support the new protocol types.
+            // TODO: Support the new protocol types.
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
@@ -2305,7 +2308,7 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Support the new protocol types.
+            // TODO: Support the new protocol types.
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
@@ -2533,20 +2536,14 @@ fn pubkey_state_mut<'a>(
     state: &'a mut HashMap<String, OrderbookPubkeyState>,
     from_pubkey: &str,
 ) -> &'a mut OrderbookPubkeyState {
-    match state.raw_entry_mut().from_key(from_pubkey) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::new();
-            e.insert(from_pubkey.to_string(), state).1
-        },
-    }
+    state
+        .entry(from_pubkey.to_owned())
+        .or_insert_with(OrderbookPubkeyState::new)
 }
 
 fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>, pair: &str) -> &'a mut H64 {
-    match state.raw_entry_mut().from_key(pair) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => e.insert(pair.to_string(), Default::default()).1,
-    }
+    #[allow(clippy::unwrap_or_default)]
+    state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2711,7 +2708,7 @@ impl Orderbook {
 
         let base_rel = (order.base.clone(), order.rel.clone());
 
-        let ordered = self.ordered.entry(base_rel.clone()).or_insert_with(BTreeSet::new);
+        let ordered = self.ordered.entry(base_rel.clone()).or_default();
 
         // have to clone to drop immutable ordered borrow
         let existing = ordered
@@ -2729,18 +2726,15 @@ impl Orderbook {
 
         self.pairs_existing_for_base
             .entry(order.base.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.rel.clone());
 
         self.pairs_existing_for_rel
             .entry(order.rel.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.base.clone());
 
-        self.unordered
-            .entry(base_rel)
-            .or_insert_with(HashSet::new)
-            .insert(order.uuid);
+        self.unordered.entry(base_rel).or_default().insert(order.uuid);
 
         self.streaming_manager
             .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {
@@ -2751,10 +2745,7 @@ impl Orderbook {
     }
 
     fn remove_order_trie_update(&mut self, uuid: Uuid) -> Option<OrderbookItem> {
-        let order = match self.order_set.remove(&uuid) {
-            Some(order) => order,
-            None => return None,
-        };
+        let order = self.order_set.remove(&uuid)?;
         let base_rel = (order.base.clone(), order.rel.clone());
 
         // create an `order_to_delete` that allows to find and remove an element from `self.ordered` by hash
@@ -3123,6 +3114,7 @@ struct StateMachineParams<'a> {
     taker_amount: &'a MmNumber,
 }
 
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder, taker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
@@ -3367,6 +3359,7 @@ async fn start_maker_swap_state_machine<
         .error_log();
 }
 
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch, maker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
     let uuid = taker_match.reserved.taker_order_uuid;
@@ -3417,6 +3410,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             unreachable!();
         }
 
+        #[allow(unreachable_code)]
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
@@ -4925,7 +4919,7 @@ pub struct TakerConnectForRpc<'a> {
 }
 
 impl<'a> From<&'a TakerConnect> for TakerConnectForRpc<'a> {
-    fn from(connect: &'a TakerConnect) -> TakerConnectForRpc {
+    fn from(connect: &'a TakerConnect) -> TakerConnectForRpc<'a> {
         TakerConnectForRpc {
             taker_order_uuid: &connect.taker_order_uuid,
             maker_order_uuid: &connect.maker_order_uuid,
@@ -4946,7 +4940,7 @@ pub struct MakerConnectedForRpc<'a> {
 }
 
 impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc<'a> {
-    fn from(connected: &'a MakerConnected) -> MakerConnectedForRpc {
+    fn from(connected: &'a MakerConnected) -> MakerConnectedForRpc<'a> {
         MakerConnectedForRpc {
             taker_order_uuid: &connected.taker_order_uuid,
             maker_order_uuid: &connected.maker_order_uuid,
@@ -4958,7 +4952,7 @@ impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc<'a> {
 }
 
 impl<'a> From<&'a MakerReserved> for MakerReservedForRpc<'a> {
-    fn from(reserved: &MakerReserved) -> MakerReservedForRpc {
+    fn from(reserved: &'a MakerReserved) -> MakerReservedForRpc<'a> {
         MakerReservedForRpc {
             base: &reserved.base,
             rel: &reserved.rel,
@@ -4987,7 +4981,7 @@ struct MakerMatchForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a MakerMatch> for MakerMatchForRpc<'a> {
-    fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc {
+    fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc<'a> {
         MakerMatchForRpc {
             request: (&maker_match.request).into(),
             reserved: (&maker_match.reserved).into(),
@@ -5484,7 +5478,7 @@ pub enum Order {
 }
 
 impl<'a> From<&'a Order> for OrderForRpc<'a> {
-    fn from(order: &'a Order) -> OrderForRpc {
+    fn from(order: &'a Order) -> OrderForRpc<'a> {
         match order {
             Order::Maker(o) => OrderForRpc::Maker(MakerOrderForRpc::from(o)),
             Order::Taker(o) => OrderForRpc::Taker(TakerOrderForRpc::from(o)),
@@ -5744,7 +5738,7 @@ struct MakerOrderForMyOrdersRpc<'a> {
 }
 
 impl<'a> From<&'a MakerOrder> for MakerOrderForMyOrdersRpc<'a> {
-    fn from(order: &'a MakerOrder) -> MakerOrderForMyOrdersRpc {
+    fn from(order: &'a MakerOrder) -> MakerOrderForMyOrdersRpc<'a> {
         MakerOrderForMyOrdersRpc {
             order: order.into(),
             cancellable: order.is_cancellable(),
@@ -5763,7 +5757,7 @@ struct TakerMatchForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerMatch> for TakerMatchForRpc<'a> {
-    fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc {
+    fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc<'a> {
         TakerMatchForRpc {
             reserved: (&taker_match.reserved).into(),
             connect: (&taker_match.connect).into(),
@@ -5786,7 +5780,7 @@ struct TakerOrderForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
-    fn from(order: &'a TakerOrder) -> TakerOrderForRpc {
+    fn from(order: &'a TakerOrder) -> TakerOrderForRpc<'a> {
         TakerOrderForRpc {
             created_at: order.created_at,
             request: (&order.request).into(),
@@ -6137,19 +6131,19 @@ async fn subscribe_to_orderbook_topic(
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcOrderbookEntryV2 {
-    coin: String,
-    address: OrderbookAddress,
-    price: MmNumberMultiRepr,
-    pubkey: String,
-    uuid: Uuid,
-    is_mine: bool,
-    base_max_volume: MmNumberMultiRepr,
-    base_min_volume: MmNumberMultiRepr,
-    rel_max_volume: MmNumberMultiRepr,
-    rel_min_volume: MmNumberMultiRepr,
-    conf_settings: Option<OrderConfirmationsSettings>,
+    pub coin: String,
+    pub address: OrderbookAddress,
+    pub price: MmNumberMultiRepr,
+    pub pubkey: String,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume: MmNumberMultiRepr,
+    pub base_min_volume: MmNumberMultiRepr,
+    pub rel_max_volume: MmNumberMultiRepr,
+    pub rel_min_volume: MmNumberMultiRepr,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
 }
 
 fn choose_maker_confs_and_notas(
@@ -6262,7 +6256,7 @@ fn choose_taker_confs_and_notas(
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),

@@ -150,11 +150,7 @@ pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static st
 
 /// Use this only in migration code!
 fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
-    let swap_info = match swap.get_my_info() {
-        Some(s) => s,
-        // get_my_info returning None means that swap did not even start - so we can keep it away from indexing.
-        None => return None,
-    };
+    let swap_info = swap.get_my_info()?;
     let params = vec![
         swap_info.my_coin,
         swap_info.other_coin,

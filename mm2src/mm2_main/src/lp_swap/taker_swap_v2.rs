@@ -20,6 +20,7 @@ use common::log::{debug, error, info, warn};
 use common::Future01CompatExt;
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
+use derive_more::Display;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -226,10 +227,10 @@ impl StateMachineStorage for TakerSwapStorage {
     #[cfg(target_arch = "wasm32")]
     async fn store_repr(&mut self, uuid: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
         let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("SwapsContext::from_ctx should not fail");
-        let db = swaps_ctx.swap_db().await?;
-        let transaction = db.transaction().await?;
+        let db = swaps_ctx.swap_db().await.map_mm_err()?;
+        let transaction = db.transaction().await.map_mm_err()?;
 
-        let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
+        let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
         let item = MySwapsFiltersTable {
             uuid,
@@ -240,14 +241,14 @@ impl StateMachineStorage for TakerSwapStorage {
             swap_type: TAKER_SWAP_V2_TYPE,
             order_uuid: repr.order_uuid,
         };
-        filters_table.add_item(&item).await?;
+        filters_table.add_item(&item).await.map_mm_err()?;
 
-        let table = transaction.table::<SavedSwapTable>().await?;
+        let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
         let item = SavedSwapTable {
             uuid,
             saved_swap: serde_json::to_value(repr)?,
         };
-        table.add_item(&item).await?;
+        table.add_item(&item).await.map_mm_err()?;
         Ok(())
     }
 
@@ -894,7 +895,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(taker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             TakerSwapEvent::TakerFundingSent { .. } => {
@@ -947,7 +948,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(taker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             TakerSwapEvent::TakerFundingSent { .. }

@@ -48,7 +48,7 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
 /// Please expand this enum if it is necessary.
 enum TargetArch {
     Wasm32,
-    Other(String),
+    Other,
 }
 
 impl TargetArch {
@@ -67,7 +67,7 @@ impl From<String> for TargetArch {
     fn from(arch: String) -> Self {
         match arch.as_str() {
             "wasm32" => TargetArch::Wasm32,
-            _ => TargetArch::Other(arch),
+            _ => TargetArch::Other,
         }
     }
 }

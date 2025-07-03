@@ -1,6 +1,7 @@
 use crate::lp_wallet::WalletsContext;
 use async_trait::async_trait;
 use crypto::EncryptedData;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
@@ -99,9 +100,9 @@ pub(super) async fn save_encrypted_passphrase(
 ) -> WalletsDBResult<()> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
-    let db = wallets_ctx.wallets_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MnemonicsTable>().await?;
+    let db = wallets_ctx.wallets_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MnemonicsTable>().await.map_mm_err()?;
 
     let mnemonics_table_item = MnemonicsTable {
         wallet_name: wallet_name.to_string(),
@@ -114,7 +115,8 @@ pub(super) async fn save_encrypted_passphrase(
     };
     table
         .replace_item_by_unique_index("wallet_name", wallet_name, &mnemonics_table_item)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     Ok(())
 }
@@ -125,13 +127,14 @@ pub(super) async fn read_encrypted_passphrase(
 ) -> WalletsDBResult<Option<EncryptedData>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
-    let db = wallets_ctx.wallets_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MnemonicsTable>().await?;
+    let db = wallets_ctx.wallets_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MnemonicsTable>().await.map_mm_err()?;
 
     table
         .get_item_by_unique_index("wallet_name", wallet_name)
-        .await?
+        .await
+        .map_mm_err()?
         .map(|(_item_id, wallet_table_item)| {
             serde_json::from_str(&wallet_table_item.encrypted_mnemonic).map_to_mm(|e| {
                 WalletsDBError::DeserializationError {
@@ -146,11 +149,11 @@ pub(super) async fn read_encrypted_passphrase(
 pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<impl Iterator<Item = String>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
-    let db = wallets_ctx.wallets_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MnemonicsTable>().await?;
+    let db = wallets_ctx.wallets_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MnemonicsTable>().await.map_mm_err()?;
 
-    let all_items = table.get_all_items().await?;
+    let all_items = table.get_all_items().await.map_mm_err()?;
     let wallet_names = all_items.into_iter().map(|(_, item)| item.wallet_name);
 
     Ok(wallet_names)
@@ -159,10 +162,13 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<impl I
 pub(super) async fn delete_wallet(ctx: &MmArc, wallet_name: &str) -> WalletsDBResult<()> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
-    let db = wallets_ctx.wallets_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MnemonicsTable>().await?;
+    let db = wallets_ctx.wallets_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MnemonicsTable>().await.map_mm_err()?;
 
-    table.delete_item_by_unique_index("wallet_name", wallet_name).await?;
+    table
+        .delete_item_by_unique_index("wallet_name", wallet_name)
+        .await
+        .map_mm_err()?;
     Ok(())
 }

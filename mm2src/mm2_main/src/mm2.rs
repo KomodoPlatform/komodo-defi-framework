@@ -21,7 +21,6 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 
-#![feature(hash_raw_entry)]
 // `mockable` implementation uses these
 #![allow(
     forgetting_references,

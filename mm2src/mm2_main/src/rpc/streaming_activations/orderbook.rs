@@ -1,6 +1,7 @@
 //! RPC activation and deactivation of the orderbook streamer.
 use super::EnableStreamingResponse;
 use crate::lp_ordermatch::orderbook_events::OrderbookStreamer;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
 
