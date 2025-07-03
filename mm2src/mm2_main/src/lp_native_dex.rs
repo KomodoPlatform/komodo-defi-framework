@@ -46,11 +46,11 @@ use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json as json;
 use std::convert::TryInto;
+use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
-use std::{fs, usize};
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;

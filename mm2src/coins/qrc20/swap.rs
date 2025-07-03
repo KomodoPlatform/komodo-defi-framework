@@ -22,6 +22,7 @@ pub struct Erc20PaymentDetails {
 }
 
 /// `receiverSpend` call details consist of values obtained from [`TransactionOutput::script_pubkey`].
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct ReceiverSpendDetails {
     pub swap_id: Vec<u8>,

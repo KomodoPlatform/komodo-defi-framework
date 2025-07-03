@@ -88,7 +88,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
                 TokenInfoError::InvalidRequest(error)
             })?;
 
-            let config_ticker = get_erc20_ticker_by_contract_address(&ctx, platform, contract_address_str);
+            let config_ticker = get_erc20_ticker_by_contract_address(&ctx, platform, &contract_address);
             let token_info = get_erc20_token_info(&eth_coin, contract_address)
                 .await
                 .map_to_mm(TokenInfoError::RetrieveInfoError)?;

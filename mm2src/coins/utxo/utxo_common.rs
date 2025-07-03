@@ -2957,6 +2957,7 @@ pub fn sign_message(
     } else {
         *coin.priv_key_policy.activated_key_or_err().map_mm_err()?.private()
     };
+
     let signature = private.sign_compact(&H256::from(message_hash))?;
 
     Ok(STANDARD.encode(&*signature))
@@ -4013,8 +4014,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     })
 }
 
-pub async fn get_mut_verbose_transaction_from_map_or_rpc<'a, 'b, T>(
-    coin: &'a T,
+pub async fn get_mut_verbose_transaction_from_map_or_rpc<'b, T>(
+    coin: &T,
     tx_hash: H256Json,
     utxo_tx_map: &'b mut HistoryUtxoTxMap,
 ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>
@@ -4408,6 +4409,7 @@ where
     fn can_tx_be_cached(tx: &RpcTransaction) -> bool { tx.height > Some(0) }
 
     /// Calculates actual confirmations number of the given `tx` transaction loaded from cache.
+    #[allow(clippy::result_large_err)]
     fn calc_actual_cached_tx_confirmations(tx: &RpcTransaction, block_count: u64) -> UtxoRpcResult<u32> {
         let tx_height = tx.height.or_mm_err(|| {
             UtxoRpcError::Internal(format!(r#"Warning, height of cached "{:?}" tx is unknown"#, tx.txid))
@@ -4599,7 +4601,7 @@ pub fn address_from_pubkey(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
-pub async fn validate_payment<'a, T: UtxoCommonOps>(
+pub async fn validate_payment<'a, T>(
     coin: T,
     tx: &'a UtxoTx,
     output_index: usize,
@@ -4611,7 +4613,10 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> ValidatePaymentResult<()> {
+) -> ValidatePaymentResult<()>
+where
+    T: UtxoCommonOps,
+{
     let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals).map_mm_err()?;
 
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
@@ -5244,11 +5249,11 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if args.funding_tx.outputs.get(0) != Some(&expected_output) {
+    if args.funding_tx.outputs.first() != Some(&expected_output) {
         return MmError::err(ValidateSwapV2TxError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
-            args.funding_tx.outputs.get(0)
+            args.funding_tx.outputs.first()
         )));
     }
 

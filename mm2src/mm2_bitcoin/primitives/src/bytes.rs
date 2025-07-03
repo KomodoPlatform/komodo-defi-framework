@@ -25,7 +25,7 @@ impl Bytes {
     pub fn split_off(&mut self, at: usize) -> Bytes { Bytes(self.0.split_off(at)) }
 }
 
-impl<'a> From<&'a [u8]> for Bytes {
+impl From<&[u8]> for Bytes {
     fn from(v: &[u8]) -> Self { Bytes(v.into()) }
 }
 

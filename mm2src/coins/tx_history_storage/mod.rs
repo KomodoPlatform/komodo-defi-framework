@@ -47,7 +47,7 @@ pub struct TxHistoryStorageBuilder<'a> {
     ctx: &'a MmArc,
 }
 
-impl<'a> TxHistoryStorageBuilder<'a> {
+impl TxHistoryStorageBuilder<'_> {
     #[inline]
     pub fn new(ctx: &MmArc) -> TxHistoryStorageBuilder<'_> { TxHistoryStorageBuilder { ctx } }
 

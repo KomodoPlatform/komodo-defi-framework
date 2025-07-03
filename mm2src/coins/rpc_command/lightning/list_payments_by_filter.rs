@@ -3,6 +3,7 @@ use crate::lightning::ln_serialization::{PaymentInfoForRPC, PaymentsFilterForRPC
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use mm2_core::mm_ctx::MmArc;

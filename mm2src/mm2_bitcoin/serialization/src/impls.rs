@@ -151,7 +151,7 @@ impl Serializable for String {
     }
 }
 
-impl<'a> Serializable for &'a str {
+impl Serializable for &str {
     fn serialize(&self, stream: &mut Stream) {
         let bytes: &[u8] = self.as_bytes();
         stream.append(&CompactInteger::from(bytes.len())).append_slice(bytes);

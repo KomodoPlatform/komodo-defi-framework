@@ -114,7 +114,7 @@ impl BchUnspents {
             bch_unspent,
             slp_amount,
         };
-        self.slp.entry(token_id).or_insert_with(Vec::new).push(slp_unspent);
+        self.slp.entry(token_id).or_default().push(slp_unspent);
     }
 
     fn add_slp_baton(&mut self, utxo: UnspentInfo) { self.slp_batons.push(utxo) }
@@ -387,7 +387,7 @@ impl BchCoin {
             .await?;
         let maybe_op_return: Script = tx
             .outputs
-            .get(0)
+            .first()
             .ok_or(UtxoTxDetailsError::Internal(format!(
                 "Transaction {} has no outputs",
                 params.hash

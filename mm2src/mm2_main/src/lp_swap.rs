@@ -22,19 +22,18 @@
 //! 1. AFee: OP_DUP OP_HASH160 FEE_RMD160 OP_EQUALVERIFY OP_CHECKSIG
 //!
 //! 2. BPayment:
-//! OP_IF
-//! <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
-//! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
-//! OP_ENDIF
+//!     OP_IF
+//!         <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
+//!     OP_ELSE
+//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
+//!     OP_ENDIF
 //!
 //! 3. APayment:
-//! OP_IF
-//! <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
-//! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
-//! OP_ENDIF
-//!
+//!     OP_IF
+//!         <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
+//!     OP_ELSE
+//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
+//!     OP_ENDIF
 
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *

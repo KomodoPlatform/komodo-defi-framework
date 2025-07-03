@@ -195,7 +195,7 @@ pub struct QtumCoinBuilder<'a> {
 }
 
 #[async_trait]
-impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
+impl UtxoCoinBuilderCommonOps for QtumCoinBuilder<'_> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
@@ -207,14 +207,14 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
 }
 
-impl<'a> UtxoFieldsWithIguanaSecretBuilder for QtumCoinBuilder<'a> {}
+impl UtxoFieldsWithIguanaSecretBuilder for QtumCoinBuilder<'_> {}
 
-impl<'a> UtxoFieldsWithGlobalHDBuilder for QtumCoinBuilder<'a> {}
+impl UtxoFieldsWithGlobalHDBuilder for QtumCoinBuilder<'_> {}
 
-impl<'a> UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'a> {}
+impl UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'_> {}
 
 #[async_trait]
-impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
+impl UtxoCoinBuilder for QtumCoinBuilder<'_> {
     type ResultCoin = QtumCoin;
     type Error = UtxoCoinBuildError;
 
@@ -229,7 +229,7 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
     }
 }
 
-impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a> {}
+impl MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'_> {}
 
 impl<'a> QtumCoinBuilder<'a> {
     pub fn new(

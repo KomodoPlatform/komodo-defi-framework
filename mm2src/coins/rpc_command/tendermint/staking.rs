@@ -19,13 +19,13 @@ pub(crate) enum ValidatorStatus {
     Unbonded,
 }
 
-impl ToString for ValidatorStatus {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for ValidatorStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // An empty string doesn't filter any validators and we get an unfiltered result.
-            ValidatorStatus::All => String::default(),
-            ValidatorStatus::Bonded => "BOND_STATUS_BONDED".into(),
-            ValidatorStatus::Unbonded => "BOND_STATUS_UNBONDED".into(),
+            ValidatorStatus::All => write!(f, ""),
+            ValidatorStatus::Bonded => write!(f, "BOND_STATUS_BONDED"),
+            ValidatorStatus::Unbonded => write!(f, "BOND_STATUS_UNBONDED"),
         }
     }
 }

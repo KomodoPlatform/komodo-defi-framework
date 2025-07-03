@@ -21,7 +21,7 @@ pub struct TrezorTxSigner<'a, TxP> {
     pub branch_id: u32,
 }
 
-impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
+impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
     pub async fn sign_tx(mut self) -> UtxoSignTxResult<UtxoTx> {
         let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await.map_mm_err()?;
 

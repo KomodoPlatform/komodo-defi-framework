@@ -558,7 +558,7 @@ impl Qrc20Coin {
                     return Ok(HistoryMapByHash::default());
                 },
             };
-            let tx_hash_history = history_map.entry(id.tx_hash).or_insert_with(HashMap::default);
+            let tx_hash_history = history_map.entry(id.tx_hash).or_default();
             if tx_hash_history.insert(id, tx).is_some() {
                 ctx.log.log(
                     "😟",
