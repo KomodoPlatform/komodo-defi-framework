@@ -1,9 +1,10 @@
-#![allow(unused_imports, dead_code)]
-#![cfg(not(target_arch = "wasm32"))]
 #![feature(custom_test_frameworks)]
 #![feature(test)]
-#![test_runner(docker_tests_runner)]
 #![feature(hash_raw_entry)]
+#![cfg(feature = "enable-sia")]
+#![cfg(not(target_arch = "wasm32"))]
+#![allow(unused_imports, dead_code)]
+#![test_runner(docker_tests_runner)]
 
 #[cfg(test)]
 #[macro_use]
