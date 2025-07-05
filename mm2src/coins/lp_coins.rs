@@ -4162,6 +4162,8 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
+/// TODO: should we use #[serde(tag = "type", content = "params")] for this PrivKeyActivationPolicy like for the Eth policy,
+/// to have them identical in activation requests
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]

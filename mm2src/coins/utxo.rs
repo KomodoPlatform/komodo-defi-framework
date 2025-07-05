@@ -550,6 +550,7 @@ pub struct UtxoCoinConf {
     pub tx_version: i32,
     /// Defines if Segwit is enabled for this coin.
     /// https://en.bitcoin.it/wiki/Segregated_Witness
+    /// NOTE: this does not make the coin itself 'segwit'. This just tells that segwit addresses are supported for this coin
     pub segwit: bool,
     /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/

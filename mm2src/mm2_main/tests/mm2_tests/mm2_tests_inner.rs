@@ -6808,7 +6808,7 @@ mod trezor_tests {
             "method": "electrum",
             "coin": ticker,
             "servers": tbtc_electrums(),
-            "priv_key_policy": { "type": "Trezor" },
+            "priv_key_policy": "Trezor",
         });
         let activation_params = UtxoActivationParams::from_legacy_req(&enable_req).unwrap();
         let request: InitStandaloneCoinReq<UtxoActivationParams> = json::from_value(json!({

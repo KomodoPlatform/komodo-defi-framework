@@ -2,16 +2,19 @@ use crate::coin_balance::HDAddressBalance;
 use crate::hd_wallet::{AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError,
                        InvalidBip44ChainError, NewAddressDeriveConfirmError, NewAddressDerivingError,
                        RpcTaskConfirmAddress};
+use crate::utxo::UtxoCommonOps;
 use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
             UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::trezor::utxo::TrezorInputScriptType;
 use crypto::trezor::TrezorMessageType;
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use http::StatusCode;
+use keys::AddressFormat;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
@@ -295,12 +298,14 @@ impl RpcTask for InitGetNewAddressTask {
     async fn cancel(self) {}
 
     async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+        /// Caller to get and confirm a new HD address for an HD wallet
         async fn get_new_address_helper<Coin>(
             ctx: &MmArc,
             coin: &Coin,
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
             trezor_message_type: TrezorMessageType,
+            trezor_script_type: Option<TrezorInputScriptType>,
         ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceObject>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
@@ -315,31 +320,52 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type).map_mm_err()?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type, trezor_script_type)
+                    .map_mm_err()?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Map(
-                get_new_address_helper(
-                    &self.ctx,
-                    utxo,
-                    self.req.params.clone(),
-                    task_handle,
-                    TrezorMessageType::Bitcoin,
-                )
-                .await?,
-            )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Map(
-                get_new_address_helper(
-                    &self.ctx,
-                    qtum,
-                    self.req.params.clone(),
-                    task_handle,
-                    TrezorMessageType::Bitcoin,
-                )
-                .await?,
-            )),
+            MmCoinEnum::UtxoCoin(ref utxo) => {
+                // Set script type to enable Trezor to correctly validate the derivation path
+                let trezor_script_type = match utxo.addr_format() {
+                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
+                        Some(TrezorInputScriptType::SpendAddress)
+                    },
+                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                };
+                Ok(GetNewAddressResponseEnum::Map(
+                    get_new_address_helper(
+                        &self.ctx,
+                        utxo,
+                        self.req.params.clone(),
+                        task_handle,
+                        TrezorMessageType::Bitcoin,
+                        trezor_script_type,
+                    )
+                    .await?,
+                ))
+            },
+            MmCoinEnum::QtumCoin(ref qtum) => {
+                // Set script type to enable Trezor to correctly validate the derivation path
+                let trezor_script_type = match qtum.addr_format() {
+                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
+                        Some(TrezorInputScriptType::SpendAddress)
+                    },
+                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                };
+                Ok(GetNewAddressResponseEnum::Map(
+                    get_new_address_helper(
+                        &self.ctx,
+                        qtum,
+                        self.req.params.clone(),
+                        task_handle,
+                        TrezorMessageType::Bitcoin,
+                        trezor_script_type,
+                    )
+                    .await?,
+                ))
+            },
             MmCoinEnum::EthCoin(ref eth) => Ok(GetNewAddressResponseEnum::Map(
                 get_new_address_helper(
                     &self.ctx,
@@ -347,6 +373,7 @@ impl RpcTask for InitGetNewAddressTask {
                     self.req.params.clone(),
                     task_handle,
                     TrezorMessageType::Ethereum,
+                    None,
                 )
                 .await?,
             )),

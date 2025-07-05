@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor, TryIntoUserAction};
+use crypto::trezor::utxo::TrezorInputScriptType;
 use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorMessageType, TrezorProcessingError};
 use crypto::{CryptoCtx, CryptoCtxError, HardwareWalletArc, HwError, HwProcessingError};
 use enum_derives::{EnumFromInner, EnumFromStringify};
@@ -75,6 +76,7 @@ pub(crate) enum RpcTaskConfirmAddress<Task: RpcTask> {
         task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         trezor_message_type: TrezorMessageType,
+        trezor_script_type: Option<TrezorInputScriptType>,
     },
 }
 
@@ -97,6 +99,7 @@ where
                 task_handle,
                 statuses,
                 trezor_message_type,
+                trezor_script_type,
             } => {
                 Self::confirm_address_with_trezor(
                     hw_ctx,
@@ -106,6 +109,7 @@ where
                     derivation_path,
                     expected_address,
                     trezor_message_type,
+                    *trezor_script_type,
                 )
                 .await
             },
@@ -124,6 +128,7 @@ where
         task_handle: RpcTaskHandleShared<Task>,
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         trezor_message_type: TrezorMessageType,
+        trezor_script_type: Option<TrezorInputScriptType>,
     ) -> MmResult<RpcTaskConfirmAddress<Task>, HDConfirmAddressError> {
         let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
@@ -134,9 +139,11 @@ where
             task_handle,
             statuses,
             trezor_message_type,
+            trezor_script_type,
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn confirm_address_with_trezor(
         hw_ctx: &HardwareWalletArc,
         task_handle: RpcTaskHandleShared<Task>,
@@ -145,6 +152,7 @@ where
         derivation_path: DerivationPath,
         expected_address: String,
         trezor_message_type: &TrezorMessageType,
+        trezor_script_type: Option<TrezorInputScriptType>,
     ) -> MmResult<(), HDConfirmAddressError> {
         let confirm_statuses = TrezorRequestStatuses {
             on_button_request: Task::InProgressStatus::confirm_addr_status(expected_address.clone()),
@@ -156,7 +164,12 @@ where
         let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         let address = match trezor_message_type {
             TrezorMessageType::Bitcoin => trezor_session
-                .get_utxo_address(derivation_path, trezor_coin, SHOW_ADDRESS_ON_DISPLAY)
+                .get_utxo_address(
+                    derivation_path,
+                    trezor_coin,
+                    SHOW_ADDRESS_ON_DISPLAY,
+                    trezor_script_type,
+                )
                 .await
                 .map_mm_err()?
                 .process(pubkey_processor.clone())

@@ -89,7 +89,9 @@ impl<'a> TrezorSession<'a> {
         derivation_path: &DerivationPath,
         show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, XPub>> {
-        // Do not use the broken EthereumGetPublicKey, using the bitcoin GetPublicKey msg instead
+        // We cannot use the EthereumGetPublicKey message (broken in the Safe/Model T firmware),
+        // so we use bitcoin GetPublicKey msg instead.
+        // Apparently this should work as Bitcoin and Ethereum both use "m/44'"
         let req = proto_bitcoin::GetPublicKey {
             address_n: serialize_derivation_path(derivation_path),
             ecdsa_curve_name: Some(ecdsa_curve_to_string(EcdsaCurve::Secp256k1)),
