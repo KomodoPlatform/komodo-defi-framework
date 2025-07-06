@@ -76,7 +76,7 @@ cc = "1.0"
 cipher = "0.4.4"
 chrono = "0.4.23"
 cfg-if = "1.0"
-clap = { version = "=4.2", features = ["derive"] }
+clap = { version = "4.2", features = ["derive"] }
 cosmrs = { version = "0.16", default-features = false }
 crossbeam = "0.8"
 crossbeam-channel = "0.5.1"
