@@ -262,7 +262,7 @@ pub fn mm2_main(version: String, datetime: String) {
 
     let cli = Cli::parse();
     if cli.version {
-        println!("{}: {}", Cli::command().get_about().unwrap(), version);
+        println!("Komodo DeFi Framework: {version}");
         return;
     }
 
