@@ -81,7 +81,7 @@ pub mod rpc;
 mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
@@ -89,34 +89,6 @@ pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
 const EXTRA_HELP_MESSAGE: &str = r#"
-Some (but not all) of the JSON configuration parameters (* - required):
-
-                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,
-                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
-  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
-                     If the field isn't present on the command line then we try loading it from the 'coins' file.
-  dbdir          ..  MM database path. 'DB' by default.
-  gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
-                 ..  It's recommended to put essential info to this field (application name, OS, version, etc).
-                 ..  e.g. AtomicDEX iOS 1.0.1000.
-  myipaddr       ..  IP address to bind to for P2P networking.
-  netid          ..  Subnetwork. Affects ports and keys.
-  passphrase *   ..  Wallet seed.
-                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
-  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
-                     Default is currently 'http://localhost:3000'
-  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
-  rpc_password   ..  RPC password used to authorize non-public RPC calls
-                     MM generates password from passphrase if this field is not set
-  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.
-                     Defaults to `true`, set `false` to disable. `Use with caution`.
-  rpcport        ..  If > 1000 overrides the 7783 default.
-  i_am_seed      ..  Activate the seed node mode (acting as a relay for kdf clients).
-                     Defaults to `false`.
-  seednodes      ..  Seednode IPs that node will use.
-                     At least one seed IP must be present if the node is not a seed itself.
-  wif            ..  `1` to add WIFs to the information we provide about a coin.
-
 Environment variables:
 
   MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
