@@ -76,7 +76,7 @@ pub use ethcore_transaction::{SignedTransaction as SignedEthTx, TxType};
 use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
-use futures::future::{join, join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
+use futures::future::{join, join_all, select_ok, try_join_all, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
@@ -158,9 +158,6 @@ use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod eth_withdraw;
 use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
-
-mod nonce;
-use nonce::ParityNonce;
 
 pub mod fee_estimation;
 use fee_estimation::eip1559::{block_native::BlocknativeGasApiCaller, infura::InfuraGasApiCaller,
@@ -908,9 +905,10 @@ pub struct EthCoinImpl {
 }
 
 #[derive(Clone, Debug)]
-pub struct Web3Instance {
-    web3: Web3<Web3Transport>,
-    is_parity: bool,
+pub struct Web3Instance(Web3<Web3Transport>);
+
+impl AsRef<Web3<Web3Transport>> for Web3Instance {
+    fn as_ref(&self) -> &Web3<Web3Transport> { &self.0 }
 }
 
 /// Information about a token that follows the ERC20 protocol on an EVM-based network.
@@ -2826,7 +2824,7 @@ async fn sign_and_send_transaction_with_keypair(
 
     let futures = web3_instances_with_latest_nonce
         .into_iter()
-        .map(|web3_instance| web3_instance.web3.eth().send_raw_transaction(bytes.clone()));
+        .map(|web3_instance| web3_instance.as_ref().eth().send_raw_transaction(bytes.clone()));
     try_tx_s!(select_ok(futures).await.map_err(|e| ERRL!("{}", e)), signed);
 
     info!(target: "sign-and-send", "wait_for_tx_appears_on_rpc…");
@@ -3017,18 +3015,18 @@ impl RpcCommonOps for EthCoin {
 
         // try to find first live client
         for (i, client) in clients.clone().into_iter().enumerate() {
-            if let Web3Transport::Websocket(socket_transport) = &client.web3.transport() {
+            if let Web3Transport::Websocket(socket_transport) = client.as_ref().transport() {
                 socket_transport.maybe_spawn_connection_loop(self.clone());
             };
 
-            if !client.web3.transport().is_last_request_failed() {
+            if client.as_ref().transport().is_last_request_failed() {
                 // Bring the live client to the front of rpc_clients
                 clients.rotate_left(i);
                 return Ok(client);
             }
 
             match client
-                .web3
+                .as_ref()
                 .web3()
                 .client_version()
                 .timeout(ETH_RPC_REQUEST_TIMEOUT)
@@ -3042,7 +3040,7 @@ impl RpcCommonOps for EthCoin {
                 Ok(Err(rpc_error)) => {
                     debug!("Could not get client version on: {:?}. Error: {}", &client, rpc_error);
 
-                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                    if let Web3Transport::Websocket(socket_transport) = client.as_ref().transport() {
                         socket_transport.stop_connection_loop().await;
                     };
                 },
@@ -3052,7 +3050,7 @@ impl RpcCommonOps for EthCoin {
                         &client, timeout_error
                     );
 
-                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                    if let Web3Transport::Websocket(socket_transport) = client.as_ref().transport() {
                         socket_transport.stop_connection_loop().await;
                     };
                 },
@@ -3067,7 +3065,7 @@ impl RpcCommonOps for EthCoin {
 
 impl EthCoin {
     pub(crate) async fn web3(&self) -> Result<Web3<Web3Transport>, Web3RpcError> {
-        self.get_live_client().await.map(|t| t.web3)
+        self.get_live_client().await.map(|t| t.as_ref().clone())
     }
 
     /// Gets `SenderRefunded` events from etomic swap smart contract since `from_block`
@@ -5720,22 +5718,19 @@ impl EthCoin {
                 let (futures, web3_instances): (Vec<_>, Vec<_>) = web3_instances
                     .iter()
                     .map(|instance| {
-                        if let Web3Transport::Websocket(socket_transport) = instance.web3.transport() {
+                        if let Web3Transport::Websocket(socket_transport) = instance.as_ref().transport() {
                             socket_transport.maybe_spawn_temporary_connection_loop(
                                 self.clone(),
                                 Instant::now() + TMP_SOCKET_DURATION,
                             );
                         };
 
-                        if instance.is_parity {
-                            let parity: ParityNonce<_> = instance.web3.api();
-                            (Either::Left(parity.parity_next_nonce(addr)), instance.clone())
-                        } else {
-                            (
-                                Either::Right(instance.web3.eth().transaction_count(addr, Some(BlockNumber::Pending))),
-                                instance.clone(),
-                            )
-                        }
+                        let nonce = instance
+                            .as_ref()
+                            .eth()
+                            .transaction_count(addr, Some(BlockNumber::Pending));
+
+                        (nonce, instance.clone())
                     })
                     .unzip();
 
@@ -6570,19 +6565,8 @@ pub async fn eth_coin_from_conf_and_request(
         };
 
         let web3 = Web3::new(transport);
-        let version = match web3.web3().client_version().await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Couldn't get client version for url {}: {}", url, e);
 
-                continue;
-            },
-        };
-
-        web3_instances.push(Web3Instance {
-            web3,
-            is_parity: version.contains("Parity") || version.contains("parity"),
-        })
+        web3_instances.push(Web3Instance(web3))
     }
 
     if web3_instances.is_empty() {
@@ -6599,10 +6583,10 @@ pub async fn eth_coin_from_conf_and_request(
             let decimals = match conf["decimals"].as_u64() {
                 None | Some(0) => try_s!(
                     get_token_decimals(
-                        &web3_instances
+                        web3_instances
                             .first()
                             .expect("web3_instances can't be empty in ETH activation")
-                            .web3,
+                            .as_ref(),
                         token_addr
                     )
                     .await
