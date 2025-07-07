@@ -992,6 +992,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     })
 }
 
+// fixme: here p2sh
 pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
     let unsigned = try_s!(
         p2sh_spending_tx_preimage(

@@ -1,7 +1,15 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
+use crate::UtxoTx;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::Engine;
+use bitcoin::{
+    consensus::Decodable, consensus::Encodable, psbt::Psbt, EcdsaSighashType, PackedLockTime, Sequence, Transaction,
+};
 use bitcrypto::sign_message_hash;
+use chain::bytes::Bytes;
 use chain::hash::H256;
 use crypto::StandardHDPath;
 use kdf_walletconnect::{
@@ -9,11 +17,10 @@ use kdf_walletconnect::{
     error::WalletConnectError,
     WalletConnectCtx, WcTopic,
 };
+use keys::Address;
 use keys::{CompactSignature, Public};
 use mm2_err_handle::prelude::{MmError, MmResult};
-
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
-use base64::Engine;
+use script::{Builder, TransactionInputSigner};
 
 /// Represents a UTXO address returned by GetAccountAddresses request in WalletConnect.
 #[derive(Deserialize)]
@@ -153,14 +160,14 @@ async fn sign_psbt(
     session_topic: &WcTopic,
     chain_id: &WcChainId,
     psbt: String,
-    inputs: Vec<(String, u32, Vec<u8>)>,
+    inputs_to_sign: BTreeMap<u32, (String, Vec<u8>)>,
     broadcast: bool,
 ) -> MmResult<SignedPsbt, WalletConnectError> {
     wc.validate_update_active_chain_id(session_topic, chain_id).await?;
     let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
-    let sign_inputs = inputs
+    let sign_inputs = inputs_to_sign
         .into_iter()
-        .map(|(addr, idx, sig_hashes)| {
+        .map(|(idx, (addr, sig_hashes))| {
             json!({
                 "address": addr,
                 "index": idx,
@@ -178,4 +185,90 @@ async fn sign_psbt(
         .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoSignPsbt, params)
         .await?;
     Ok(signed_psbt)
+}
+
+// fixme: remove the panics
+async fn sign_p2sh_with_walletconnect(
+    wc: &WalletConnectCtx,
+    session_topic: &WcTopic,
+    chain_id: &WcChainId,
+    signing_address: &Address,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    unlocking_script: Bytes,
+) -> UtxoTx {
+    let signing_address = signing_address.display_address().unwrap();
+    let unsigned_tx = unsigned_tx_from_input_signer(tx_input_signer);
+    assert!(
+        unsigned_tx.input.len() == 1,
+        "Expected exactly one input for P2SH signing"
+    );
+    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
+    psbt.inputs[0].non_witness_utxo = Some(prev_tx.into());
+    psbt.inputs[0].redeem_script = Some(redeem_script.take().into());
+    psbt.inputs[0].sighash_type = Some(EcdsaSighashType::All.into());
+
+    let mut serialized_psbt = Vec::new();
+    psbt.consensus_encode(&mut serialized_psbt).unwrap();
+    let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
+
+    let signed_psbt = sign_psbt(
+        wc,
+        session_topic,
+        chain_id,
+        serialized_psbt,
+        BTreeMap::from([(0, (signing_address, vec![EcdsaSighashType::All as u8]))]),
+        false,
+    )
+    .await
+    .unwrap();
+    let signed_psbt = BASE64_ENGINE
+        .decode(signed_psbt.psbt)
+        .expect("Failed to decode signed PSBT");
+
+    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).unwrap();
+    // The signed PSBT is enough, but we combine them nonetheless to make sure they are compatible and that
+    // walletconnect didn't trick us with random shit.
+    psbt.combine(signed_psbt).unwrap();
+
+    let walletconnect_sig = psbt.inputs[0].partial_sigs.values().next().unwrap();
+    let redeem_script = psbt.inputs[0].redeem_script.as_ref().unwrap();
+
+    // The signature and the redeem script are inserted as data.
+    let p2sh_signature = Builder::default().push_data(&walletconnect_sig.to_vec()).into_bytes();
+    let redeem_script = Builder::default().push_data(&redeem_script.as_bytes()).into_bytes();
+
+    let mut final_script_sig = Bytes::new();
+    final_script_sig.extend_from_slice(&p2sh_signature);
+    final_script_sig.extend_from_slice(&unlocking_script);
+    final_script_sig.extend_from_slice(&redeem_script);
+
+    let mut signed_transaction: UtxoTx = tx_input_signer.clone().into();
+    signed_transaction.inputs[0].script_sig = final_script_sig;
+    signed_transaction.inputs[0].script_witness = vec![];
+
+    signed_transaction
+}
+
+/// Converts a `TransactionInputSigner` to a `Transaction` without signatures.
+fn unsigned_tx_from_input_signer(tx_input_signer: &TransactionInputSigner) -> Transaction {
+    Transaction {
+        version: tx_input_signer.version,
+        lock_time: PackedLockTime(tx_input_signer.lock_time),
+        input: tx_input_signer
+            .inputs
+            .iter()
+            .map(|input| bitcoin::TxIn {
+                previous_output: input.previous_output.into(),
+                sequence: Sequence(input.sequence),
+                ..Default::default()
+            })
+            .collect(),
+        output: tx_input_signer
+            .outputs
+            .iter()
+            .map(|output| output.clone().into())
+            .collect(),
+    }
 }
