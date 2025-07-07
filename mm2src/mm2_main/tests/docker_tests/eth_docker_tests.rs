@@ -34,15 +34,14 @@ use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_for_kickstart, disable_coin,
                                   enable_erc20_token_v2, enable_eth_coin_v2, enable_eth_with_tokens_v2,
                                   erc20_dev_conf, eth1_dev_conf, eth_dev_conf, get_locked_amount, get_new_address,
-                                  get_token_info, mm_dump, my_swap_status, nft_dev_conf, start_swaps, MarketMakerIt,
-                                  Mm2TestConf, SwapV2TestContracts, TestNode};
+                                  get_token_info, mm_dump, my_swap_status, nft_dev_conf, set_price, start_swaps,
+                                  MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
 use mm2_test_helpers::structs::MyOrdersRpcResult;
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
                                 TokenInfo};
 use serde_json::Value as Json;
-#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
@@ -3004,6 +3003,225 @@ fn test_maker_order_recovery_on_tpu() {
         1,
         "Onur ETH/ETH1 orderbook must see Bob's recovered order again."
     );
+}
+
+#[test]
+fn test_maker_order_partial_fill_recovery_on_tpu() {
+    // Initialize swap addresses and configurations
+    let swap_addresses = SwapAddresses::init();
+    let contracts = SwapV2TestContracts {
+        maker_swap_v2_contract: swap_addresses.swap_v2_contracts.maker_swap_v2_contract.addr_to_string(),
+        taker_swap_v2_contract: swap_addresses.swap_v2_contracts.taker_swap_v2_contract.addr_to_string(),
+        nft_maker_swap_v2_contract: swap_addresses
+            .swap_v2_contracts
+            .nft_maker_swap_v2_contract
+            .addr_to_string(),
+    };
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+    let node = TestNode {
+        url: GETH_RPC_URL.to_string(),
+    };
+
+    // start Bob, Alice and Onur
+    let (_, bob_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX, ETH, &eth_dev_conf(), swap_addresses, false);
+    let (_, alice_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
+    let (_, onur_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
+
+    let coins = json!([eth_dev_conf(), eth1_dev_conf()]);
+
+    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+        bob_conf.conf.clone(),
+        bob_conf.rpc_password,
+        None,
+        &[("ABORT_SWAP_FOR_TEST", "1")],
+    ))
+    .unwrap();
+
+    let alice_conf =
+        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+            .ip
+            .to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
+
+    let onur_conf = Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(onur_priv_key)), &coins, &[&mm_bob
+        .ip
+        .to_string()]);
+    let mm_onur = MarketMakerIt::start(onur_conf.conf.clone(), onur_conf.rpc_password, None).unwrap();
+
+    // 1. Enable coins for Bob and fund his addresses.
+    let bob_eth_activation_json = block_on(enable_eth_coin_v2(
+        &mm_bob,
+        ETH,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+
+    let bob_address_str = bob_eth_activation_json["result"]["eth_addresses_infos"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap();
+    let bob_address = Address::from_str(bob_address_str).unwrap();
+    fill_eth(bob_address, U256::from(10).pow(U256::from(19))); // Fund Bob with 10 ETH
+
+    let bob_eth1_activation_json = block_on(enable_eth_coin_v2(
+        &mm_bob,
+        ETH1,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+
+    let bob_eth1_address_str = bob_eth1_activation_json["result"]["eth_addresses_infos"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap();
+    let bob_eth1_address = Address::from_str(bob_eth1_address_str).unwrap();
+    fill_eth(bob_eth1_address, U256::from(10).pow(U256::from(19))); // Fund Bob with 10 ETH1
+
+    // 2. Enable coins for Alice and fund her addresses.
+    let alice_eth_activation_json = block_on(enable_eth_coin_v2(
+        &mm_alice,
+        ETH,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+
+    let alice_eth_address_str = alice_eth_activation_json["result"]["eth_addresses_infos"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap();
+    let alice_eth_address = Address::from_str(alice_eth_address_str).unwrap();
+    fill_eth(alice_eth_address, U256::from(10).pow(U256::from(19))); // Fund Alice with 10 ETH
+
+    let alice_eth1_activation_json = block_on(enable_eth_coin_v2(
+        &mm_alice,
+        ETH1,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+
+    let alice_eth1_address_str = alice_eth1_activation_json["result"]["eth_addresses_infos"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap();
+    let alice_eth1_address = Address::from_str(alice_eth1_address_str).unwrap();
+    fill_eth(alice_eth1_address, U256::from(10).pow(U256::from(19))); // Fund Alice with 10 ETH1
+
+    // 3. Enable coins for Onur (observer, no funding needed).
+    block_on(enable_eth_coin_v2(
+        &mm_onur,
+        ETH,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+    block_on(enable_eth_coin_v2(
+        &mm_onur,
+        ETH1,
+        &swap_contract_address,
+        contracts.clone(),
+        None,
+        &[node.clone()],
+    ));
+
+    let send_my_orders_rpc = |mm: &MarketMakerIt| -> MyOrdersRpcResult {
+        let rc = block_on(mm.rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "my_orders",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+        serde_json::from_str(&rc.1).unwrap()
+    };
+
+    let send_orderbook_rpc = |mm: &MarketMakerIt| -> Json {
+        let rc = block_on(mm.rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "mmrpc": "2.0",
+            "params": {
+                "base": "ETH",
+                "rel": "ETH1",
+            },
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        serde_json::from_str(&rc.1).unwrap()
+    };
+
+    block_on(set_price(&mm_bob, "ETH", "ETH1", "1.0", "2.0", false));
+
+    let orderbook_result = send_orderbook_rpc(&mm_onur);
+    let asks = orderbook_result["result"]["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0]["price"]["decimal"], "1");
+    assert_eq!(asks[0]["base_max_volume"]["decimal"], "2");
+
+    // Alice takes a partial amount
+    let alice_buy = block_on(mm_alice.rpc(&json!({
+        "userpass": mm_alice.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": "ETH1",
+        "price": "1.0",
+        "volume": "1.0",
+    })))
+    .unwrap();
+    assert!(alice_buy.0.is_success(), "buy failed: {}", alice_buy.1);
+    let buy_result: Json = serde_json::from_str(&alice_buy.1).unwrap();
+    let swap_uuid = buy_result["result"]["uuid"].as_str().unwrap();
+
+    // Verify intermediate state (order partially filled)
+    block_on(mm_bob.wait_for_log(30., |log| {
+        log.contains(&format!("Maker swap {} has successfully started", swap_uuid))
+    }))
+    .unwrap();
+
+    let my_orders_rpc = send_my_orders_rpc(&mm_bob);
+    let maker_order = my_orders_rpc.result.maker_orders.values().next().unwrap();
+    assert_eq!(maker_order.available_amount.to_string(), "1");
+
+    let orderbook_result = send_orderbook_rpc(&mm_onur);
+    let asks = orderbook_result["result"]["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0]["base_max_volume"]["decimal"], "1");
+
+    // Wait for abort and recovery
+    block_on(mm_bob.wait_for_log(30., |log| log.contains("Aborting it intentionally."))).unwrap();
+    block_on(mm_bob.wait_for_log(30., |log| log.contains("Successfully recovered volume for order"))).unwrap();
+
+    // Stop Alice to prevent her from re-taking the order
+    block_on(mm_alice.stop()).unwrap();
+
+    // Verify final state (volume recovered)
+    let my_orders_rpc = send_my_orders_rpc(&mm_bob);
+    let maker_order = my_orders_rpc.result.maker_orders.values().next().unwrap();
+    assert_eq!(maker_order.available_amount.to_string(), "2");
+
+    let orderbook_result = send_orderbook_rpc(&mm_onur);
+    let asks = orderbook_result["result"]["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0]["base_max_volume"]["decimal"], "2");
 }
 
 fn log_swap_status_before_stop(mm: &MarketMakerIt, uuid: &str, role: &str) {
