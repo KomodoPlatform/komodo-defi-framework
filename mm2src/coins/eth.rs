@@ -3065,7 +3065,7 @@ impl RpcCommonOps for EthCoin {
 
 impl EthCoin {
     pub(crate) async fn web3(&self) -> Result<Web3<Web3Transport>, Web3RpcError> {
-        self.get_live_client().await.map(|t| t.as_ref().clone())
+        self.get_live_client().await.map(|t| t.0)
     }
 
     /// Gets `SenderRefunded` events from etomic swap smart contract since `from_block`
