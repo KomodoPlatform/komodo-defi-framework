@@ -90,7 +90,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     let my_pubsecp = mm2_internal_pubkey_hex(&ctx, String::from).map_err(MmError::into_inner)?;
 
-    let orderbook = ordermatch_ctx.orderbook.lock().await;
+    let orderbook = ordermatch_ctx.orderbook.lock();
     let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
@@ -256,7 +256,7 @@ pub async fn orderbook_rpc_v2(
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
     let my_pubsecp = mm2_internal_pubkey_hex(&ctx, OrderbookRpcError::Internal)?;
-    let orderbook = ordermatch_ctx.orderbook.lock().await;
+    let orderbook = ordermatch_ctx.orderbook.lock();
     let my_p2p_pubkeys = &orderbook.my_p2p_pubkeys;
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {

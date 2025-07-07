@@ -665,7 +665,7 @@ async fn process_bot_logic(ctx: &MmArc) {
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().await.orders.clone();
+    let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let mut futures_order_update = Vec::with_capacity(maker_orders.len());
     for (uuid, order_mutex) in maker_orders {
         let order = order_mutex.lock().await;

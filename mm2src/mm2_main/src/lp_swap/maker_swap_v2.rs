@@ -2,7 +2,9 @@ use super::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use super::swap_v2_common::*;
 use super::{swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, NEGOTIATE_SEND_INTERVAL,
             NEGOTIATION_TIMEOUT_SEC};
-use crate::lp_ordermatch::{delete_my_maker_order, MakerOrderCancellationReason, OrdermatchContext};
+use crate::lp_ordermatch::{delete_my_maker_order, maker_order_created_p2p_notify, maker_order_updated_p2p_notify,
+                           new_protocol, recover_aborted_swap_from_order, MakerOrderCancellationReason,
+                           OrdermatchContext};
 use crate::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::lp_swap::swap_lock::SwapLock;
 use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg,
@@ -2093,19 +2095,94 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
+        warn!("Swap {} was aborted with reason: {}", state_machine.uuid, self.reason);
+
         let ctx = state_machine.ctx.clone();
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("should never happen");
-        let order_uuid = state_machine.order_uuid;
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("OrdermatchContext not initialized");
+        let maker_order_uuid = state_machine.order_uuid;
+        let swap_uuid = state_machine.uuid; // This is the ID of the taker's order/request
 
-        let mut maker_orders = ordermatch_ctx.maker_orders_ctx.lock().await;
+        // Step 1: Find the corresponding MakerOrder. It could be in the active `orders` map
+        // (if partially filled) or in the `locked_orders` map (if fully consumed).
+        let order_arc = {
+            let maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+            maker_orders_ctx.get_order(&maker_order_uuid).cloned()
+        };
 
-        if let Err(error) = maker_orders.recover_locked_order(order_uuid, ctx.weak()).await {
-            covered_error!("{error}");
+        // If not found in active orders, check the locked orders. This is safe because
+        // the lock on `maker_orders_ctx` has been released.
+        let order_arc = if let Some(arc) = order_arc {
+            Some(arc)
+        } else {
+            ordermatch_ctx.locked_orders.lock().get(&maker_order_uuid).cloned()
+        };
+
+        let order_arc = match order_arc {
+            Some(arc) => arc,
+            None => {
+                info!("Maker order {maker_order_uuid} not found for recovery. It might have been cancelled already.");
+                return;
+            },
+        };
+
+        // Step 2: Lock the order and recover the volume from the failed swap.
+        {
+            let mut order = order_arc.lock().await;
+            recover_aborted_swap_from_order(&mut order, swap_uuid);
+        } // The lock is released here.
+
+        // Step 3: If the order was in the `locked_orders` map, it means it was fully consumed and
+        // can now be moved back to the active `orders` map because volume has been freed up.
+        let was_locked = ordermatch_ctx.locked_orders.lock().remove(&maker_order_uuid).is_some();
+        if was_locked {
+            info!("Order {maker_order_uuid} was locked and is now being reactivated.");
+
+            // First, get the order data by awaiting the async lock.
+            // The async lock guard is dropped immediately after the clone.
+            let recovered_order = order_arc.lock().await.clone();
+
+            // Now, acquire the synchronous lock and perform the synchronous operation.
+            // This is safe because the lock guard is dropped at the end of this statement,
+            // and there is no `.await` within it.
+            // Todo: maybe remove reinsert_recovered_order from maker_orders_ctx but I don't think so
+            ordermatch_ctx
+                .maker_orders_ctx
+                .lock()
+                .reinsert_recovered_order(ctx.weak(), recovered_order);
         }
 
-        info!("{order_uuid} order is recovered");
+        // Step 4: Notify the network that the order has been either updated (its available volume has increased)
+        // or created with a new creation date if it was locked.
+        let order = order_arc.lock().await;
 
-        warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
+        if was_locked {
+            // The order was not public. Re-create it on the network.
+            // This requires fetching coin instances to get protocol info.
+            let (base_coin, rel_coin) = match coins::find_pair(&ctx, &order.base, &order.rel).await {
+                Ok(Some(pair)) => pair,
+                _ => {
+                    error!(
+                        "Could not find pair {}/{} for recovered order {}",
+                        order.base, order.rel, order.uuid
+                    );
+                    return;
+                },
+            };
+            maker_order_created_p2p_notify(
+                ctx,
+                &order,
+                base_coin.coin_protocol_info(None),
+                rel_coin.coin_protocol_info(Some(order.max_base_vol.clone() * order.price.clone())),
+            )
+            .await;
+        } else {
+            // The order was public. Just update its available volume.
+            let mut update_msg = new_protocol::MakerOrderUpdated::new(order.uuid);
+            update_msg.with_new_max_volume(order.available_amount().into());
+            maker_order_updated_p2p_notify(ctx, order.orderbook_topic(), update_msg, order.p2p_keypair()).await;
+        }
+
+        info!("Successfully recovered volume for order {maker_order_uuid} from aborted swap {swap_uuid}.");
     }
 }
 
@@ -2243,12 +2320,7 @@ impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
 async fn remove_locked_order_on_swap_finish(ctx: MmArc, order_uuid: Uuid, reason: MakerOrderCancellationReason) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("should never happen");
 
-    let removed_order = ordermatch_ctx
-        .maker_orders_ctx
-        .lock()
-        .await
-        .locked_orders
-        .remove(&order_uuid);
+    let removed_order = ordermatch_ctx.locked_orders.lock().remove(&order_uuid);
 
     match removed_order {
         Some(removed_order) => {

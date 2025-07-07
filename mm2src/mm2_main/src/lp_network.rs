@@ -240,7 +240,7 @@ async fn process_p2p_request(
     log::debug!("Got P2PRequest {:?}", request);
 
     let result = match request {
-        P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req).await,
+        P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
         P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).map(Some),
     };
 
