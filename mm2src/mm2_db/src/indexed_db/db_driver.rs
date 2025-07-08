@@ -52,9 +52,8 @@ pub struct IdbDatabaseImpl {
     db: IdbDatabase,
     db_name: String,
     tables: HashSet<String>,
+    _not_send: common::NotSend
 }
-
-impl !Send for IdbDatabaseImpl {}
 
 impl fmt::Debug for IdbDatabaseImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

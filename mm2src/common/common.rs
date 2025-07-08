@@ -229,6 +229,15 @@ lazy_static! {
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
 
+/// Marker type to indicate that a type is `!Send` in a stable way.
+pub struct NotSend(std::marker::PhantomData<*const ()>);
+
+impl Default for NotSend {
+    fn default() -> NotSend {
+        NotSend(std::marker::PhantomData)
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 #[repr(transparent)]

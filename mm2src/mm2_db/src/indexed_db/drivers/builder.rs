@@ -105,6 +105,7 @@ impl IdbDatabaseBuilder {
                         db,
                         db_name: self.db_name,
                         tables: table_names,
+                        _not_send: common::NotSend::default(),
                     });
                 },
             }
