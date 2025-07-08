@@ -7,6 +7,7 @@ use libp2p::{core::Endpoint,
              swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm},
              Multiaddr, PeerId};
 use log::{info, warn};
+use mm2_net::ip_addr::is_global_ipv4;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::{HashMap, HashSet, VecDeque},
@@ -370,7 +371,7 @@ impl PeersExchange {
         let mut components = address.iter();
         match components.next() {
             Some(Protocol::Ip4(addr)) => {
-                if !addr.is_global() {
+                if is_global_ipv4(&addr) {
                     return false;
                 }
             },

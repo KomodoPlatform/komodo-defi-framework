@@ -18,6 +18,7 @@ use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, SwarmEvent
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
+use mm2_net::ip_addr::is_global_ipv4;
 use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -965,7 +966,7 @@ fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
         .filter(|listener| {
             for protocol in listener.iter() {
                 if let Protocol::Ip4(ip) = protocol {
-                    return ip.is_global();
+                    return is_global_ipv4(&ip);
                 }
             }
             false

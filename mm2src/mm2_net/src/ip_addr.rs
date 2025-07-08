@@ -218,3 +218,23 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
         address: address.to_owned(),
     })
 }
+
+/// Stable port of `Ipv4Addr::is_global` which should be removed once
+/// stabilized on std.
+pub fn is_global_ipv4(ip: &Ipv4Addr) -> bool {
+    !(ip.octets()[0] == 0 // "This network"
+            || ip.is_private()
+            || ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000 == 0b0100_0000)
+            || ip.is_loopback()
+            || ip.is_link_local()
+            // addresses reserved for future protocols (`192.0.0.0/24`)
+            // .9 and .10 are documented as globally reachable so they're excluded
+            || (
+                ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
+                && ip.octets()[3] != 9 && ip.octets()[3] != 10
+            )
+            || ip.is_documentation()
+            || ip.octets()[0] == 198 && (ip.octets()[1] & 0xfe) == 18
+            || ip.octets()[0] & 240 == 240 && !ip.is_broadcast()
+            || ip.is_broadcast())
+}

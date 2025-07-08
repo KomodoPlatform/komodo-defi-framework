@@ -1,5 +1,3 @@
-#![feature(ip)]
-
 pub mod behaviours;
 
 mod relay_address;
