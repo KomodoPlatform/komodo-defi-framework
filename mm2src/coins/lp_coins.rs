@@ -30,7 +30,6 @@
 )]
 #![allow(uncommon_codepoints)]
 #![feature(hash_raw_entry)]
-#![feature(stmt_expr_attributes)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
