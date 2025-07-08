@@ -1,9 +1,9 @@
-#![feature(negative_impls)]
+#![feature(negative_impls, auto_traits)]
 
 pub mod prelude;
 pub mod state_machine;
 pub mod storable_state_machine;
 
 
-pub trait NotSame {}
+pub auto trait NotSame {}
 impl<X> !NotSame for (X, X) {}
