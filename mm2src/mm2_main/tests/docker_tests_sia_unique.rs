@@ -1,6 +1,5 @@
 #![feature(custom_test_frameworks)]
 #![feature(test)]
-#![feature(hash_raw_entry)]
 #![cfg(feature = "enable-sia")]
 #![cfg(not(target_arch = "wasm32"))]
 #![allow(unused_imports, dead_code)]

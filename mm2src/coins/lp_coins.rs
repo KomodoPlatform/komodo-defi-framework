@@ -29,7 +29,6 @@
     clippy::needless_lifetimes // mocktopus requires explicit lifetimes
 )]
 #![allow(uncommon_codepoints)]
-#![feature(hash_raw_entry)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;

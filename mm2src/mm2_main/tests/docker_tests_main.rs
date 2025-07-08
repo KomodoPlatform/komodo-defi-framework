@@ -3,7 +3,6 @@
 #![feature(custom_test_frameworks)]
 #![feature(test)]
 #![test_runner(docker_tests_runner)]
-#![feature(hash_raw_entry)]
 
 #[cfg(test)]
 #[macro_use]
