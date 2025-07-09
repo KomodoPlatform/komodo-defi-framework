@@ -18,10 +18,10 @@ use base64::Engine;
 #[serde(rename_all = "camelCase")]
 struct GetAccountAddressesItem {
     address: String,
-    // FIXME: this is optional
-    public_key: String,
-    // FIXME: this is also optional
-    path: StandardHDPath,
+    public_key: Option<String>,
+    path: Option<StandardHDPath>,
+    #[allow(dead_code)]
+    intention: Option<String>,
 }
 
 /// Get the enabled address (chosen by the user)
@@ -30,7 +30,7 @@ pub async fn get_walletconnect_address(
     session_topic: &str,
     chain_id: &WcChainId,
     derivation_path: &StandardHDPath,
-) -> MmResult<(String, String), WalletConnectError> {
+) -> MmResult<(String, Option<String>), WalletConnectError> {
     wc.validate_update_active_chain_id(session_topic, chain_id).await?;
     let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
     let params = json!({
@@ -44,16 +44,36 @@ pub async fn get_walletconnect_address(
             params,
         )
         .await?;
+
     // Find the address that the user is interested in (the enabled address).
-    let account = accounts
-        .into_iter()
-        .find(|a| a.path == *derivation_path)
-        .ok_or_else(|| {
-            WalletConnectError::NoAccountFound(format!("No address found for derivaiton path: {}", derivation_path))
-        })?;
-    Ok((account.address, account.public_key))
+    let account = accounts.iter().find(|a| a.path.as_ref() == Some(derivation_path));
+
+    match account {
+        // If we found an account with the specific derivation path, we pick it.
+        Some(account) => Ok((account.address.clone(), account.public_key.clone())),
+        // If we didn't find the account with the specific derivation path, we perform some sane fallback.
+        None => {
+            let first_account = accounts.into_iter().next().ok_or_else(|| {
+                WalletConnectError::NoAccountFound(format!(
+                    "WalletConnect returned no addresses for getAccountAddresses"
+                ))
+            })?;
+            // If the response doesn't include derivation path information, just return the first address.
+            if first_account.path.is_none() {
+                common::log::warn!("WalletConnect didn't specify derivation paths for getAccountAddresses, picking the first address: {}", first_account.address);
+                Ok((first_account.address, first_account.public_key))
+            } else {
+                // Otherwise, the response includes a derivation path, which means we didn't find the one that the user was interested in.
+                MmError::err(WalletConnectError::NoAccountFound(format!(
+                    "No address found for derivation path: {}",
+                    derivation_path
+                )))
+            }
+        },
+    }
 }
 
+/// The response from WalletConnect for `signMessage` request.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SignMessageResponse {
@@ -63,6 +83,7 @@ struct SignMessageResponse {
     message_hash: Option<String>,
 }
 
+/// Get the public key associated with some address via WalletConnect signature.
 pub async fn get_pubkey_via_wallatconnect_signature(
     wc: &WalletConnectCtx,
     session_topic: &str,

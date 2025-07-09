@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumC
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::wallet_connect::get_walletconnect_address;
+use crate::utxo::wallet_connect::{get_pubkey_via_wallatconnect_signature, get_walletconnect_address};
 use crate::utxo::{output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields,
                   UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
@@ -250,6 +250,10 @@ async fn build_utxo_fields_with_walletconnect<Builder>(
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
+    let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), builder.ticker())
+        .build()
+        .map_mm_err()?;
+
     // Get and parse the chain_id of the coin.
     let chain_id = builder.conf()["chain_id"].as_str().ok_or_else(|| {
         WalletConnectError::InvalidChainId(format!(
@@ -281,6 +285,18 @@ where
         .await
         .map_mm_err()?;
 
+    let pubkey = match pubkey {
+        Some(pubkey) => pubkey,
+        None => {
+            let sign_message_prefix = conf.sign_message_prefix.as_ref().ok_or_else(|| {
+                UtxoCoinBuildError::Internal("sign_message_prefix is not set in coins config".to_string())
+            })?;
+            get_pubkey_via_wallatconnect_signature(&wc_ctx, session_topic, &chain_id, &address, sign_message_prefix)
+                .await
+                .map_mm_err()?
+        },
+    };
+
     // Construct the PrivKeyPolicy (of WalletConnect type).
     let pubkey = PublicKey::from_str(&pubkey).map_err(|e| {
         WalletConnectError::ClientError(format!("Received a bad pubkey={} from WalletConnect: {}", pubkey, e))
@@ -292,10 +308,6 @@ where
         public_key_uncompressed,
         session_topic: session_topic.to_owned(),
     };
-
-    let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), builder.ticker())
-        .build()
-        .map_mm_err()?;
 
     // Construct the derivation method (of SingleAddress type).
     let my_address = AddressBuilder::new(
