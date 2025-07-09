@@ -54,9 +54,9 @@ pub async fn get_walletconnect_address(
         // If we didn't find the account with the specific derivation path, we perform some sane fallback.
         None => {
             let first_account = accounts.into_iter().next().ok_or_else(|| {
-                WalletConnectError::NoAccountFound(format!(
-                    "WalletConnect returned no addresses for getAccountAddresses"
-                ))
+                WalletConnectError::NoAccountFound(
+                    "WalletConnect returned no addresses for getAccountAddresses".to_string(),
+                )
             })?;
             // If the response doesn't include derivation path information, just return the first address.
             if first_account.path.is_none() {
