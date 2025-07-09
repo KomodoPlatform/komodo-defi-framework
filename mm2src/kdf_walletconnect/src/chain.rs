@@ -103,6 +103,7 @@ pub enum WcRequestMethods {
     UtxoGetAccountAddresses,
     UtxoSendTransfer,
     UtxoSignPsbt,
+    UtxoPersonalSign,
 }
 
 impl AsRef<str> for WcRequestMethods {
@@ -117,6 +118,7 @@ impl AsRef<str> for WcRequestMethods {
             Self::UtxoGetAccountAddresses => "getAccountAddresses",
             Self::UtxoSendTransfer => "sendTransfer",
             Self::UtxoSignPsbt => "signPsbt",
+            Self::UtxoPersonalSign => "signMessage",
         }
     }
 }
