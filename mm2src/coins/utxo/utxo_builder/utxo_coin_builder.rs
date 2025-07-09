@@ -345,7 +345,12 @@ async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
-    let key_pair = priv_key_policy.activated_key_or_err().map_mm_err()?;
+    let pubkey = {
+        match priv_key_policy {
+            PrivKeyPolicy::WalletConnect { public_key, .. } => Public::Compressed(public_key.0.into()),
+            _ => *priv_key_policy.activated_key_or_err().map_mm_err()?.public(),
+        }
+    };
     let addr_format = builder.address_format()?;
     let my_address = AddressBuilder::new(
         addr_format,
@@ -353,7 +358,7 @@ where
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
     )
-    .as_pkh_from_pk(*key_pair.public())
+    .as_pkh_from_pk(pubkey)
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
 
