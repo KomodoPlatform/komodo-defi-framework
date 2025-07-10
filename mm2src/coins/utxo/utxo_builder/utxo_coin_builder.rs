@@ -157,17 +157,19 @@ where
     let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), builder.ticker())
         .build()
         .map_mm_err()?;
+
     let private = Private {
         prefix: conf.wif_prefix,
         secret: priv_key,
         compressed: true,
         checksum_type: conf.checksum_type,
     };
+
     let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
     let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
-    let addr_format = builder.address_format()?;
+
     let my_address = AddressBuilder::new(
-        addr_format,
+        builder.address_format()?,
         conf.checksum_type,
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
@@ -175,6 +177,7 @@ where
     .as_pkh_from_pk(*key_pair.public())
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
+
     let derivation_method = DerivationMethod::SingleAddress(my_address);
     build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
@@ -191,24 +194,27 @@ where
         .map_mm_err()?;
 
     let path_to_address = builder.activation_params().path_to_address;
+
     let path_to_coin = conf
         .derivation_path
         .as_ref()
-        .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)
-        .map_mm_err()?;
+        .ok_or(UtxoConfError::DerivationPathIsNotSet)?;
+
+    let derivation_path = path_to_address
+        .to_derivation_path(path_to_coin)
+        .mm_err(|e| UtxoCoinBuildError::InvalidPathToAddress(e.to_string()))?;
+
     let secret = global_hd_ctx
-        .derive_secp256k1_secret(
-            &path_to_address
-                .to_derivation_path(path_to_coin)
-                .mm_err(|e| UtxoCoinBuildError::InvalidPathToAddress(e.to_string()))?,
-        )
+        .derive_secp256k1_secret(&derivation_path)
         .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+
     let private = Private {
         prefix: conf.wif_prefix,
         secret,
         compressed: true,
         checksum_type: conf.checksum_type,
     };
+
     let activated_key_pair =
         KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
     let priv_key_policy = PrivKeyPolicy::HDWallet {
@@ -223,10 +229,13 @@ where
         HDWalletCoinStorage::init_with_rmd160(builder.ctx(), builder.ticker().to_owned(), hd_wallet_rmd160)
             .await
             .map_mm_err()?;
+
     let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
         .await
         .mm_err(UtxoCoinBuildError::from)?;
+
     let gap_limit = builder.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
+
     let hd_wallet = UtxoHDWallet {
         inner: HDWallet {
             hd_wallet_rmd160,
@@ -238,6 +247,7 @@ where
         },
         address_format,
     };
+
     let derivation_method = DerivationMethod::HDWallet(hd_wallet);
     build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
