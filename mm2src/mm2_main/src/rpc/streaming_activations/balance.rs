@@ -7,6 +7,7 @@ use coins::utxo::utxo_balance_events::UtxoBalanceEventStreamer;
 use coins::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use coins::{lp_coinfind, MmCoin, MmCoinEnum};
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};

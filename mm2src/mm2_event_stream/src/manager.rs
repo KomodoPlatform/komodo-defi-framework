@@ -545,7 +545,7 @@ mod tests {
         manager.remove_streamer_if_down(&streamer_id);
 
         // The streamer should be removed.
-        assert!(manager.read().streamers.get(&streamer_id).is_none());
+        assert!(!manager.read().streamers.contains_key(&streamer_id));
         // And the client is no more listening to it.
         assert!(!manager
             .0

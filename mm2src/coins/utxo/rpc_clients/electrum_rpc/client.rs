@@ -427,8 +427,10 @@ impl ElectrumClient {
                             final_response = Some((address, response));
                         }
                         client.connection_manager.not_needed(connection.address());
-                        if !send_to_all && final_response.is_some() {
-                            return Ok(final_response.unwrap());
+                        if !send_to_all {
+                            if let Some(response) = final_response {
+                                return Ok(response);
+                            }
                         }
                     },
                     Err(e) => {
@@ -735,7 +737,7 @@ impl ElectrumClient {
                         }
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
-                        serialized.extend(headers.hex.0.into_iter());
+                        serialized.extend(headers.hex.0);
                         drop_mutability!(serialized);
                         let mut reader =
                             Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
@@ -1073,7 +1075,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     }
                     let len = CompactInteger::from(res.count);
                     let mut serialized = serialize(&len).take();
-                    serialized.extend(res.hex.0.into_iter());
+                    serialized.extend(res.hex.0);
                     let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                     let headers = reader.read_list::<BlockHeader>()?;
                     let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();

@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info, warn};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -63,7 +64,7 @@ where
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
@@ -77,7 +78,7 @@ where
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilder for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -106,7 +107,7 @@ where
     }
 }
 
-impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
+impl<F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -511,6 +512,7 @@ impl PossibleChainReorgError {
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
+#[allow(clippy::unit_arg)]
 async fn resolve_possible_chain_reorg(
     client: &ElectrumClient,
     server_address: &str,

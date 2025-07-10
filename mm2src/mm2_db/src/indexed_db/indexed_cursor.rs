@@ -14,8 +14,7 @@
 //!
 //! If you want to find all `RICK/MORTY` swaps where
 //! 1) `10 <= base_coin_value <= 13`
-//! 2) `started_at <= 1000000030`,
-//! you can use [`WithBound::bound`] along with [`WithOnly::only`]:
+//! 2) `started_at <= 1000000030`, you can use [`WithBound::bound`] along with [`WithOnly::only`]:
 //! ```rust
 //! let table = open_table_somehow();
 //! let all_rick_morty_swaps = table
@@ -184,7 +183,7 @@ pub struct CursorIter<'transaction, Table> {
     phantom: PhantomData<&'transaction Table>,
 }
 
-impl<'transaction, Table: TableSignature> CursorIter<'transaction, Table> {
+impl<Table: TableSignature> CursorIter<'_, Table> {
     /// Advances the iterator and returns the next value.
     /// Please note that the items are sorted by the index keys.
     pub async fn next(&mut self) -> CursorResult<Option<(ItemId, Table)>> {
@@ -425,8 +424,8 @@ mod tests {
                 // Get `BeBigUint` numbers that should have been returned by the cursor above.
                 let expected = numbers
                     .iter()
+                    .filter(|&num| num_x <= num && num <= num_y)
                     .cloned()
-                    .filter(|num| num_x <= num && num <= num_y)
                     .sorted()
                     .collect::<Vec<_>>();
                 assert_eq!(actual_items, expected);

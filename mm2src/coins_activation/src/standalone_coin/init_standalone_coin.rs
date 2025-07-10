@@ -92,12 +92,11 @@ where
         return MmError::err(InitStandaloneCoinError::CoinIsAlreadyActivated { ticker: request.ticker });
     }
 
-    let (coin_conf, protocol_info) =
-        coin_conf_with_protocol(&ctx, &request.ticker, None).map_mm_err::<InitStandaloneCoinError>()?;
+    let (coin_conf, protocol_info) = coin_conf_with_protocol(&ctx, &request.ticker, None).map_mm_err()?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitStandaloneCoinError::Internal)
-        .map_mm_err::<InitStandaloneCoinError>()?;
+        .map_mm_err()?;
 
     let spawner = ctx.spawner();
     let task = InitStandaloneCoinTask::<Standalone> {
@@ -145,14 +144,12 @@ pub async fn init_standalone_coin_user_action<Standalone: InitStandaloneCoinActi
 ) -> MmResult<SuccessResponse, InitStandaloneCoinUserActionError> {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitStandaloneCoinUserActionError::Internal)
-        .map_mm_err::<InitStandaloneCoinUserActionError>()?;
+        .map_mm_err()?;
     let mut task_manager = Standalone::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitStandaloneCoinUserActionError::Internal(poison.to_string()))
-        .map_mm_err::<InitStandaloneCoinUserActionError>()?;
-    task_manager
-        .on_user_action(req.task_id, req.user_action)
-        .map_mm_err::<InitStandaloneCoinUserActionError>()?;
+        .map_mm_err()?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -164,10 +161,8 @@ pub async fn cancel_init_standalone_coin<Standalone: InitStandaloneCoinActivatio
     let mut task_manager = Standalone::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| CancelInitStandaloneCoinError::Internal(poison.to_string()))
-        .map_mm_err::<CancelInitStandaloneCoinError>()?;
-    task_manager
-        .cancel_task(req.task_id)
-        .map_mm_err::<CancelInitStandaloneCoinError>()?;
+        .map_mm_err()?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -216,12 +211,12 @@ where
             task_handle.clone(),
         )
         .await
-        .map_mm_err::<Self::Error>()?;
+        .map_mm_err()?;
 
         let result = coin
             .get_activation_result(self.ctx.clone(), task_handle, &self.request.activation_params)
             .await
-            .map_mm_err::<Self::Error>()?;
+            .map_mm_err()?;
         log::info!("{} current block {}", ticker, result.current_block());
 
         let tx_history = self.request.activation_params.tx_history();
@@ -229,9 +224,7 @@ where
             let current_balances = result.get_addresses_balances();
             coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),
-                TxHistoryStorageBuilder::new(&self.ctx)
-                    .build()
-                    .map_mm_err::<Self::Error>()?,
+                TxHistoryStorageBuilder::new(&self.ctx).build().map_mm_err()?,
                 self.ctx.event_stream_manager.clone(),
                 current_balances,
             );
@@ -239,7 +232,7 @@ where
 
         lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker })
             .await
-            .map_mm_err::<Self::Error>()?;
+            .map_mm_err()?;
 
         Ok(result)
     }

@@ -884,18 +884,8 @@ async fn build_web3_instances(
 
         let transport = create_transport(ctx, &uri, &eth_node, &event_handlers)?;
         let web3 = Web3::new(transport);
-        let version = match web3.web3().client_version().await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Couldn't get client version for url {}: {}", eth_node.url, e);
-                continue;
-            },
-        };
 
-        web3_instances.push(Web3Instance {
-            web3,
-            is_parity: version.contains("Parity") || version.contains("parity"),
-        });
+        web3_instances.push(Web3Instance(web3));
     }
 
     if web3_instances.is_empty() {
@@ -990,7 +980,7 @@ async fn build_metamask_transport(
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
-    let web3_instances = vec![Web3Instance { web3, is_parity: false }];
+    let web3_instances = vec![Web3Instance(web3)];
 
     Ok(web3_instances)
 }

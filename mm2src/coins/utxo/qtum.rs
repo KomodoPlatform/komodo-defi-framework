@@ -193,7 +193,7 @@ pub struct QtumCoinBuilder<'a> {
 }
 
 #[async_trait]
-impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
+impl UtxoCoinBuilderCommonOps for QtumCoinBuilder<'_> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
@@ -206,7 +206,7 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
 }
 
 #[async_trait]
-impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
+impl UtxoCoinBuilder for QtumCoinBuilder<'_> {
     type ResultCoin = QtumCoin;
     type Error = UtxoCoinBuildError;
 
@@ -221,7 +221,7 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
     }
 }
 
-impl<'a> MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'a> {}
+impl MergeUtxoArcOps<QtumCoin> for QtumCoinBuilder<'_> {}
 
 impl<'a> QtumCoinBuilder<'a> {
     pub fn new(

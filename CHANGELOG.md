@@ -1,9 +1,9 @@
-## v2.5.0-beta - 2025-06-23
+## v2.5.0-beta - 2025-07-04
 
 ### Features:
 
 **WalletConnect Integration**:
-- WalletConnect v2 support for EVM and Cosmos coins was implemented, enabling wallet connection and transaction signing via the WalletConnect protocol. [#2223](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2223) [#2485](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2485)
+- WalletConnect v2 support for EVM and Cosmos coins was implemented, enabling wallet connection and transaction signing via the WalletConnect protocol. [#2223](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2223) [#2485](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2485) [#2508](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2508)
 
 ---
 
@@ -36,6 +36,8 @@
 **Wallet**:
 - Unconfirmed z-coin notes are now correctly tracked. [#2331](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331)
 - HD multi-address support for message signing was implemented, allowing message signatures from multiple derived addresses. [#2432](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2432) [#2474](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2474)
+- A `delete_wallet` RPC was introduced to securely remove wallets after password confirmation, while preventing the deletion of the currently active wallet. [#2497](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2497)
+- A race condition during the initialization of Trezor-based hardware wallets was resolved by ensuring the correct account and address are loaded before fetching the enabled address, preventing startup errors. [#2504](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2504)
 
 **UTXO**:
 - Validation of expected public keys for p2pk inputs was corrected, resolving an error in p2pk transaction processing. [#2408](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2408)

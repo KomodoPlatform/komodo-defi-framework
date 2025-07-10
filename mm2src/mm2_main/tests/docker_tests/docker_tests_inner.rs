@@ -2229,7 +2229,7 @@ fn test_get_max_maker_vol() {
     let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
     assert_eq!(actual, expected);
 
-    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
 }
 
@@ -4125,7 +4125,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"

@@ -28,8 +28,8 @@ impl IdbMultiKeyBoundCursor {
     }
 
     fn check_bounds(
-        only_values: &Vec<(String, Json)>,
-        bound_values: &Vec<(String, CursorBoundValue, CursorBoundValue)>,
+        only_values: &[(String, Json)],
+        bound_values: &[(String, CursorBoundValue, CursorBoundValue)],
     ) -> CursorResult<()> {
         if bound_values.is_empty() || (only_values.len() + bound_values.len() < 2) {
             let description = format!(

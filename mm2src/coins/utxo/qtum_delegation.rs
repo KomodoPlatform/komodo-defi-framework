@@ -185,7 +185,7 @@ impl QtumCoin {
                 .and_then(|receipt| {
                     receipt
                         .log
-                        .get(0)
+                        .first()
                         .and_then(|log_entry| log_entry.topics.get(1))
                         .map(|padded_staker_address_hex| padded_staker_address_hex.trim_start_matches('0'))
                 }) {

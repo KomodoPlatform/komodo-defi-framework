@@ -204,7 +204,7 @@ impl EventStreamer for EthBalanceEventStreamer {
                             }));
                             cache
                                 .entry(res.ticker.clone())
-                                .or_insert_with(HashMap::new)
+                                .or_default()
                                 .insert(res.address, res.balance);
                         },
                         Err(err) => {

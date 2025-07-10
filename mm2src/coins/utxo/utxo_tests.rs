@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -12,7 +13,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
                                                       ScanAddressesResponse};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumClientSettings, NativeUnspent};
+use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
 use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
                                GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
                                UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
@@ -43,15 +44,12 @@ use futures::future::{join_all, Either, FutureExt, TryFutureExt};
 use hex::FromHex;
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
-#[cfg(not(target_arch = "wasm32"))]
-use mm2_event_stream::StreamingManager;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_number::MmNumber;
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
                                   MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
 use mocktopus::mocking::*;
-use rand::{rngs::ThreadRng, Rng};
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
@@ -457,6 +455,9 @@ fn test_wait_for_payment_spend_timeout_native() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
+    use mm2_event_stream::StreamingManager;
+    use rpc_clients::ElectrumClientSettings;
+
     static mut OUTPUT_SPEND_CALLED: bool = false;
 
     ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
@@ -1213,6 +1214,8 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_generate_transaction_random_values() {
+    use rand::{rngs::ThreadRng, Rng};
+
     let client = NativeClientImpl::default();
     let mut rng = rand::thread_rng();
 

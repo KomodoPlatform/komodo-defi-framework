@@ -20,7 +20,7 @@ impl EthCoin {
 
         let mut error = web3::Error::Unreachable;
         for (i, client) in clients.clone().into_iter().enumerate() {
-            let execute_fut = match client.web3.transport() {
+            let execute_fut = match client.as_ref().transport() {
                 Web3Transport::Http(http) => http.execute(method, params.clone()),
                 Web3Transport::Websocket(socket) => {
                     socket.maybe_spawn_connection_loop(self.clone());
@@ -40,14 +40,14 @@ impl EthCoin {
                     debug!("Request on '{method}' failed. Error: {err}");
                     error = err;
 
-                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                    if let Web3Transport::Websocket(socket_transport) = client.as_ref().transport() {
                         socket_transport.stop_connection_loop().await;
                     };
                 },
                 Err(timeout_error) => {
                     debug!("Timeout exceed for '{method}' request. Error: {timeout_error}",);
 
-                    if let Web3Transport::Websocket(socket_transport) = client.web3.transport() {
+                    if let Web3Transport::Websocket(socket_transport) = client.as_ref().transport() {
                         socket_transport.stop_connection_loop().await;
                     };
                 },

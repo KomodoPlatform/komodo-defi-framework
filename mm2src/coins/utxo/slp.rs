@@ -298,6 +298,7 @@ pub struct SlpProtocolConf {
 }
 
 impl SlpToken {
+    #[allow(clippy::result_large_err)]
     pub fn new(
         decimals: u8,
         ticker: String,
