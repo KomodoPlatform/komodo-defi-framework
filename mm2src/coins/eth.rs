@@ -6837,6 +6837,12 @@ fn get_valid_nft_addr_to_withdraw(
 pub enum EthGasDetailsErr {
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(
+        fmt = "Amount {} is too low. Required minimum is {} to cover fees.",
+        amount,
+        threshold
+    )]
+    AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
     #[from_stringify("NumConversError")]
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
@@ -6919,7 +6925,11 @@ async fn get_eth_gas_details_from_withdraw_fee(
 
     // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
     let eth_value_for_estimate = if fungible_max && eth_coin.coin_type == EthCoinType::Eth {
-        eth_value - calc_total_fee(U256::from(eth_coin.gas_limit.eth_send_coins), &pay_for_gas_option).map_mm_err()?
+        let estimated_fee =
+            calc_total_fee(U256::from(eth_coin.gas_limit.eth_send_coins), &pay_for_gas_option).map_mm_err()?;
+        // Defaulting to zero is safe; if the balance is indeed too low, the `estimate_gas` call below
+        // will fail, and we will catch and handle that error gracefully.
+        eth_value.checked_sub(estimated_fee).unwrap_or_default()
     } else {
         eth_value
     };
@@ -6939,9 +6949,25 @@ async fn get_eth_gas_details_from_withdraw_fee(
         max_fee_per_gas,
         ..CallRequest::default()
     };
-    // TODO Note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
-    // TODO Ideally we should determine the case when we have the insufficient balance and return `WithdrawError::NotSufficientBalance`.
-    let gas_limit = eth_coin.estimate_gas_wrapper(estimate_gas_req).compat().await?;
+    let gas_limit = match eth_coin.estimate_gas_wrapper(estimate_gas_req).compat().await {
+        Ok(gas_limit) => gas_limit,
+        Err(e) => {
+            let error_str = e.to_string().to_lowercase();
+            if error_str.contains("insufficient funds") || error_str.contains("exceeds allowance") {
+                let standard_tx_fee =
+                    calc_total_fee(U256::from(eth_coin.gas_limit.eth_send_coins), &pay_for_gas_option).map_mm_err()?;
+                let threshold = u256_to_big_decimal(standard_tx_fee, eth_coin.decimals).map_mm_err()?;
+                let amount = u256_to_big_decimal(eth_value, eth_coin.decimals).map_mm_err()?;
+
+                return MmError::err(EthGasDetailsErr::AmountTooLow { amount, threshold });
+            }
+            // This can be a transport error or a non-standard insufficient funds error.
+            // In the latter case,
+            // we can add to the above error handling of insufficient funds on a case-by-case basis.
+            return MmError::err(EthGasDetailsErr::Transport(e.to_string()));
+        },
+    };
+
     Ok((gas_limit, pay_for_gas_option))
 }
 

@@ -3295,6 +3295,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
     fn from(e: EthGasDetailsErr) -> Self {
         match e {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthGasDetailsErr::AmountTooLow { amount, threshold } => WithdrawError::AmountTooLow { amount, threshold },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
             EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
