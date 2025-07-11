@@ -84,6 +84,7 @@ use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
 use rand::seq::SliceRandom;
+use regex::Regex;
 use rlp::{DecoderError, Encodable, RlpStream};
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -6843,6 +6844,17 @@ pub enum EthGasDetailsErr {
         threshold
     )]
     AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
+    #[display(
+        fmt = "Provided gas fee cap {} Gwei is too low, the required network base fee is {} Gwei.",
+        provided_fee_cap,
+        required_base_fee
+    )]
+    GasFeeCapTooLow {
+        provided_fee_cap: BigDecimal,
+        required_base_fee: BigDecimal,
+    },
+    #[display(fmt = "The provided 'max_fee_per_gas' is below the current block's base fee.")]
+    GasFeeCapBelowBaseFee,
     #[from_stringify("NumConversError")]
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
@@ -6867,6 +6879,19 @@ impl From<Web3RpcError> for EthGasDetailsErr {
             Web3RpcError::NftProtocolNotSupported => EthGasDetailsErr::NftProtocolNotSupported,
         }
     }
+}
+
+fn parse_fee_cap_error(message: &str) -> Option<(U256, U256)> {
+    let re = Regex::new(r"gasfeecap: (\d+)\s+basefee: (\d+)").ok()?;
+    let caps = re.captures(message)?;
+
+    let user_cap_str = caps.get(1)?.as_str();
+    let required_base_str = caps.get(2)?.as_str();
+
+    let user_cap = U256::from_dec_str(user_cap_str).ok()?;
+    let required_base = U256::from_dec_str(required_base_str).ok()?;
+
+    Some((user_cap, required_base))
 }
 
 async fn get_eth_gas_details_from_withdraw_fee(
@@ -6960,6 +6985,20 @@ async fn get_eth_gas_details_from_withdraw_fee(
                 let amount = u256_to_big_decimal(eth_value, eth_coin.decimals).map_mm_err()?;
 
                 return MmError::err(EthGasDetailsErr::AmountTooLow { amount, threshold });
+            } else if error_str.contains("fee cap less than block base fee")
+                || error_str.contains("max fee per gas less than block base fee")
+            {
+                if let Some((user_cap, required_base)) = parse_fee_cap_error(&error_str) {
+                    // The RPC error gives fee values in wei. Convert to Gwei (9 decimals) for the user.
+                    let provided_fee_cap = u256_to_big_decimal(user_cap, ETH_GWEI_DECIMALS).map_mm_err()?;
+                    let required_base_fee = u256_to_big_decimal(required_base, ETH_GWEI_DECIMALS).map_mm_err()?;
+                    return MmError::err(EthGasDetailsErr::GasFeeCapTooLow {
+                        provided_fee_cap,
+                        required_base_fee,
+                    });
+                } else {
+                    return MmError::err(EthGasDetailsErr::GasFeeCapBelowBaseFee);
+                }
             }
             // This can be a transport error or a non-standard insufficient funds error.
             // In the latter case,
