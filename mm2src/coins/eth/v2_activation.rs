@@ -15,6 +15,7 @@ use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;
 use kdf_walletconnect::error::WalletConnectError;
+use kdf_walletconnect::WcTopic;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -177,7 +178,7 @@ pub enum EthPrivKeyActivationPolicy {
     #[cfg(target_arch = "wasm32")]
     Metamask,
     WalletConnect {
-        session_topic: String,
+        session_topic: WcTopic,
     },
 }
 

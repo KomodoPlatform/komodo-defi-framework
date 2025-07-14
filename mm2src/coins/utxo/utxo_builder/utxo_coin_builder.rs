@@ -23,7 +23,7 @@ use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use kdf_walletconnect::chain::WcChainId;
 use kdf_walletconnect::error::WalletConnectError;
-use kdf_walletconnect::WalletConnectCtx;
+use kdf_walletconnect::{WalletConnectCtx, WcTopic};
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -254,7 +254,7 @@ where
 
 async fn build_utxo_fields_with_walletconnect<Builder>(
     builder: &Builder,
-    session_topic: &str,
+    session_topic: &WcTopic,
 ) -> UtxoCoinBuildResult<UtxoCoinFields>
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,

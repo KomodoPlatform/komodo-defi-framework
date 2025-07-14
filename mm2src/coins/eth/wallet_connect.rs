@@ -16,7 +16,7 @@ use ethereum_types::{Address, Public, H160, H520, U256};
 use ethkey::{public_to_address, Message, Signature};
 use kdf_walletconnect::chain::{WcChainId, WcRequestMethods};
 use kdf_walletconnect::error::WalletConnectError;
-use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps, WcTopic};
 use mm2_err_handle::prelude::*;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use secp256k1::{PublicKey, Secp256k1};
@@ -113,7 +113,7 @@ impl WalletConnectOps for EthCoin {
             },
         };
         let chain_id = WcChainId::new_eip155(chain_id.to_string());
-        wc.validate_update_active_chain_id(session_topic, &chain_id)
+        wc.validate_update_active_chain_id(session_topic.value(), &chain_id)
             .await
             .map_mm_err()?;
 
@@ -130,7 +130,12 @@ impl WalletConnectOps for EthCoin {
             let tx_json = params.prepare_wc_tx_format()?;
             let session_topic = self.session_topic()?;
             let tx_hex: String = wc
-                .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSignTransaction, tx_json)
+                .send_session_request_and_wait(
+                    session_topic.value(),
+                    &chain_id,
+                    WcRequestMethods::EthSignTransaction,
+                    tx_json,
+                )
                 .await
                 .map_mm_err()?;
             // if tx_hex.len() < 4 {
@@ -159,9 +164,14 @@ impl WalletConnectOps for EthCoin {
             let chain_id = self.wc_chain_id(wc).await?;
             let tx_json = params.prepare_wc_tx_format()?;
             let session_topic = self.session_topic()?;
-            wc.send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSendTransaction, tx_json)
-                .await
-                .map_mm_err()?
+            wc.send_session_request_and_wait(
+                session_topic.value(),
+                &chain_id,
+                WcRequestMethods::EthSendTransaction,
+                tx_json,
+            )
+            .await
+            .map_mm_err()?
         };
 
         let tx_hash = tx_hash.strip_prefix("0x").unwrap_or(&tx_hash);
@@ -178,7 +188,7 @@ impl WalletConnectOps for EthCoin {
         Ok((signed_tx, tx_hex))
     }
 
-    fn session_topic(&self) -> Result<&str, Self::Error> {
+    fn session_topic(&self) -> Result<&WcTopic, Self::Error> {
         if let EthPrivKeyPolicy::WalletConnect { ref session_topic, .. } = &self.priv_key_policy {
             return Ok(session_topic);
         }
@@ -192,16 +202,16 @@ impl WalletConnectOps for EthCoin {
 
 pub async fn eth_request_wc_personal_sign(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: u64,
 ) -> MmResult<(H520, Address), EthWalletConnectError> {
     let chain_id = WcChainId::new_eip155(chain_id.to_string());
-    wc.validate_update_active_chain_id(session_topic, &chain_id)
+    wc.validate_update_active_chain_id(session_topic.value(), &chain_id)
         .await
         .map_mm_err()?;
 
     let (account_str, _) = wc
-        .get_account_and_properties_for_chain_id(session_topic, &chain_id)
+        .get_account_and_properties_for_chain_id(session_topic.value(), &chain_id)
         .map_mm_err()?;
     let message = "Authenticate with KDF";
     let params = {
@@ -209,7 +219,12 @@ pub async fn eth_request_wc_personal_sign(
         json!(&[&message_hex, &account_str])
     };
     let data = wc
-        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::EthPersonalSign, params)
+        .send_session_request_and_wait::<String>(
+            session_topic.value(),
+            &chain_id,
+            WcRequestMethods::EthPersonalSign,
+            params,
+        )
         .await
         .map_mm_err()?;
 

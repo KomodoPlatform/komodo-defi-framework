@@ -6,7 +6,7 @@ use chain::hash::H256;
 use crypto::StandardHDPath;
 use kdf_walletconnect::{chain::{WcChainId, WcRequestMethods},
                         error::WalletConnectError,
-                        WalletConnectCtx};
+                        WalletConnectCtx, WcTopic};
 use keys::{CompactSignature, Public};
 use mm2_err_handle::prelude::{MmError, MmResult};
 
@@ -27,18 +27,19 @@ struct GetAccountAddressesItem {
 /// Get the enabled address (chosen by the user)
 pub async fn get_walletconnect_address(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: &WcChainId,
     derivation_path: &StandardHDPath,
 ) -> MmResult<(String, Option<String>), WalletConnectError> {
-    wc.validate_update_active_chain_id(session_topic, chain_id).await?;
-    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
+    wc.validate_update_active_chain_id(session_topic.value(), chain_id)
+        .await?;
+    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic.value(), chain_id)?;
     let params = json!({
         "account": account_str,
     });
     let accounts: Vec<GetAccountAddressesItem> = wc
         .send_session_request_and_wait(
-            session_topic,
+            session_topic.value(),
             chain_id,
             WcRequestMethods::UtxoGetAccountAddresses,
             params,
@@ -86,15 +87,16 @@ struct SignMessageResponse {
 /// Get the public key associated with some address via WalletConnect signature.
 pub async fn get_pubkey_via_wallatconnect_signature(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: &WcChainId,
     address: &str,
     sign_message_prefix: &str,
 ) -> MmResult<String, WalletConnectError> {
     const AUTH_MSG: &str = "Authenticate with KDF";
 
-    wc.validate_update_active_chain_id(session_topic, chain_id).await?;
-    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
+    wc.validate_update_active_chain_id(session_topic.value(), chain_id)
+        .await?;
+    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic.value(), chain_id)?;
     let params = json!({
         "account": account_str,
         "address": address,
@@ -102,7 +104,12 @@ pub async fn get_pubkey_via_wallatconnect_signature(
         "protocol": "ecdsa",
     });
     let signature_response: SignMessageResponse = wc
-        .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoPersonalSign, params)
+        .send_session_request_and_wait(
+            session_topic.value(),
+            chain_id,
+            WcRequestMethods::UtxoPersonalSign,
+            params,
+        )
         .await?;
 
     // The wallet is required to send back the same address in the response.

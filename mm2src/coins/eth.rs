@@ -821,7 +821,7 @@ pub enum EthPrivKeyBuildPolicy {
     Metamask(MetamaskArc),
     Trezor,
     WalletConnect {
-        session_topic: String,
+        session_topic: kdf_walletconnect::WcTopic,
     },
 }
 

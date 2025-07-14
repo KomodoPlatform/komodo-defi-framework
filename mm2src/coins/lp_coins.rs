@@ -4168,7 +4168,7 @@ pub enum PrivKeyActivationPolicy {
     ContextPrivKey,
     Trezor,
     WalletConnect {
-        session_topic: String,
+        session_topic: kdf_walletconnect::WcTopic,
     },
 }
 
@@ -4234,7 +4234,7 @@ pub enum PrivKeyPolicy<T> {
     WalletConnect {
         public_key: H264,
         public_key_uncompressed: H520,
-        session_topic: String,
+        session_topic: kdf_walletconnect::WcTopic,
     },
 }
 
@@ -4373,7 +4373,7 @@ pub enum PrivKeyBuildPolicy {
     IguanaPrivKey(IguanaPrivKey),
     GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
-    WalletConnect { session_topic: String },
+    WalletConnect { session_topic: kdf_walletconnect::WcTopic },
 }
 
 impl PrivKeyBuildPolicy {

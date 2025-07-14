@@ -7,6 +7,9 @@ mod metadata;
 pub mod session;
 mod storage;
 
+// Re-export `Topic` as it is used within KDF to identify which sessions a coin is running on.
+pub use relay_rpc::domain::Topic as WcTopic;
+
 use crate::connection_handler::{Handler, MAX_BACKOFF};
 use crate::session::rpc::propose::send_session_proposal_request;
 use chain::{WcChainId, WcRequestMethods, SUPPORTED_PROTOCOL};
@@ -81,7 +84,7 @@ pub trait WalletConnectOps {
     ) -> Result<Self::SendTxData, Self::Error>;
 
     /// Session topic used to activate this.
-    fn session_topic(&self) -> Result<&str, Self::Error>;
+    fn session_topic(&self) -> Result<&Topic, Self::Error>;
 }
 
 /// Implements the WalletConnect context, providing functionality for

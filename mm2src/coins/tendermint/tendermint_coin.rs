@@ -387,8 +387,8 @@ impl RpcCommonOps for TendermintCoin {
 
 #[derive(PartialEq)]
 pub enum TendermintWalletConnectionType {
-    Wc(String),
-    WcLedger(String),
+    Wc(kdf_walletconnect::WcTopic),
+    WcLedger(kdf_walletconnect::WcTopic),
     KeplrLedger,
     Keplr,
     Native,
@@ -1493,7 +1493,7 @@ impl TendermintCoin {
             let session_topic = self
                 .session_topic()
                 .expect("session_topic can't be None inside this block");
-            let encode = |data| wc.encode(session_topic, data);
+            let encode = |data| wc.encode(session_topic.value(), data);
 
             json!({
                 "signerAddress":  self.my_address()?,

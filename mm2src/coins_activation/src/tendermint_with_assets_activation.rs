@@ -19,7 +19,7 @@ use coins::tendermint::{cosmos_get_accounts_impl, tendermint_priv_key_policy, Co
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
-use kdf_walletconnect::WalletConnectCtx;
+use kdf_walletconnect::{WalletConnectCtx, WcTopic};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -50,7 +50,7 @@ pub enum TendermintPubkeyActivationParams {
         is_ledger_connection: bool,
     },
     /// Activate with WalletConnect
-    WalletConnect { session_topic: String },
+    WalletConnect { session_topic: WcTopic },
 }
 
 #[derive(Clone, Deserialize)]
@@ -223,7 +223,7 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
 
 async fn activate_with_walletconnect(
     ctx: &MmArc,
-    session_topic: String,
+    session_topic: WcTopic,
     chain_id: &str,
     ticker: &str,
 ) -> MmResult<(TendermintActivationPolicy, TendermintWalletConnectionType), TendermintInitError> {
@@ -234,7 +234,7 @@ async fn activate_with_walletconnect(
             ticker: ticker.to_string(),
             kind: TendermintInitErrorKind::UnableToFetchChainAccount(err.to_string()),
         })?;
-    let wallet_type = if wc.is_ledger_connection(&session_topic) {
+    let wallet_type = if wc.is_ledger_connection(session_topic.value()) {
         TendermintWalletConnectionType::WcLedger(session_topic)
     } else {
         TendermintWalletConnectionType::Wc(session_topic)
