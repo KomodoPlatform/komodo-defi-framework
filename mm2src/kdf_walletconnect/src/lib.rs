@@ -389,11 +389,10 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &str, data: T) -> String {
-        let session_topic = session_topic.into();
+    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &Topic, data: T) -> String {
         let algo = self
             .session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .map(|session| session.encoding_algo.unwrap_or(EncodingAlgo::Hex))
             .unwrap_or(EncodingAlgo::Hex);
 
@@ -490,10 +489,9 @@ impl WalletConnectCtxImpl {
 
     /// Checks if the current session is connected to a Ledger device.
     /// NOTE: for COSMOS chains only.
-    pub fn is_ledger_connection(&self, session_topic: &str) -> bool {
-        let session_topic = session_topic.into();
+    pub fn is_ledger_connection(&self, session_topic: &Topic) -> bool {
         self.session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .and_then(|session| session.session_properties)
             .and_then(|props| props.keys.as_ref().cloned())
             // TODO: This is flaky. ref. https://github.com/KomodoPlatform/komodo-defi-framework/pull/2499#discussion_r2174531817
@@ -504,10 +502,9 @@ impl WalletConnectCtxImpl {
 
     /// Checks if the current session is connected via Keplr wallet.
     /// NOTE: for COSMOS chains only.
-    pub fn is_keplr_connection(&self, session_topic: &str) -> bool {
-        let session_topic = session_topic.into();
+    pub fn is_keplr_connection(&self, session_topic: &Topic) -> bool {
         self.session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .map(|session| session.controller.metadata.name == "Keplr")
             .unwrap_or_default()
     }
@@ -549,13 +546,12 @@ impl WalletConnectCtxImpl {
     /// Validate and send update active chain to WC if needed.
     pub async fn validate_update_active_chain_id(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
     ) -> MmResult<(), WalletConnectError> {
-        let session_topic = session_topic.into();
         let session =
             self.session_manager
-                .get_session(&session_topic)
+                .get_session(session_topic)
                 .ok_or(MmError::new(WalletConnectError::SessionError(
                     "No active WalletConnect session found".to_string(),
                 )))?;
@@ -609,13 +605,12 @@ impl WalletConnectCtxImpl {
     /// Get available account for a given chain ID.
     pub fn get_account_and_properties_for_chain_id(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
     ) -> MmResult<(String, Option<SessionProperties>), WalletConnectError> {
-        let session_topic = session_topic.into();
         let session =
             self.session_manager
-                .get_session(&session_topic)
+                .get_session(session_topic)
                 .ok_or(MmError::new(WalletConnectError::SessionError(
                     "No active WalletConnect session found".to_string(),
                 )))?;
@@ -637,7 +632,7 @@ impl WalletConnectCtxImpl {
     /// https://specs.walletconnect.com/2.0/specs/clients/sign/session-events#session_request
     pub async fn send_session_request_and_wait<R>(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
         method: WcRequestMethods,
         params: serde_json::Value,
@@ -645,8 +640,7 @@ impl WalletConnectCtxImpl {
     where
         R: DeserializeOwned,
     {
-        let session_topic = session_topic.into();
-        self.session_manager.validate_session_exists(&session_topic)?;
+        self.session_manager.validate_session_exists(session_topic)?;
 
         let request = SessionRequestRequest {
             chain_id: chain_id.to_string(),
@@ -657,7 +651,7 @@ impl WalletConnectCtxImpl {
             },
         };
         let (rx, ttl) = self
-            .publish_request(&session_topic, RequestParams::SessionRequest(request))
+            .publish_request(session_topic, RequestParams::SessionRequest(request))
             .await?;
 
         let response = rx

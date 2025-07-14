@@ -83,8 +83,7 @@ impl WalletConnectOps for TendermintCoin {
     async fn wc_chain_id(&self, wc: &WalletConnectCtx) -> Result<WcChainId, Self::Error> {
         let chain_id = WcChainId::new_cosmos(self.protocol_info.chain_id.to_string());
         let session_topic = self.session_topic()?;
-        wc.validate_update_active_chain_id(session_topic.value(), &chain_id)
-            .await?;
+        wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
         Ok(chain_id)
     }
 
@@ -95,13 +94,13 @@ impl WalletConnectOps for TendermintCoin {
     ) -> Result<Self::SignTxData, Self::Error> {
         let chain_id = self.wc_chain_id(wc).await?;
         let session_topic = self.session_topic()?;
-        let method = if wc.is_ledger_connection(session_topic.value()) {
+        let method = if wc.is_ledger_connection(session_topic) {
             WcRequestMethods::CosmosSignAmino
         } else {
             WcRequestMethods::CosmosSignDirect
         };
         let data: CosmosTxSignedData = wc
-            .send_session_request_and_wait(session_topic.value(), &chain_id, method, params)
+            .send_session_request_and_wait(session_topic, &chain_id, method, params)
             .await?;
         let signature = general_purpose::STANDARD
             .decode(data.signature.signature)
@@ -140,10 +139,9 @@ pub async fn cosmos_get_accounts_impl(
     chain_id: &str,
 ) -> MmResult<CosmosAccount, WalletConnectError> {
     let chain_id = WcChainId::new_cosmos(chain_id.to_string());
-    wc.validate_update_active_chain_id(session_topic.value(), &chain_id)
-        .await?;
+    wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
 
-    let (account, properties) = wc.get_account_and_properties_for_chain_id(session_topic.value(), &chain_id)?;
+    let (account, properties) = wc.get_account_and_properties_for_chain_id(session_topic, &chain_id)?;
 
     // Check if session has session_properties and return wallet account;
     if let Some(props) = properties {
@@ -172,12 +170,7 @@ pub async fn cosmos_get_accounts_impl(
 
     let params = serde_json::to_value(&account).unwrap();
     let accounts: Vec<CosmosAccount> = wc
-        .send_session_request_and_wait(
-            session_topic.value(),
-            &chain_id,
-            WcRequestMethods::CosmosGetAccounts,
-            params,
-        )
+        .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::CosmosGetAccounts, params)
         .await?;
 
     accounts.first().cloned().or_mm_err(|| {

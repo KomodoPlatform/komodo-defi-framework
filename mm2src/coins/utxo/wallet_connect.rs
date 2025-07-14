@@ -31,15 +31,14 @@ pub async fn get_walletconnect_address(
     chain_id: &WcChainId,
     derivation_path: &StandardHDPath,
 ) -> MmResult<(String, Option<String>), WalletConnectError> {
-    wc.validate_update_active_chain_id(session_topic.value(), chain_id)
-        .await?;
-    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic.value(), chain_id)?;
+    wc.validate_update_active_chain_id(session_topic, chain_id).await?;
+    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
     let params = json!({
         "account": account_str,
     });
     let accounts: Vec<GetAccountAddressesItem> = wc
         .send_session_request_and_wait(
-            session_topic.value(),
+            session_topic,
             chain_id,
             WcRequestMethods::UtxoGetAccountAddresses,
             params,
@@ -94,9 +93,8 @@ pub async fn get_pubkey_via_wallatconnect_signature(
 ) -> MmResult<String, WalletConnectError> {
     const AUTH_MSG: &str = "Authenticate with KDF";
 
-    wc.validate_update_active_chain_id(session_topic.value(), chain_id)
-        .await?;
-    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic.value(), chain_id)?;
+    wc.validate_update_active_chain_id(session_topic, chain_id).await?;
+    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
     let params = json!({
         "account": account_str,
         "address": address,
@@ -104,12 +102,7 @@ pub async fn get_pubkey_via_wallatconnect_signature(
         "protocol": "ecdsa",
     });
     let signature_response: SignMessageResponse = wc
-        .send_session_request_and_wait(
-            session_topic.value(),
-            chain_id,
-            WcRequestMethods::UtxoPersonalSign,
-            params,
-        )
+        .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoPersonalSign, params)
         .await?;
 
     // The wallet is required to send back the same address in the response.
