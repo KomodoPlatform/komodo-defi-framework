@@ -135,7 +135,7 @@ pub trait UtxoCoinBuilder: UtxoCoinBuilderCommonOps {
 
     async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         match self.priv_key_policy() {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_secret(self, priv_key).await,
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_priv_key(self, priv_key).await,
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
                 build_utxo_fields_with_global_hd(self, global_hd_ctx).await
             },
@@ -147,7 +147,7 @@ pub trait UtxoCoinBuilder: UtxoCoinBuilderCommonOps {
     }
 }
 
-pub async fn build_utxo_fields_with_iguana_secret<Builder>(
+pub async fn build_utxo_fields_with_iguana_priv_key<Builder>(
     builder: &Builder,
     priv_key: IguanaPrivKey,
 ) -> UtxoCoinBuildResult<UtxoCoinFields>

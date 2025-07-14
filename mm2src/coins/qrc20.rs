@@ -8,7 +8,7 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
-use crate::utxo::utxo_builder::{build_utxo_fields_with_global_hd, build_utxo_fields_with_iguana_secret,
+use crate::utxo::utxo_builder::{build_utxo_fields_with_global_hd, build_utxo_fields_with_iguana_priv_key,
                                 UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualFeeRate, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError, GetUtxoListOps,
@@ -273,7 +273,7 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
 
     async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         match self.priv_key_policy() {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_secret(self, priv_key).await,
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_priv_key(self, priv_key).await,
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
                 build_utxo_fields_with_global_hd(self, global_hd_ctx).await
             },
