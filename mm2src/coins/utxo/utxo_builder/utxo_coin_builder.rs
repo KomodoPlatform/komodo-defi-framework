@@ -263,31 +263,8 @@ where
         .build()
         .map_mm_err()?;
 
-    // Get and parse the chain_id of the coin.
-    let chain_id = builder.conf()["chain_id"].as_str().ok_or_else(|| {
-        WalletConnectError::InvalidChainId(format!(
-            "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
-            builder.ticker()
-        ))
-    })?;
-    let chain_id = WcChainId::try_from_str(chain_id).map_mm_err()?;
-
-    // Construct the coin config from the coin config and activation params.
-    let path_purpose_to_coin = builder.conf()["derivation_path"].as_str().ok_or_else(|| {
-        UtxoCoinBuildError::InvalidPathToAddress("derivation_path is not set in coin config".to_owned())
-    })?;
-    let path_purpose_to_coin = HDPathToCoin::from_str(path_purpose_to_coin).map_err(|e| {
-        UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to parse derivation_path in coins config: {e:?}"))
-    })?;
-    let path_account_to_address = builder.activation_params().path_to_address;
-    let full_derivation_path = path_account_to_address
-        .to_derivation_path(&path_purpose_to_coin)
-        .map_err(|e| {
-            UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to construct full derivation path: {}", e))
-        })?;
-    let full_derivation_path = StandardHDPath::try_from(full_derivation_path).map_err(|e| {
-        UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to parse full derivation path: {e:?}"))
-    })?;
+    let chain_id = builder.wallet_connect_chain_id()?;
+    let full_derivation_path = builder.full_derivation_path()?;
 
     let wc_ctx = WalletConnectCtx::from_ctx(builder.ctx()).map_mm_err()?;
     let (address, pubkey) = get_walletconnect_address(&wc_ctx, session_topic, &chain_id, &full_derivation_path)
@@ -296,6 +273,7 @@ where
 
     let pubkey = match pubkey {
         Some(pubkey) => pubkey,
+        // If getAccountAddresses didn't return the public key, we will try to recover it from a signature instead.
         None => {
             let sign_message_prefix = conf.sign_message_prefix.as_ref().ok_or_else(|| {
                 UtxoCoinBuildError::Internal("sign_message_prefix is not set in coins config".to_string())
@@ -328,6 +306,11 @@ where
     .as_pkh_from_pk(Public::Compressed(pubkey.serialize().into()))
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
+    let derivation_method = DerivationMethod::SingleAddress(my_address.clone());
+
+    // Validate that the address received from WalletConnect matches the one derived from the public key.
+    // This is a sanity check to ensure that the WalletConnect session is valid and the address
+    // corresponds to the public key we have. Otherwise, the wallet (or our address builder) is messed up.
     let my_address_serialized = my_address
         .display_address()
         .map_err(|e| UtxoCoinBuildError::Internal(format!("Failed to serialize address: {}", e)))?;
@@ -340,7 +323,6 @@ where
             .into(),
         );
     }
-    let derivation_method = DerivationMethod::SingleAddress(my_address);
 
     build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
@@ -572,6 +554,38 @@ pub trait UtxoCoinBuilderCommonOps {
                 .map_to_mm(|e| UtxoCoinBuildError::InvalidBlockchainNetwork(e.to_string()));
         }
         Ok(BlockchainNetwork::Mainnet)
+    }
+
+    /// Returns WcChainId for this coin. Parsed from the coin config.
+    fn wallet_connect_chain_id(&self) -> UtxoCoinBuildResult<WcChainId> {
+        let chain_id = self.conf()["chain_id"].as_str().ok_or_else(|| {
+            WalletConnectError::InvalidChainId(format!(
+            "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
+            self.ticker()
+        ))
+        })?;
+        let chain_id = WcChainId::try_from_str(chain_id).map_mm_err()?;
+        Ok(chain_id)
+    }
+
+    /// Constructs the full HD derivation path from the coin config and the activation params partial paths.
+    fn full_derivation_path(&self) -> UtxoCoinBuildResult<StandardHDPath> {
+        let path_purpose_to_coin = self.conf()["derivation_path"].as_str().ok_or_else(|| {
+            UtxoCoinBuildError::InvalidPathToAddress("derivation_path is not set in coin config".to_owned())
+        })?;
+        let path_purpose_to_coin = HDPathToCoin::from_str(path_purpose_to_coin).map_err(|e| {
+            UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to parse derivation_path in coins config: {e:?}"))
+        })?;
+        let path_account_to_address = self.activation_params().path_to_address;
+        let full_derivation_path = path_account_to_address
+            .to_derivation_path(&path_purpose_to_coin)
+            .map_err(|e| {
+                UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to construct full derivation path: {}", e))
+            })?;
+        let full_derivation_path = StandardHDPath::try_from(full_derivation_path).map_err(|e| {
+            UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to parse full derivation path: {e:?}"))
+        })?;
+        Ok(full_derivation_path)
     }
 
     async fn decimals(&self, _rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<u8> {
