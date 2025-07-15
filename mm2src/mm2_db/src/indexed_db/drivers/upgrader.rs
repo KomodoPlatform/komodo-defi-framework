@@ -31,6 +31,8 @@ pub enum OnUpgradeError {
     },
     #[display(fmt = "Error occurred due to deleting the '{}' index: {}", index, description)]
     ErrorDeletingIndex { index: String, description: String },
+    #[display(fmt = "Error occurred due to clearing the '{}' table: {}", table, description)]
+    ErrorClearingTable { table: String, description: String },
 }
 
 pub struct DbUpgrader {
@@ -121,6 +123,18 @@ impl TableUpgrader {
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorDeletingIndex {
                 index: index.to_owned(),
+                description: stringify_js_error(&e),
+            })
+    }
+
+    /// Clears the object store.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/clear
+    pub fn clear(&self) -> OnUpgradeResult<()> {
+        self.object_store
+            .clear()
+            .map(|_| ())
+            .map_to_mm(|e| OnUpgradeError::ErrorCreatingTable {
+                table: self.object_store.name(),
                 description: stringify_js_error(&e),
             })
     }
