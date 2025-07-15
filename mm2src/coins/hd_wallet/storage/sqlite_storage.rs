@@ -6,13 +6,20 @@ use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
-use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
-                        SqliteConnWeak};
+use db_common::sqlite::{query_single_row, query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams,
+                        SqliteConnShared, SqliteConnWeak};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use std::convert::TryFrom;
 use std::sync::MutexGuard;
+
+const DB_VERSION: u32 = 1;
+
+const CREATE_MIGRATIONS_TABLE: &str =
+    "CREATE TABLE IF NOT EXISTS migration (current_migration INTEGER NOT_NULL UNIQUE);";
+
+const SELECT_CURRENT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
 
 const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
     coin VARCHAR(255) NOT NULL,
@@ -22,6 +29,14 @@ const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
     external_addresses_number INTEGER NOT NULL,
     internal_addresses_number INTEGER NOT NULL
 );";
+
+/// This migration adds `purpose` and `coin_type` columns to the `hd_account` table.
+/// Note that this migration clears the `hd_account` table completely.
+const MIGRATION_1: &str = "
+    ALTER TABLE hd_account ADD COLUMN purpose INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE hd_account ADD COLUMN coin_type INTEGER NOT NULL DEFAULT 0;
+    DELETE FROM hd_account;
+";
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
     (coin, hd_wallet_rmd160, account_id, account_xpub, external_addresses_number, internal_addresses_number)
@@ -227,12 +242,78 @@ impl HDWalletSqliteStorage {
             .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
     }
 
+    /// Migrates the database schema to the latest version.
+    async fn migrate(&self) -> HDWalletStorageResult<()> {
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let mut conn = Self::lock_conn_mutex(&conn_shared)?;
+
+            loop {
+                let current_version = query_single_row(&conn, SELECT_CURRENT_MIGRATION, [], |row: &Row<'_>| row.get(0))
+                    .map_to_mm(HDWalletStorageError::from)?
+                    .unwrap_or(0);
+
+                if current_version == DB_VERSION {
+                    break;
+                }
+
+                // Perform the actual migration and the version pump in a single transaction to ensure atomicity.
+                let tx = conn
+                    .transaction()
+                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error starting transaction: {}", e)))?;
+
+                // Perform migrations if needed.
+                match current_version {
+                    0 => {
+                        tx.execute(MIGRATION_1, [])
+                            .map(|_| ())
+                            .map_to_mm(HDWalletStorageError::from)?;
+                    },
+                    DB_VERSION..=u32::MAX => {
+                        return MmError::err(HDWalletStorageError::Internal(format!(
+                            "Unsupported database version: {}",
+                            current_version
+                        )));
+                    },
+                }
+
+                // Update the migration version.
+                tx.execute("INSERT INTO migration (current_migration) VALUES (?1);", [
+                    current_version + 1,
+                ])
+                .map(|_| ())
+                .map_to_mm(HDWalletStorageError::from)?;
+
+                tx.commit()
+                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error committing transaction: {}", e)))?;
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
     async fn init_tables(&self) -> HDWalletStorageResult<()> {
-        let conn_shared = self.get_shared_conn()?;
-        let conn = Self::lock_conn_mutex(&conn_shared)?;
-        conn.execute(CREATE_HD_ACCOUNT_TABLE, [])
-            .map(|_| ())
-            .map_to_mm(HDWalletStorageError::from)
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
+
+            // Create tables if they do not exist.
+            conn.execute(CREATE_HD_ACCOUNT_TABLE, [])
+                .map(|_| ())
+                .map_to_mm(HDWalletStorageError::from)?;
+            conn.execute(CREATE_MIGRATIONS_TABLE, [])
+                .map(|_| ())
+                .map_to_mm(HDWalletStorageError::from)?;
+
+            Ok::<_, MmError<HDWalletStorageError>>(())
+        })
+        .await?;
+
+        // Perform migrations if needed.
+        self.migrate().await
     }
 
     async fn update_addresses_number(
