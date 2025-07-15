@@ -12,7 +12,7 @@ enable-sia = [
 ]
 default = []
 run-docker-tests = []
-for-tests = ["dep:mocktopus"]
+for-tests = ["dep:mocktopus", "crypto/for-tests"]
 new-db-arch = ["mm2_core/new-db-arch"]
 
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
