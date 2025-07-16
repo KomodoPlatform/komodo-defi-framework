@@ -14,9 +14,10 @@ pub struct OrderbookStreamer {
     rel: String,
 }
 
+type BaseAndRel<'a> = (&'a str, &'a str);
 impl<'a> DeriveStreamerId<'a> for OrderbookStreamer {
     type InitParam = (MmArc, String, String);
-    type DeriveParam = (&'a str, &'a str);
+    type DeriveParam = BaseAndRel<'a>;
 
     fn new((ctx, base, rel): Self::InitParam) -> Self { Self { ctx, base, rel } }
 
