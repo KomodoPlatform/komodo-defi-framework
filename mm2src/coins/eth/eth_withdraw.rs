@@ -16,6 +16,7 @@ use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::{CryptoCtx, HwRpcError};
 use ethabi::Token;
+use ethereum_types::U256;
 use futures::compat::Future01CompatExt;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::MmArc;
@@ -39,6 +40,9 @@ where
 
     /// A getter for the withdrawal request.
     fn request(&self) -> &WithdrawRequest;
+
+    /// A getter for the nonce if it is overridden.
+    fn nonce_override(&self) -> Option<U256>;
 
     /// Executes the logic that should be performed just before generating a transaction.
     #[allow(clippy::result_large_err)]
@@ -281,15 +285,21 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address.to_string()).await;
-                let _nonce_lock = address_lock.lock().await;
-                let (nonce, _) = coin
-                    .clone()
-                    .get_addr_nonce(my_address)
-                    .compat()
-                    .timeout_secs(30.)
-                    .await?
-                    .map_to_mm(WithdrawError::Transport)?;
+                let nonce = match self.nonce_override() {
+                    Some(nonce) => nonce,
+                    None => {
+                        let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                        let _nonce_lock = address_lock.lock().await;
+                        let (fetched_nonce, _) = coin
+                            .clone()
+                            .get_addr_nonce(my_address)
+                            .compat()
+                            .timeout_secs(30.)
+                            .await?
+                            .map_to_mm(WithdrawError::Transport)?;
+                        fetched_nonce
+                    },
+                };
 
                 let tx_type = tx_type_from_pay_for_gas_option!(pay_for_gas_option);
                 if !coin.is_tx_type_supported(&tx_type) {
@@ -332,13 +342,19 @@ where
                 ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
-                let (nonce, _) = coin
-                    .clone()
-                    .get_addr_nonce(my_address)
-                    .compat()
-                    .timeout_secs(30.)
-                    .await?
-                    .map_to_mm(WithdrawError::Transport)?;
+                let nonce = match self.nonce_override() {
+                    Some(nonce) => nonce,
+                    None => {
+                        let (fetched_nonce, _) = coin
+                            .clone()
+                            .get_addr_nonce(my_address)
+                            .compat()
+                            .timeout_secs(30.)
+                            .await?
+                            .map_to_mm(WithdrawError::Transport)?;
+                        fetched_nonce
+                    },
+                };
                 let params = WcEthTxParams {
                     gas,
                     nonce,
@@ -367,6 +383,8 @@ where
                 (tx.tx_hash(), bytes)
             },
         };
+
+        self.coin().local_tx_cache.lock().await.insert(tx_hash, tx_hex.clone());
 
         self.on_finishing()?;
         let tx_hash_bytes = BytesJson::from(tx_hash.0.to_vec());
@@ -409,6 +427,7 @@ pub struct InitEthWithdraw {
     coin: EthCoin,
     task_handle: WithdrawTaskHandleShared,
     req: WithdrawRequest,
+    nonce_override: Option<U256>,
 }
 
 #[async_trait]
@@ -416,6 +435,8 @@ impl EthWithdraw for InitEthWithdraw {
     fn coin(&self) -> &EthCoin { &self.coin }
 
     fn request(&self) -> &WithdrawRequest { &self.req }
+
+    fn nonce_override(&self) -> Option<U256> { self.nonce_override }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
         self.task_handle
@@ -479,14 +500,20 @@ impl InitEthWithdraw {
             coin,
             task_handle,
             req,
+            nonce_override: None,
         })
     }
+
+    // Todo: Implement replacing a transaction as task manager RPCs as well and remove allow(dead_code)
+    #[allow(dead_code)]
+    fn set_nonce_override(&mut self, nonce: U256) { self.nonce_override = Some(nonce); }
 }
 
 /// Simple eth withdraw version without user interaction support
 pub struct StandardEthWithdraw {
     coin: EthCoin,
     req: WithdrawRequest,
+    nonce_override: Option<U256>,
 }
 
 #[async_trait]
@@ -494,6 +521,8 @@ impl EthWithdraw for StandardEthWithdraw {
     fn coin(&self) -> &EthCoin { &self.coin }
 
     fn request(&self) -> &WithdrawRequest { &self.req }
+
+    fn nonce_override(&self) -> Option<U256> { self.nonce_override }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
 
@@ -516,8 +545,14 @@ impl EthWithdraw for StandardEthWithdraw {
 #[allow(clippy::result_large_err)]
 impl StandardEthWithdraw {
     pub fn new(coin: EthCoin, req: WithdrawRequest) -> Result<StandardEthWithdraw, MmError<WithdrawError>> {
-        Ok(StandardEthWithdraw { coin, req })
+        Ok(StandardEthWithdraw {
+            coin,
+            req,
+            nonce_override: None,
+        })
     }
+
+    pub fn set_nonce_override(&mut self, nonce: U256) { self.nonce_override = Some(nonce); }
 }
 
 #[async_trait]

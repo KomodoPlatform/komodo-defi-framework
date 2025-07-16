@@ -1077,16 +1077,6 @@ impl HDWalletBalanceOps for QtumCoin {
         coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params, path_to_address).await
     }
 
-    async fn scan_for_new_addresses(
-        &self,
-        hd_wallet: &Self::HDWallet,
-        hd_account: &mut UtxoHDAccount,
-        address_scanner: &Self::HDAddressScanner,
-        gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
-        utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
-    }
-
     async fn all_known_addresses_balances(
         &self,
         hd_account: &UtxoHDAccount,

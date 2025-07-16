@@ -37,6 +37,8 @@ impl ExtractExtendedPubkey for EthCoin {
 impl HDWalletCoinOps for EthCoin {
     type HDWallet = EthHDWallet;
 
+    fn bip44_chains(&self) -> Vec<Bip44Chain> { vec![Bip44Chain::External] }
+
     fn address_from_extended_pubkey(
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,
@@ -108,24 +110,6 @@ impl HDWalletBalanceOps for EthCoin {
         XPubExtractor: HDXPubExtractor + Send,
     {
         coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params, path_to_address).await
-    }
-
-    async fn scan_for_new_addresses(
-        &self,
-        hd_wallet: &Self::HDWallet,
-        hd_account: &mut EthHDAccount,
-        address_scanner: &Self::HDAddressScanner,
-        gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
-        scan_for_new_addresses_impl(
-            self,
-            hd_wallet,
-            hd_account,
-            address_scanner,
-            Bip44Chain::External,
-            gap_limit,
-        )
-        .await
     }
 
     async fn all_known_addresses_balances(

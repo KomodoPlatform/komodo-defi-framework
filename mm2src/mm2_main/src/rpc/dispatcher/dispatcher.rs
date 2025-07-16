@@ -27,6 +27,7 @@ use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::rpc::wc_commands::{new_connection, ping_session};
 
+use crate::rpc::lp_commands::transactions::replace_transaction;
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
@@ -240,6 +241,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "orderbook" => handle_mmrpc(ctx, request, orderbook_rpc_v2).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "refresh_nft_metadata" => handle_mmrpc(ctx, request, refresh_nft_metadata).await,
+        "replace_transaction" => handle_mmrpc(ctx, request, replace_transaction).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
         "sign_raw_transaction" => handle_mmrpc(ctx, request, sign_raw_transaction).await,

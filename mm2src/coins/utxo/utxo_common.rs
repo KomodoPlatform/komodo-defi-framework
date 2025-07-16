@@ -12,14 +12,14 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            DexFee, DexFeeBurnDestination, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest,
-            SignUtxoTransactionParams, SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
-            SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee, DexFeeBurnDestination,
+            GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs, RewardTarget,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
+            SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
             TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
             ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
@@ -166,41 +166,6 @@ where
     UtxoAddressScanner::init(coin.as_ref().rpc_client.clone())
         .await
         .map_mm_err()
-}
-
-pub async fn scan_for_new_addresses<T>(
-    coin: &T,
-    hd_wallet: &T::HDWallet,
-    hd_account: &mut HDCoinHDAccount<T>,
-    address_scanner: &T::HDAddressScanner,
-    gap_limit: u32,
-) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
-where
-    T: HDWalletBalanceOps + Sync,
-    HDCoinAddress<T>: std::fmt::Display,
-{
-    let mut addresses = scan_for_new_addresses_impl(
-        coin,
-        hd_wallet,
-        hd_account,
-        address_scanner,
-        Bip44Chain::External,
-        gap_limit,
-    )
-    .await?;
-    addresses.extend(
-        scan_for_new_addresses_impl(
-            coin,
-            hd_wallet,
-            hd_account,
-            address_scanner,
-            Bip44Chain::Internal,
-            gap_limit,
-        )
-        .await?,
-    );
-
-    Ok(addresses)
 }
 
 pub async fn all_known_addresses_balances<T>(
