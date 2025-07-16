@@ -39,11 +39,22 @@ where
     );
 }
 
+/// Trait for types that can produce a unique [`StreamerId`] for event streaming.
+///
+/// Used to standardize initialization and ID derivation for various streamers.
+///
+/// - `'a`: Lifetime for borrowed derive parameters.
 pub trait DeriveStreamerId<'a> {
+    /// Type used to create the instance.
     type InitParam;
+
+    /// Borrowed type used to derive the [`StreamerId`].
     type DeriveParam: 'a;
 
+    /// Creates a new instance using the specified initialization parameter.
     fn new(param: Self::InitParam) -> Self;
+
+    /// Derives a unique [`StreamerId`] based on the provided parameter.
     fn derive_streamer_id(param: Self::DeriveParam) -> StreamerId;
 }
 
