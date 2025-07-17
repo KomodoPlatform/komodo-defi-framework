@@ -1,6 +1,7 @@
 [env]
-# TODO: Remove once migrated all the unstable features
-RUSTC_BOOTSTRAP = "1"
+# TODO:
+# - ...
+RUSTC_BOOTSTRAP="lock_api,gstuff,mm2_state_machine,mm2_err_handle"
 JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 [target.'cfg(all())']
