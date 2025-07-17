@@ -29,8 +29,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -87,8 +87,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -135,8 +135,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add aarch64-apple-darwin
 
       - name: Install build deps
@@ -184,8 +184,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -232,8 +232,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -296,8 +296,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add wasm32-unknown-unknown
 
       - name: Install wasm-pack
@@ -344,8 +344,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add aarch64-apple-ios
 
       - name: Install build deps
@@ -403,8 +403,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add aarch64-linux-android
 
       - name: Install build deps
@@ -467,8 +467,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install 1.85.1 --no-self-update --profile=minimal
+          rustup default 1.85.1
           rustup target add armv7-linux-androideabi
 
       - name: Install build deps
