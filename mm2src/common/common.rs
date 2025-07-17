@@ -174,6 +174,7 @@ use std::panic::{set_hook, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
 
@@ -339,13 +340,13 @@ pub fn black_box<T>(v: T) -> T {
 
 /// Using a static buffer in order to minimize the chance of heap and stack allocations in the signal handler.
 fn trace_buf() -> PaMutexGuard<'static, [u8; 256]> {
-    static TRACE_BUF: PaMutex<[u8; 256]> = PaMutex::new([0; 256]);
-    TRACE_BUF.lock()
+    static TRACE_BUF: OnceLock<PaMutex<[u8; 256]>> = OnceLock::new();
+    TRACE_BUF.get_or_init(|| PaMutex::new([0; 256])).lock()
 }
 
 fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
-    static TRACE_NAME_BUF: PaMutex<[u8; 128]> = PaMutex::new([0; 128]);
-    TRACE_NAME_BUF.lock()
+    static TRACE_NAME_BUF: OnceLock<PaMutex<[u8; 128]>> = OnceLock::new();
+    TRACE_NAME_BUF.get_or_init(|| PaMutex::new([0; 128])).lock()
 }
 
 /// Shortcut to path->filename conversion.
@@ -537,7 +538,7 @@ pub fn set_panic_hook() {
     }))
 }
 
-/// RPC response, returned by the RPC handlers.  
+/// RPC response, returned by the RPC handlers.
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
 pub type HyRes = Box<dyn Future<Item = Response<Vec<u8>>, Error = String> + Send>;
@@ -727,8 +728,8 @@ pub fn now_sec_i64() -> i64 {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn temp_dir() -> PathBuf { env::temp_dir() }
 
-/// If the `MM_LOG` variable is present then tries to open that file.  
-/// Prints a warning to `stdout` if there's a problem opening the file.  
+/// If the `MM_LOG` variable is present then tries to open that file.
+/// Prints a warning to `stdout` if there's a problem opening the file.
 /// Returns `None` if `MM_LOG` variable is not present or if the specified path can't be opened.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn open_log_file() -> Option<std::fs::File> {
@@ -1198,7 +1199,7 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 #[inline]
 pub fn u256_to_hex(value: U256) -> String { format!("0x{:x}", value) }
 
-/// If 0x prefix exists in an str strip it or return the str as-is  
+/// If 0x prefix exists in an str strip it or return the str as-is
 #[macro_export]
 macro_rules! str_strip_0x {
     ($s: expr) => {
