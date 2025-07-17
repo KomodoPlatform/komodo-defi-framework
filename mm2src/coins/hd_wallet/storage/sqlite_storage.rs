@@ -39,20 +39,20 @@ const MIGRATION_1: &str = "
 ";
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
-    (coin, hd_wallet_rmd160, account_id, account_xpub, external_addresses_number, internal_addresses_number)
-    VALUES (:coin, :hd_wallet_rmd160, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number);";
+    (coin, hd_wallet_rmd160, purpose, coin_type, account_id, account_xpub, external_addresses_number, internal_addresses_number)
+    VALUES (:coin, :hd_wallet_rmd160, :purpose, :coin_type, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number);";
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
-    "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
+    "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type;";
 
 const SELECT_ACCOUNT: &str = "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;";
+    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;";
 
 const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
+    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type;";
 
 impl From<SqlError> for HDWalletStorageError {
     fn from(e: SqlError) -> Self {
@@ -101,6 +101,8 @@ impl HDWalletId {
         owned_named_params! {
             ":coin": self.coin.clone(),
             ":hd_wallet_rmd160": self.hd_wallet_rmd160.clone(),
+            ":purpose": self.path_to_coin.purpose() as u32,
+            ":coin_type": self.path_to_coin.coin_type(),
         }
     }
 }
@@ -324,7 +326,7 @@ impl HDWalletSqliteStorage {
         new_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let sql = format!(
-            "UPDATE hd_account SET {updating_property}=:new_value WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;",
+            "UPDATE hd_account SET {updating_property}=:new_value WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;",
         );
 
         let selfi = self.clone();
