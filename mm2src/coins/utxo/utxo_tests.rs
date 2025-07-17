@@ -4251,7 +4251,6 @@ fn test_account_balance_rpc() {
         };
     }
 
-    #[rustfmt::skip]
     {
         // Account#0, external addresses.
         known_address!("m/44'/141'/0'/0/0", "RRqF4cYniMwYs66S4QDUUZ4GJQFQF69rBE", Bip44Chain::External, balance = 0);
@@ -4560,7 +4559,6 @@ fn test_scan_for_new_addresses() {
     }
 
     // Please note that the order of the `known` and `new` addresses is important.
-    #[rustfmt::skip]
     {
         // Account#0, external addresses.
         new_address!("m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1", Bip44Chain::External, balance = Some(98));
