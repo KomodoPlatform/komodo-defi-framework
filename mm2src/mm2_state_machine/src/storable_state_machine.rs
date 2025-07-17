@@ -235,12 +235,10 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
 // Ensure that StandardStateMachine won't be occasionally implemented for StorableStateMachine.
 // Users of StorableStateMachine must be prevented from using ChangeStateExt::change_state
 // because it doesn't call machine.on_new_state.
-pub trait NotStandardStateMachine<T> {}
-impl<T: StorableStateMachine> NotStandardStateMachine<T> for T {}
+impl<T: StorableStateMachine> !StandardStateMachine for T {}
 
 // Prevent implementing both StorableState and InitialState at the same time
-pub trait NotInitialState<T> {}
-impl<T: StorableState> NotInitialState<T> for T {}
+impl<T: StorableState> !InitialState for T {}
 
 #[async_trait]
 impl<T: StorableStateMachine> StateMachineTrait for T {
