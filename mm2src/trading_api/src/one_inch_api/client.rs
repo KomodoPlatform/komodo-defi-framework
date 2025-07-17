@@ -170,7 +170,7 @@ impl PortfolioUrlBuilder {
 /// 1-inch API caller
 pub struct ApiClient;
 
-#[allow(clippy::swap_ptr_to_ref)] // need for moctopus
+#[allow(clippy::swap_ptr_to_ref)] // need for mocktopus
 #[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl ApiClient {
     #[allow(unused_variables)]
