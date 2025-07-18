@@ -281,7 +281,7 @@ impl WalletConnectCtxImpl {
         &self,
         required_namespaces: serde_json::Value,
         optional_namespaces: Option<serde_json::Value>,
-    ) -> MmResult<String, WalletConnectError> {
+    ) -> MmResult<(String, Topic), WalletConnectError> {
         self.await_connection().await?;
 
         let required_namespaces = serde_json::from_value(required_namespaces)?;
@@ -304,7 +304,7 @@ impl WalletConnectCtxImpl {
 
         send_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
 
-        Ok(url)
+        Ok((url, topic))
     }
 
     /// Get symmetric key associated with a for `topic`.
