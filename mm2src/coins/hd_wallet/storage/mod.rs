@@ -262,6 +262,8 @@ impl HDWalletCoinStorage {
         })
     }
 
+    pub fn path_to_coin(&self) -> &HDPathToCoin { &self.path_to_coin }
+
     pub fn wallet_id(&self) -> HDWalletId {
         HDWalletId::new(self.coin.clone(), self.path_to_coin.clone(), &self.hd_wallet_rmd160)
     }

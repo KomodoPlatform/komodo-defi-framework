@@ -244,7 +244,6 @@ where
 
 pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
-    derivation_path: &HDPathToCoin,
 ) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
 where
     HDAddress: HDAddressOps + Send,
@@ -255,7 +254,7 @@ where
     let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
         .iter()
         .map(|account_info| {
-            let account = HDAccount::try_from_storage_item(derivation_path, account_info)?;
+            let account = HDAccount::try_from_storage_item(hd_wallet_storage.path_to_coin(), account_info)?;
             Ok((account.account_id, account))
         })
         .collect();

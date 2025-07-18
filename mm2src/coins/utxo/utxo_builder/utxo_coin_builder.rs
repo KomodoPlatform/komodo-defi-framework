@@ -213,7 +213,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         )
         .await
         .map_mm_err()?;
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
+        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();
@@ -320,7 +320,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .await
             .map_mm_err()?;
 
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();
@@ -328,6 +328,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             inner: HDWallet {
                 hd_wallet_rmd160,
                 hd_wallet_storage,
+                // FIXME: hd_wallet_storage already store the path to coin. Don't duplicate stuff please.
                 derivation_path: path_to_coin,
                 accounts: HDAccountsMutex::new(accounts),
                 enabled_address: self.activation_params().path_to_address,

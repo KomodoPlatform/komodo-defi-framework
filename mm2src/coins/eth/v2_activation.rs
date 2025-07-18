@@ -768,9 +768,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), path_to_coin.clone(), hd_wallet_rmd160)
                     .await
                     .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-                .await
-                .map_mm_err()?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage).await.map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -801,9 +799,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_hw(ctx, ticker.to_string(), path_to_coin.clone())
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-                .await
-                .map_mm_err()?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage).await.map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
             let hw_ctx = crypto_ctx
