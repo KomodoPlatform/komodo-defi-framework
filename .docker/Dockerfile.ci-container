@@ -1,6 +1,6 @@
 FROM docker.io/debian:bullseye-slim
 
-MAINTAINER Onur Özkan <onur@komodoplatform.com>
+LABEL maintainer="Onur Özkan <onur@komodoplatform.com>"
 
 RUN apt-get update -y
 
@@ -56,6 +56,10 @@ RUN apt-get install -y 	  \
 	docker-ce-cli 		  \
 	containerd.io 		  \
 	docker-buildx-plugin
+
+# --- Added: Install Node.js (needed by JavaScript GitHub Actions such as Swatinem/rust-cache) ---
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
