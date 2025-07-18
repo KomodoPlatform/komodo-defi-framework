@@ -47,10 +47,10 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::rpc_command::{account_balance, get_new_address, init_account_balance, init_create_account,
                          init_scan_for_new_addresses};
-use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
-            DexFee, Eip1559Ops, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams,
-            PrivKeyPolicy, RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes,
-            ValidateNftMakerPaymentArgs, ValidateWatcherSpendInput, WatcherSpendType};
+use crate::{coin_balance, BalanceResult, CoinWithDerivationMethod, DerivationMethod, DexFee, Eip1559Ops,
+            MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams, PrivKeyPolicy, RpcCommonOps,
+            SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
+            ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
@@ -62,7 +62,7 @@ use common::number_type_casting::SafeTypeCastingNumbers;
 use common::wait_until_sec;
 use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 
@@ -900,6 +900,10 @@ pub struct EthCoinImpl {
     pub(crate) gas_limit: EthGasLimit,
     /// Config provided gas limits v2 for swap v2 transactions
     pub(crate) gas_limit_v2: EthGasLimitV2,
+    /// A local cache for transactions sent from this wallet. Only kept in memory for a running KDF instance.
+    /// This allows replacing a transaction even if it was sent through a private node
+    /// and is not yet publicly visible.
+    local_tx_cache: Arc<AsyncMutex<HashMap<H256, BytesJson>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -5849,6 +5853,200 @@ impl MmCoin for EthCoin {
         Box::new(get_tx_hex_by_hash_impl(self.clone(), tx_hash).boxed().compat())
     }
 
+    async fn replace_transaction(
+        &self,
+        tx_hash: String,
+        fee: WithdrawFee,
+        action: ReplacementAction,
+        broadcast: bool,
+    ) -> Result<TransactionDetails, MmError<ReplaceTxError>> {
+        // 1. Try to fetch the transaction from the local cache first.
+        // This allows replacing transactions sent via a private node
+        // and are not yet publicly visible.
+        let tx_hash_h256 = H256::from_str(&tx_hash).map_to_mm(|e| ReplaceTxError::InvalidTxHash(e.to_string()))?;
+        let tx_hex_from_cache = self.local_tx_cache.lock().await.get(&tx_hash_h256).cloned();
+
+        let original_tx_raw = if let Some(tx_hex) = tx_hex_from_cache {
+            RawTransactionRes { tx_hex }
+        } else {
+            // 2. If not in the cache, fall back to fetching from the RPC node.
+            self.get_raw_transaction(RawTransactionRequest {
+                coin: self.ticker().to_string(),
+                tx_hash: tx_hash.clone(),
+            })
+            .compat()
+            .await
+            .map_err(|e| ReplaceTxError::TxNotFound(e.to_string()))?
+        };
+
+        let original_tx: UnverifiedTransactionWrapper =
+            rlp::decode(&original_tx_raw.tx_hex.0).map_to_mm(|e| ReplaceTxError::TxDecodeError(e.to_string()))?;
+
+        let signed_original_tx =
+            SignedEthTx::new(original_tx.clone()).map_to_mm(|e| ReplaceTxError::TxDecodeError(e.to_string()))?;
+
+        let from_addr = signed_original_tx.sender();
+        let nonce_to_replace = original_tx.unsigned().nonce();
+
+        let from = match self.derivation_method() {
+            DerivationMethod::SingleAddress(my_address) => {
+                if *my_address != from_addr {
+                    return MmError::err(ReplaceTxError::TxNotSentFromAddress {
+                        address: from_addr.display_address(),
+                    });
+                }
+                None
+            },
+            DerivationMethod::HDWallet(hd_wallet) => {
+                let hd_address = self
+                    .find_wallet_address(hd_wallet, &from_addr)
+                    .await
+                    .map_err(|e| ReplaceTxError::InternalError(e.to_string()))?
+                    .ok_or_else(|| {
+                        MmError::new(ReplaceTxError::TxNotSentFromAddress {
+                            address: from_addr.display_address(),
+                        })
+                    })?;
+
+                let standard_path =
+                    StandardHDPath::from_str(&hd_address.derivation_path().to_string()).map_to_mm(|e| {
+                        ReplaceTxError::InternalError(format!(
+                            "Invalid HD path for the original transaction's sender address: {:?}",
+                            e,
+                        ))
+                    })?;
+
+                Some(HDAddressSelector::AddressId(standard_path.into()))
+            },
+        };
+
+        // Check if the transaction is a swap contract interaction and disallow replacement if so.
+        // This is crucial because the counterparty in a swap would not be aware of the new transaction hash.
+        // Note: This check is a temporary measure until we implement a proper replacement mechanism for swaps.
+        // Replacing spending transactions from swap contracts is allowed though.
+        if let Call(to_addr) = original_tx.unsigned().action() {
+            let is_swap_v1 = *to_addr == self.swap_contract_address || self.fallback_swap_contract == Some(*to_addr);
+            let is_swap_v2 = self.swap_v2_contracts.map_or(false, |c| {
+                c.maker_swap_v2_contract == *to_addr
+                    || c.taker_swap_v2_contract == *to_addr
+                    || c.nft_maker_swap_v2_contract == *to_addr
+            });
+
+            if is_swap_v1 || is_swap_v2 {
+                return MmError::err(ReplaceTxError::NotSupported(
+                    "Replacing transactions for swaps is not yet supported.".to_string(),
+                ));
+            }
+        }
+
+        // 3. Determine parameters for the new transaction.
+        let (to_addr_str, amount, max) = match action {
+            ReplacementAction::SpeedUp => {
+                let to_addr = match original_tx.unsigned().action() {
+                    Call(addr) => addr,
+                    Create => {
+                        return MmError::err(ReplaceTxError::NotSupported(
+                            "Speeding up contract creation is not yet supported.".to_string(),
+                        ))
+                    },
+                };
+
+                match self.coin_type {
+                    EthCoinType::Eth => {
+                        let original_amount_wei = original_tx.unsigned().value();
+
+                        // Try to estimate the new fee to see if we have enough balance.
+                        let details_res = get_eth_gas_details_from_withdraw_fee(
+                            self,
+                            Some(fee.clone()),
+                            original_amount_wei,
+                            original_tx.unsigned().data().clone().into(),
+                            from_addr,
+                            *to_addr,
+                            false, // We don't know if it's a max withdrawal yet
+                        )
+                        .await;
+
+                        match details_res {
+                            Ok(_) => {
+                                // If successful, it means there's enough balance to cover the original amount and the new fee.
+                                let amount_dec = u256_to_big_decimal(original_amount_wei, self.decimals())
+                                    .mm_err(|e| ReplaceTxError::InternalError(e.to_string()))?;
+                                (to_addr.display_address(), amount_dec, false)
+                            },
+                            Err(e) => match e.into_inner() {
+                                // This error indicates we don't have enough funds for the original amount + new fee.
+                                // This is a strong indicator that the original transaction was a "max" withdrawal.
+                                // In this case, we switch to a max withdrawal for the replacement transaction.
+                                EthGasDetailsErr::AmountTooLow { .. } => {
+                                    (to_addr.display_address(), BigDecimal::from(0), true)
+                                },
+                                // For any other error, we propagate it.
+                                other => {
+                                    let withdraw_error: WithdrawError = other.into();
+                                    return Err(withdraw_error.into());
+                                },
+                            },
+                        }
+                    },
+                    EthCoinType::Erc20 { token_addr, .. } => {
+                        if to_addr != &token_addr {
+                            return MmError::err(ReplaceTxError::NotSupported(
+                                "Transaction does not belong to this ERC20 token.".to_string(),
+                            ));
+                        }
+                        let function = ERC20_CONTRACT
+                            .function("transfer")
+                            .map_to_mm(|e| ReplaceTxError::TxDecodeError(e.to_string()))?;
+                        let tokens = function
+                            .decode_input(&original_tx.unsigned().data()[4..])
+                            .map_to_mm(|e| ReplaceTxError::TxDecodeError(e.to_string()))?;
+
+                        let recipient_addr =
+                            tokens.first().and_then(|t| t.clone().into_address()).ok_or_else(|| {
+                                MmError::new(ReplaceTxError::TxDecodeError("Couldn't decode recipient".into()))
+                            })?;
+                        let token_amount = tokens.get(1).and_then(|t| t.clone().into_uint()).ok_or_else(|| {
+                            MmError::new(ReplaceTxError::TxDecodeError("Couldn't decode amount".into()))
+                        })?;
+
+                        let amount_dec = u256_to_big_decimal(token_amount, self.decimals())
+                            .map_err(|e| MmError::new(ReplaceTxError::InternalError(e.to_string())))?;
+
+                        (recipient_addr.display_address(), amount_dec, false)
+                    },
+                    // Todo: Handle NFT transactions
+                    EthCoinType::Nft { .. } => {
+                        return MmError::err(ReplaceTxError::NotSupported(
+                            "Speeding up NFT transactions is not yet supported.".to_string(),
+                        ));
+                    },
+                }
+            },
+            ReplacementAction::Cancel => (from_addr.display_address(), 0.into(), false),
+        };
+
+        // 4. Create the WithdrawRequest.
+        let withdraw_req = WithdrawRequest {
+            coin: self.ticker().to_string(),
+            to: to_addr_str,
+            amount,
+            from,
+            max,
+            fee: Some(fee),
+            memo: None,
+            broadcast,
+            ibc_source_channel: None,
+        };
+
+        // 5. Use the builder pattern to set the nonce and build the transaction.
+        let mut withdraw_flow = StandardEthWithdraw::new(self.clone(), withdraw_req).map_mm_err()?;
+        withdraw_flow.set_nonce_override(nonce_to_replace);
+
+        let result = withdraw_flow.build().await.map_mm_err()?;
+        Ok(result)
+    }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }
@@ -6674,6 +6872,7 @@ pub async fn eth_coin_from_conf_and_request(
         nfts_infos: Default::default(),
         gas_limit,
         gas_limit_v2,
+        local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
         abortable_system,
     };
 
@@ -7579,6 +7778,7 @@ impl EthCoin {
             nfts_infos: Arc::clone(&self.nfts_infos),
             gas_limit: EthGasLimit::default(),
             gas_limit_v2: EthGasLimitV2::default(),
+            local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
             abortable_system: self.abortable_system.create_subsystem().unwrap(),
         };
         EthCoin(Arc::new(coin))

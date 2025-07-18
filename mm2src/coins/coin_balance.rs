@@ -276,15 +276,93 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
     where
         XPubExtractor: HDXPubExtractor + Send;
 
-    /// Scans for the new addresses of the specified `hd_account` using the given `address_scanner`.
-    /// Returns balances of the new addresses.
+    /// Scans for new, used addresses for the specified `hd_account` and returns their balances.
+    ///
+    /// The function begins scanning from the last known address index, using the provided
+    /// `address_scanner` to check for any transaction history. This process continues until
+    /// `gap_limit` consecutive unused addresses are found, which is a standard
+    /// heuristic to determine that there are likely no more used addresses to discover.
+    ///
+    /// Returns a `Vec` containing the balances for any newly discovered used addresses.
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
         hd_account: &mut HDCoinHDAccount<Self>,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
-    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>>;
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
+        let mut all_balances = Vec::new();
+        for chain in self.bip44_chains() {
+            let mut chain_balances = Vec::with_capacity(gap_limit as usize);
+
+            // Get the first address index that we haven't scanned yet for this chain.
+            let mut checking_address_id = hd_account
+                .known_addresses_number(chain)
+                .mm_err(|e| BalanceError::Internal(e.to_string()))?;
+
+            let mut unused_addresses_counter = 0;
+            let max_addresses_number = hd_account.address_limit();
+
+            // Scan addresses until we hit the gap limit or the maximum address limit.
+            while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
+                let hd_address = self
+                    .derive_address(hd_account, chain, checking_address_id)
+                    .await
+                    .map_mm_err()?;
+                let checking_address = hd_address.address();
+                let checking_address_der_path = hd_address.derivation_path();
+
+                match self.is_address_used(&checking_address, address_scanner).await? {
+                    // If the address has been used, add it and any preceding empty addresses to our list.
+                    AddressBalanceStatus::Used(non_empty_balance) => {
+                        let last_non_empty_address_id = checking_address_id - unused_addresses_counter;
+
+                        // Add all the empty addresses we skipped over.
+                        let address_ids = (last_non_empty_address_id..checking_address_id)
+                            .map(|address_id| HDAddressId { chain, address_id });
+                        let empty_addresses = self
+                            .derive_addresses(hd_account, address_ids)
+                            .await
+                            .map_mm_err()?
+                            .into_iter()
+                            .map(|empty_address| HDAddressBalance {
+                                address: empty_address.address().display_address(),
+                                derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
+                                chain,
+                                balance: Self::BalanceObject::new(),
+                            });
+                        chain_balances.extend(empty_addresses);
+
+                        // Add the used address we just found.
+                        chain_balances.push(HDAddressBalance {
+                            address: checking_address.display_address(),
+                            derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
+                            chain,
+                            balance: non_empty_balance,
+                        });
+
+                        // Reset the counter since we found a used address.
+                        unused_addresses_counter = 0;
+                    },
+                    AddressBalanceStatus::NotUsed => unused_addresses_counter += 1,
+                }
+                checking_address_id += 1;
+            }
+
+            // Update the wallet's state with the new number of known addresses.
+            self.set_known_addresses_number(
+                hd_wallet,
+                hd_account,
+                chain,
+                checking_address_id - unused_addresses_counter,
+            )
+            .await
+            .map_mm_err()?;
+
+            all_balances.extend(chain_balances);
+        }
+        Ok(all_balances)
+    }
 
     /// Requests balances of every activated HD account.
     async fn all_accounts_balances(

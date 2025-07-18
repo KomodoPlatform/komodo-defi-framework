@@ -78,6 +78,7 @@ pub(crate) fn eth_coin_from_keypair(
         nfts_infos: Arc::new(Default::default()),
         gas_limit,
         gas_limit_v2,
+        local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)

@@ -1,6 +1,6 @@
 use super::{inner_impl, AccountUpdatingError, AddressDerivingError, DisplayAddress, ExtendedPublicKeyOps,
-            HDAccountOps, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
-            NewAddressDeriveConfirmError, NewAddressDerivingError};
+            HDAccountOps, HDCoinAddress, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress,
+            HDWalletOps, NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet::{errors::SettingEnabledAddressError, HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
@@ -25,6 +25,10 @@ pub struct HDAddressId {
 pub trait HDWalletCoinOps {
     /// Any type that represents a Hierarchical Deterministic (HD) wallet.
     type HDWallet: HDWalletOps + HDWalletStorageOps + Send + Sync;
+
+    /// Returns a list of supported BIP44 chains for address derivation.
+    /// Coins like Ethereum that only use one chain should override this method.
+    fn bip44_chains(&self) -> Vec<Bip44Chain> { vec![Bip44Chain::External, Bip44Chain::Internal] }
 
     /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(
@@ -129,6 +133,28 @@ pub trait HDWalletCoinOps {
         }
 
         Ok(result)
+    }
+
+    /// Finds a derived HD address structure by its address.
+    /// This method searches through all known addresses in all accounts of the given HD wallet.
+    /// This can be used to find a derivation path for a specific address.
+    async fn find_wallet_address(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        address_to_find: &HDCoinAddress<Self>,
+    ) -> MmResult<Option<HDCoinHDAddress<Self>>, AddressDerivingError> {
+        for (_, account) in hd_wallet.get_accounts().await {
+            for chain in self.bip44_chains() {
+                let known_addresses = self.derive_known_addresses(&account, chain).await?;
+                if let Some(found) = known_addresses
+                    .into_iter()
+                    .find(|addr| addr.address() == *address_to_find)
+                {
+                    return Ok(Some(found));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Retrieves or derives known HD addresses for a specific account and chain.

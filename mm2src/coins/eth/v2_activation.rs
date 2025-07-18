@@ -494,6 +494,7 @@ impl EthCoin {
             nfts_infos: Default::default(),
             gas_limit,
             gas_limit_v2,
+            local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
             abortable_system,
         };
 
@@ -583,6 +584,7 @@ impl EthCoin {
             nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
             gas_limit,
             gas_limit_v2,
+            local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
             abortable_system,
         };
         Ok(EthCoin(Arc::new(global_nft)))
@@ -723,6 +725,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         nfts_infos: Default::default(),
         gas_limit,
         gas_limit_v2,
+        local_tx_cache: Arc::new(AsyncMutex::new(HashMap::new())),
         abortable_system,
     };
 

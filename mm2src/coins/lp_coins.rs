@@ -47,9 +47,8 @@ use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
-             GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
-             Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
+use crypto::{derive_secp256k1_secret, Bip32Error, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
+             HDPathToCoin, HwRpcError, KeyPairPolicy, Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::{Address as EthAddress, H256, H264, H520, U256};
@@ -207,7 +206,6 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
-use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
 pub mod lp_price;
 pub mod watcher_common;
@@ -224,9 +222,9 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps,
-                HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId,
-                HDWalletAddress, HDWalletCoinOps, HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAddressOps, HDAddressSelector, HDCoinAddress,
+                HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps, HDWalletOps,
+                HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -275,8 +273,8 @@ use nft::nft_errors::GetNftInfoError;
 use script::Script;
 
 pub mod z_coin;
-use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
-use crate::hd_wallet::{AddrToString, DisplayAddress};
+use crate::coin_balance::BalanceObjectOps;
+use crate::hd_wallet::AddrToString;
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -2230,6 +2228,57 @@ pub struct WithdrawRequest {
     broadcast: bool,
 }
 
+/// Defines the action to be taken when replacing a transaction.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReplacementAction {
+    /// Re-broadcast the transaction with a higher fee to speed up confirmation.
+    SpeedUp,
+    /// Send a zero-value transaction to oneself with the same nonce to effectively cancel the original transaction.
+    Cancel,
+}
+
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum ReplaceTxError {
+    #[display(fmt = "Transaction hash is invalid: {}", _0)]
+    InvalidTxHash(String),
+    #[display(fmt = "Transaction not found for hash: {}", _0)]
+    TxNotFound(String),
+    #[display(fmt = "Failed to decode transaction: {}", _0)]
+    TxDecodeError(String),
+    #[display(fmt = "The specified fee type is not valid for this coin")]
+    InvalidFeeType,
+    #[display(
+        fmt = "Transaction was not sent from an address belonging to this wallet: {}",
+        address
+    )]
+    TxNotSentFromAddress { address: String },
+    #[display(fmt = "This operation is not supported: {}", _0)]
+    NotSupported(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+    #[display(fmt = "Error from withdrawal logic: {}", _0)]
+    WithdrawError(WithdrawError),
+}
+
+impl From<WithdrawError> for ReplaceTxError {
+    fn from(e: WithdrawError) -> Self { ReplaceTxError::WithdrawError(e) }
+}
+
+impl HttpStatusCode for ReplaceTxError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            ReplaceTxError::InvalidTxHash(_)
+            | ReplaceTxError::TxNotFound(_)
+            | ReplaceTxError::InvalidFeeType
+            | ReplaceTxError::TxNotSentFromAddress { .. }
+            | ReplaceTxError::NotSupported(_) => StatusCode::BAD_REQUEST,
+            ReplaceTxError::InternalError(_) | ReplaceTxError::TxDecodeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ReplaceTxError::WithdrawError(e) => e.status_code(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum StakingDetails {
@@ -3482,6 +3531,19 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut;
 
+    // Todo: UTXO RBF
+    async fn replace_transaction(
+        &self,
+        _tx_hash: String,
+        _fee: WithdrawFee,
+        _action: ReplacementAction,
+        _broadcast: bool,
+    ) -> Result<TransactionDetails, MmError<ReplaceTxError>> {
+        MmError::err(ReplaceTxError::InternalError(
+            "`replace_transaction` is not supported for this coin yet!".to_string(),
+        ))
+    }
+
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 
@@ -4536,14 +4598,11 @@ pub trait CoinWithDerivationMethod: HDWalletCoinOps {
                 // but this will not happen in most use cases where addresses will be below the capacity.
                 let mut all_addresses = HashSet::with_capacity(ADDRESSES_CAPACITY);
                 for (_, hd_account) in hd_accounts {
-                    let external_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
-                    let internal_addresses = self.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
-
-                    let addresses_it = external_addresses
-                        .into_iter()
-                        .chain(internal_addresses)
-                        .map(|hd_address| hd_address.address());
-                    all_addresses.extend(addresses_it);
+                    for chain in self.bip44_chains() {
+                        let addresses = self.derive_known_addresses(&hd_account, chain).await?;
+                        let addresses_it = addresses.into_iter().map(|hd_address| hd_address.address());
+                        all_addresses.extend(addresses_it);
+                    }
                 }
 
                 Ok(all_addresses)
@@ -5962,87 +6021,6 @@ pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
         },
         _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
     }
-}
-
-/// Checks addresses that either had empty transaction history last time we checked or has not been checked before.
-/// The checking stops at the moment when we find `gap_limit` consecutive empty addresses.
-pub async fn scan_for_new_addresses_impl<T>(
-    coin: &T,
-    hd_wallet: &T::HDWallet,
-    hd_account: &mut HDCoinHDAccount<T>,
-    address_scanner: &T::HDAddressScanner,
-    chain: Bip44Chain,
-    gap_limit: u32,
-) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
-where
-    T: HDWalletBalanceOps + Sync,
-{
-    let mut balances = Vec::with_capacity(gap_limit as usize);
-
-    // Get the first unknown address id.
-    let mut checking_address_id = hd_account
-        .known_addresses_number(chain)
-        // A UTXO coin should support both [`Bip44Chain::External`] and [`Bip44Chain::Internal`].
-        .mm_err(|e| BalanceError::Internal(e.to_string()))?;
-
-    let mut unused_addresses_counter = 0;
-    let max_addresses_number = hd_account.address_limit();
-    while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin
-            .derive_address(hd_account, chain, checking_address_id)
-            .await
-            .map_mm_err()?;
-        let checking_address = hd_address.address();
-        let checking_address_der_path = hd_address.derivation_path();
-
-        match coin.is_address_used(&checking_address, address_scanner).await? {
-            // We found a non-empty address, so we have to fill up the balance list
-            // with zeros starting from `last_non_empty_address_id = checking_address_id - unused_addresses_counter`.
-            AddressBalanceStatus::Used(non_empty_balance) => {
-                let last_non_empty_address_id = checking_address_id - unused_addresses_counter;
-
-                // First, derive all empty addresses and put it into `balances` with default balance.
-                let address_ids = (last_non_empty_address_id..checking_address_id)
-                    .map(|address_id| HDAddressId { chain, address_id });
-                let empty_addresses = coin
-                    .derive_addresses(hd_account, address_ids)
-                    .await
-                    .map_mm_err()?
-                    .into_iter()
-                    .map(|empty_address| HDAddressBalance {
-                        address: empty_address.address().display_address(),
-                        derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
-                        chain,
-                        balance: HDWalletBalanceObject::<T>::new(),
-                    });
-                balances.extend(empty_addresses);
-
-                // Then push this non-empty address.
-                balances.push(HDAddressBalance {
-                    address: checking_address.display_address(),
-                    derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
-                    chain,
-                    balance: non_empty_balance,
-                });
-                // Reset the counter of unused addresses to zero since we found a non-empty address.
-                unused_addresses_counter = 0;
-            },
-            AddressBalanceStatus::NotUsed => unused_addresses_counter += 1,
-        }
-
-        checking_address_id += 1;
-    }
-
-    coin.set_known_addresses_number(
-        hd_wallet,
-        hd_account,
-        chain,
-        checking_address_id - unused_addresses_counter,
-    )
-    .await
-    .map_mm_err()?;
-
-    Ok(balances)
 }
 
 #[cfg(test)]
