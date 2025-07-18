@@ -32,11 +32,11 @@ const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
 
 /// This migration adds `purpose` and `coin_type` columns to the `hd_account` table.
 /// Note that this migration clears the `hd_account` table completely.
-const MIGRATION_1: &str = "
-    ALTER TABLE hd_account ADD COLUMN purpose INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE hd_account ADD COLUMN coin_type INTEGER NOT NULL DEFAULT 0;
-    DELETE FROM hd_account;
-";
+const MIGRATION_1: [&str; 3] = [
+    "ALTER TABLE hd_account ADD COLUMN purpose INTEGER NOT NULL DEFAULT 0;",
+    "DELETE FROM hd_account;",
+    "ALTER TABLE hd_account ADD COLUMN coin_type INTEGER NOT NULL DEFAULT 0;",
+];
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
     (coin, hd_wallet_rmd160, purpose, coin_type, account_id, account_xpub, external_addresses_number, internal_addresses_number)
@@ -87,6 +87,7 @@ impl HDAccountStorageItem {
     fn to_sql_params_with_wallet_id(&self, wallet_id: HDWalletId) -> OwnedSqlNamedParams {
         let mut params = wallet_id.to_sql_params();
         params.extend(owned_named_params! {
+            ":coin": wallet_id.coin.clone(),
             ":account_id": self.account_id,
             ":account_xpub": self.account_xpub.clone(),
             ":external_addresses_number": self.external_addresses_number,
@@ -99,7 +100,6 @@ impl HDAccountStorageItem {
 impl HDWalletId {
     fn to_sql_params(&self) -> OwnedSqlNamedParams {
         owned_named_params! {
-            ":coin": self.coin.clone(),
             ":hd_wallet_rmd160": self.hd_wallet_rmd160.clone(),
             ":purpose": self.path_to_coin.purpose() as u32,
             ":coin_type": self.path_to_coin.coin_type(),
@@ -268,9 +268,11 @@ impl HDWalletSqliteStorage {
                 // Perform migrations if needed.
                 match current_version {
                     0 => {
-                        tx.execute(MIGRATION_1, [])
-                            .map(|_| ())
-                            .map_to_mm(HDWalletStorageError::from)?;
+                        for migration_statement in &MIGRATION_1 {
+                            tx.execute(migration_statement, [])
+                                .map(|_| ())
+                                .map_to_mm(HDWalletStorageError::from)?;
+                        }
                     },
                     DB_VERSION..=u32::MAX => {
                         return MmError::err(HDWalletStorageError::Internal(format!(

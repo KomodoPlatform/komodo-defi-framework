@@ -227,7 +227,7 @@ impl Default for HDWalletCoinStorage {
     fn default() -> Self {
         HDWalletCoinStorage {
             coin: String::default(),
-            path_to_coin: HDPathToCoin::default_for_test(),
+            path_to_coin: HDPathToCoin::default_for_test(0),
             hd_wallet_rmd160: H160::default(),
             inner: Box::new(HDWalletMockStorage),
         }
@@ -360,17 +360,18 @@ mod tests {
         let device0_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let dummy_path_to_coin = HDPathToCoin::default_for_test();
+        let rick_path_to_coin = HDPathToCoin::default_for_test(0);
         let rick_device0_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin.clone(), device0_rmd160)
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), rick_path_to_coin.clone(), device0_rmd160)
                 .await
                 .expect("!HDWalletCoinStorage::new");
         let rick_device1_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin.clone(), device1_rmd160)
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), rick_path_to_coin, device1_rmd160)
                 .await
                 .expect("!HDWalletCoinStorage::new");
+        let morty_path_to_coin = HDPathToCoin::default_for_test(1);
         let morty_device0_db =
-            HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), dummy_path_to_coin, device0_rmd160)
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), morty_path_to_coin, device0_rmd160)
                 .await
                 .expect("!HDWalletCoinStorage::new");
 
@@ -456,7 +457,7 @@ mod tests {
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device2_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let dummy_path_to_coin = HDPathToCoin::default_for_test();
+        let dummy_path_to_coin = HDPathToCoin::default_for_test(0);
         let wallet0_db =
             HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin.clone(), device0_rmd160)
                 .await
@@ -519,7 +520,7 @@ mod tests {
         let ctx = mm_ctx_with_custom_db();
         let device_rmd160 = H160::from("0000000000000000000000000000000000000010");
 
-        let dummy_path_to_coin = HDPathToCoin::default_for_test();
+        let dummy_path_to_coin = HDPathToCoin::default_for_test(0);
         let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin, device_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
