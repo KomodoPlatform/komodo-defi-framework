@@ -57,7 +57,7 @@ RUN apt-get install -y 	  \
 	containerd.io 		  \
 	docker-buildx-plugin
 
-# --- Added: Install Node.js (needed by JavaScript GitHub Actions such as Swatinem/rust-cache) ---
+
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
