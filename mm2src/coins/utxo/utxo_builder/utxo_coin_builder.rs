@@ -326,6 +326,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
             inner: HDWallet {
+                // FIXME: this field is also already stored in `hd_wallet_storage`, so don't duplicate it please.
                 hd_wallet_rmd160,
                 hd_wallet_storage,
                 // FIXME: hd_wallet_storage already store the path to coin. Don't duplicate stuff please.
