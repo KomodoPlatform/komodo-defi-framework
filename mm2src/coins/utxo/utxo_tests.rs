@@ -4306,9 +4306,7 @@ fn test_account_balance_rpc() {
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
             enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 3,
@@ -4638,9 +4636,7 @@ fn test_scan_for_new_addresses() {
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
             enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 3,
@@ -4778,9 +4774,7 @@ fn test_get_new_address() {
 
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
             enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 2,
