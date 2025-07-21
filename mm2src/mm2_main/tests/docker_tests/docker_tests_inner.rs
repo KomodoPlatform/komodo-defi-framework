@@ -3565,13 +3565,13 @@ fn test_locked_amount() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let bob_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
     let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
         .ip
         .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
@@ -3579,14 +3579,7 @@ fn test_locked_amount() {
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
 
-    block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN", "MYCOIN1")],
-        1.,
-        1.,
-        777.,
-    ));
+    block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN", "MYCOIN1")], 1., 1., 777.));
 
     let locked_bob = block_on(get_locked_amount(&mm_bob, "MYCOIN"));
     assert_eq!(locked_bob.coin, "MYCOIN");
@@ -3756,13 +3749,13 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_priv_key, &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     let alice_conf = Mm2TestConf::light_node(&alice_priv_key, &coins, &[&mm_bob.ip.to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -3809,14 +3802,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         false
     )));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("ETH", "ERC20DEV")],
-        1.,
-        1.,
-        0.0001,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("ETH", "ERC20DEV")], 1., 1., 0.0001));
 
     // give few seconds for swap statuses to be saved
     thread::sleep(Duration::from_secs(3));
@@ -3849,13 +3835,13 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_priv_key, &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     let alice_conf = Mm2TestConf::light_node(&alice_priv_key, &coins, &[&mm_bob.ip.to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -3902,14 +3888,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         false
     )));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("ETH", "ERC20DEV")],
-        1.,
-        1.,
-        0.0001,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("ETH", "ERC20DEV")], 1., 1., 0.0001));
 
     // give few seconds for swap statuses to be saved
     thread::sleep(Duration::from_secs(3));

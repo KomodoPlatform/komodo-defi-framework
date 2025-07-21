@@ -345,6 +345,7 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// - If a wallet name is provided without a passphrase, it first checks for the existence of a
 ///   passphrase file associated with the wallet. If no file is found, it generates a new passphrase,
 ///   encrypts it, and saves it, enabling multi-wallet support.
+// FIXME Alright - I believe this behavior must change so that the user is always KNOWINGLY AND EXPLICITLY generating a new passphrase.
 /// - If a passphrase is provided (with or without a wallet name), it uses the provided passphrase
 ///   and handles encryption and storage as needed.
 /// - Initializes the cryptographic context based on the `enable_hd` configuration.
@@ -355,7 +356,7 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// # Errors
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
-pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
+pub async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
     ctx.wallet_name
         .set(wallet_name.clone())

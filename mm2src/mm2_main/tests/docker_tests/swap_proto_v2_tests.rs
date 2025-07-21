@@ -677,14 +677,7 @@ fn test_v2_swap_utxo_utxo_impl() {
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[(MYCOIN, MYCOIN1)],
-        1.0,
-        1.0,
-        777.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[(MYCOIN, MYCOIN1)], 1.0, 1.0, 777.));
     log!("{:?}", uuids);
 
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
@@ -765,7 +758,7 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let mut bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -773,7 +766,7 @@ fn test_v2_swap_utxo_utxo_kickstart() {
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
@@ -782,14 +775,7 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[(MYCOIN, MYCOIN1)],
-        1.0,
-        1.0,
-        777.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[(MYCOIN, MYCOIN1)], 1.0, 1.0, 777.));
     log!("{:?}", uuids);
 
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
@@ -880,7 +866,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let mut bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -888,7 +874,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
@@ -897,14 +883,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[(MYCOIN, MYCOIN1)],
-        1.0,
-        1.0,
-        100.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[(MYCOIN, MYCOIN1)], 1.0, 1.0, 100.));
     log!("{:?}", uuids);
 
     for uuid in uuids.iter() {

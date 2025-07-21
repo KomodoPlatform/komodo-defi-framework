@@ -212,8 +212,8 @@ fn start_swaps_and_get_balances(
     let mut bob_bcoin_balance_after = BigDecimal::zero();
 
     block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
+        &mm_bob,
+        &mm_alice,
         &[(b_coin, a_coin)],
         maker_price,
         taker_price,
@@ -411,14 +411,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
     };
     let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf, None);
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -472,14 +465,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
     };
     let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf, None);
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -530,14 +516,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     };
     let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_seednode.ip.to_string()], watcher_conf, Some(60));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -592,14 +571,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     };
     let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_seednode.ip.to_string()], watcher_conf, Some(60));
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -643,14 +615,7 @@ fn test_taker_completes_swap_after_restart() {
     let mut mm_bob = run_maker_node(&coins, &[], &[], None);
     let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()], None);
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -688,14 +653,7 @@ fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
     let mut mm_bob = run_maker_node(&coins, &[], &[], None);
     let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()], None);
 
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("MYCOIN1", "MYCOIN")],
-        25.,
-        25.,
-        2.,
-    ));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[("MYCOIN1", "MYCOIN")], 25., 25., 2.));
 
     // stop taker after taker payment sent
     let taker_payment_msg = "Taker payment tx hash ";
@@ -1138,7 +1096,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
 
     let bob_passphrase = String::from("also shoot benefit prefer juice shell elder veteran woman mimic image kidney");
     let bob_conf = Mm2TestConf::light_node(&bob_passphrase, &coins, &[&mm_alice.ip.to_string()]);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -1184,7 +1142,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     let watcher1_eth_balance_before = block_on(my_balance(&mm_watcher1, "ETH")).balance;
     let watcher2_eth_balance_before = block_on(my_balance(&mm_watcher2, "ETH")).balance;
 
-    block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
+    block_on(start_swaps(&mm_bob, &mm_alice, &[("ETH", "JST")], 1., 1., 0.01));
 
     block_on(mm_alice.wait_for_log(180., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_alice.stop()).unwrap();
@@ -1562,7 +1520,7 @@ fn test_watcher_validate_taker_payment_utxo() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+            maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
         }));
     assert!(validate_taker_payment_res.is_ok());
 
@@ -1575,7 +1533,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1599,7 +1557,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1647,7 +1605,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1682,7 +1640,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1761,7 +1719,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         },
     ));
     assert!(validate_taker_payment_res.is_ok());
@@ -1776,7 +1734,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1816,7 +1774,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1844,7 +1802,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: wrong_secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1892,7 +1850,7 @@ fn test_watcher_validate_taker_payment_eth() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1916,7 +1874,7 @@ fn test_watcher_validate_taker_payment_eth() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1997,7 +1955,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }));
     assert!(validate_taker_payment_res.is_ok());
 
@@ -2010,7 +1968,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2048,7 +2006,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2074,7 +2032,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2121,7 +2079,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2145,7 +2103,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -3228,15 +3186,20 @@ fn test_watcher_reward() {
     let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let eth_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
-    let watcher_reward =
-        block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))
-            .unwrap();
+    let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
+        None,
+        None,
+        None,
+        timeout,
+    ))
+    .unwrap();
     assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
         None,
         None,
         Some(BigDecimal::one()),
@@ -3249,7 +3212,7 @@ fn test_watcher_reward() {
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
-        &MmCoinEnum::UtxoCoin(utxo_coin.clone()),
+        &MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()),
         None,
         None,
         None,
@@ -3261,7 +3224,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
-        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, timeout))
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoinVariant(eth_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
     assert!(!watcher_reward.is_exact_amount);
@@ -3269,7 +3232,7 @@ fn test_watcher_reward() {
     assert!(watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_maker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
         Some(BigDecimal::one()),
         timeout,
     ))
@@ -3281,7 +3244,7 @@ fn test_watcher_reward() {
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward =
-        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout))
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
     assert!(!watcher_reward.is_exact_amount);
@@ -3289,7 +3252,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(utxo_coin.get_taker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin),
+        &MmCoinEnum::EthCoinVariant(eth_coin),
         Some(BigDecimal::from_str("0.01").unwrap()),
         Some(BigDecimal::from_str("1").unwrap()),
         None,
@@ -3301,6 +3264,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
-        block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout)).unwrap();
+        block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()), None, timeout))
+            .unwrap();
     assert!(watcher_reward.is_none());
 }

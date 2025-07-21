@@ -2497,8 +2497,8 @@ mod maker_swap_tests {
         });
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let actual = block_on(maker_swap.recover_funds()).unwrap();
         let expected = RecoveredSwap {
@@ -2532,8 +2532,8 @@ mod maker_swap_tests {
 
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let actual = block_on(maker_swap.recover_funds()).unwrap();
         let expected = RecoveredSwap {
@@ -2561,8 +2561,8 @@ mod maker_swap_tests {
                 eth_tx_for_test().into(),
             ))))))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
@@ -2593,8 +2593,8 @@ mod maker_swap_tests {
                 eth_tx_for_test().into(),
             ))))))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
         assert!(err.contains("Taker payment was already refunded"));
@@ -2623,8 +2623,8 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::HaveToWait(1000)))));
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let error = block_on(maker_swap.recover_funds()).unwrap_err();
         assert!(error.contains("Too early to refund"));
@@ -2648,8 +2648,8 @@ mod maker_swap_tests {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::pin(futures::future::ok(None)))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
@@ -2665,8 +2665,8 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
@@ -2698,8 +2698,8 @@ mod maker_swap_tests {
             ))))))
         });
 
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
         assert!(err.contains("Taker payment was already spent"));
@@ -2717,8 +2717,8 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
@@ -2756,8 +2756,8 @@ mod maker_swap_tests {
             MockResult::Return(Box::pin(futures::future::ready(Ok(eth_tx_for_test().into()))))
         });
 
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let expected = Ok(RecoveredSwap {
             coin: "ticker".into(),
@@ -2800,8 +2800,8 @@ mod maker_swap_tests {
             MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
 
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let err = block_on(maker_swap.recover_funds()).unwrap_err();
         assert!(err.contains("Taker payment spend transaction has been sent and confirmed"));
@@ -2821,8 +2821,8 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (_maker_swap, _) =
             MakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, maker_saved_swap).unwrap();
 
@@ -2844,8 +2844,8 @@ mod maker_swap_tests {
             unsafe { SWAP_CONTRACT_ADDRESS_CALLED += 1 };
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
 
         assert_eq!(unsafe { SWAP_CONTRACT_ADDRESS_CALLED }, 2);
@@ -2873,8 +2873,8 @@ mod maker_swap_tests {
             unsafe { SWAP_CONTRACT_ADDRESS_CALLED += 1 };
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
 
         assert_eq!(unsafe { SWAP_CONTRACT_ADDRESS_CALLED }, 1);

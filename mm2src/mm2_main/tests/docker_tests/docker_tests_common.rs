@@ -1,11 +1,3 @@
-use coins::z_coin::ZCoin;
-pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
-pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
-                                      wait_check_stats_swap_status, MarketMakerIt};
-
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;
 use bitcrypto::{dhash160, ChecksumType};
@@ -21,7 +13,9 @@ use coins::utxo::utxo_common::send_outputs_from_my_address;
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
+use coins::z_coin::ZCoin;
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::Secp256k1Secret;
 use ethabi::Token;
@@ -32,6 +26,11 @@ use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, Net
            NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+pub use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::BalanceResponse;
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
+                                      wait_check_stats_swap_status, MarketMakerIt};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
@@ -46,7 +45,9 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 pub use std::{env, thread};
 use std::{path::PathBuf, sync::Mutex, time::Duration};
-use testcontainers::{clients::Cli, core::WaitFor, Container, GenericImage, RunnableImage};
+use testcontainers::core::Mount;
+use testcontainers::runners::SyncRunner;
+use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use web3::types::Address as EthAddress;
 use web3::types::{BlockId, BlockNumber, TransactionRequest};
@@ -355,9 +356,9 @@ impl CoinDockerOps for BchDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 }
 
-pub struct DockerNode<'a> {
+pub struct DockerNode {
     #[allow(dead_code)]
-    pub container: Container<'a, GenericImage>,
+    pub container: Container<GenericImage>,
     #[allow(dead_code)]
     pub ticker: String,
     #[allow(dead_code)]
@@ -369,9 +370,12 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
     Secp256k1Secret::from(*priv_key.as_ref())
 }
 
-pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE, "multiarch")
-        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_mount(Mount::bind_mount(
+            zcash_params_path().display().to_string(),
+            "/root/.zcash-params",
+        ))
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", ticker)
         .with_env_var("TEST_ADDY", "R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF")
@@ -385,7 +389,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start UTXO asset docker node");
     let mut conf_path = coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
     conf_path.push(format!("{}.conf", ticker));
@@ -409,11 +413,11 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
     }
 }
 
-pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image = GenericImage::new(GETH_DOCKER_IMAGE, "stable");
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
     let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Geth docker node");
     DockerNode {
         container,
         ticker: ticker.into(),
@@ -422,14 +426,14 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
 }
 
 #[allow(dead_code)]
-pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image =
         GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
     let args = vec![];
     let image = RunnableImage::from((image, args))
         .with_mapped_port((port, port))
         .with_container_name("sia-docker");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Sia docker node");
     DockerNode {
         container,
         ticker: ticker.into(),
@@ -437,14 +441,16 @@ pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> 
     }
 }
 
-pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn nucleus_node(runtime_dir: PathBuf) -> DockerNode {
     let nucleus_node_runtime_dir = runtime_dir.join("nucleus-testnet-data");
     assert!(nucleus_node_runtime_dir.exists());
 
-    let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
-        .with_volume(nucleus_node_runtime_dir.to_str().unwrap(), "/root/.nucleus");
+    let image = GenericImage::new(NUCLEUS_IMAGE, "latest").with_mount(Mount::bind_mount(
+        nucleus_node_runtime_dir.to_str().unwrap(),
+        "/root/.nucleus",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Nucleus docker node");
 
     DockerNode {
         container,
@@ -453,14 +459,17 @@ pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn atom_node(runtime_dir: PathBuf) -> DockerNode {
     let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
     assert!(atom_node_runtime_dir.exists());
 
     let (image, tag) = ATOM_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
-    let image = GenericImage::new(image, tag).with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
+    let image = GenericImage::new(image, tag).with_mount(Mount::bind_mount(
+        atom_node_runtime_dir.to_str().unwrap(),
+        "/root/.gaia",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Atom docker node");
 
     DockerNode {
         container,
@@ -469,14 +478,17 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn ibc_relayer_node(runtime_dir: PathBuf) -> DockerNode {
     let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
     assert!(relayer_node_runtime_dir.exists());
 
     let (image, tag) = IBC_RELAYER_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
-    let image = GenericImage::new(image, tag).with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/root/.relayer");
+    let image = GenericImage::new(image, tag).with_mount(Mount::bind_mount(
+        relayer_node_runtime_dir.to_str().unwrap(),
+        "/root/.relayer",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start IBC Relayer docker node");
 
     DockerNode {
         container,
@@ -485,14 +497,17 @@ pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_>
     }
 }
 
-pub fn zombie_asset_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
+pub fn zombie_asset_docker_node(port: u16) -> DockerNode {
     let image = GenericImage::new(ZOMBIE_ASSET_DOCKER_IMAGE, "multiarch")
-        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_mount(Mount::bind_mount(
+            zcash_params_path().display().to_string(),
+            "/root/.zcash-params",
+        ))
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
 
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Zombie asset docker node");
     let config_ticker = "ZOMBIE";
     let mut conf_path = coin_daemon_data_dir(config_ticker, true);
 

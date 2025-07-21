@@ -27,7 +27,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
-use testcontainers::clients::Cli;
 
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
@@ -45,7 +44,6 @@ use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DO
 // Linux and MacOS - https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh
 pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     // pretty_env_logger::try_init();
-    let docker = Cli::default();
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if env::var("_MM2_TEST_CONF").is_err() {
@@ -66,15 +64,15 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
         let runtime_dir = prepare_runtime_dir().unwrap();
 
-        let nucleus_node = nucleus_node(&docker, runtime_dir.clone());
-        let atom_node = atom_node(&docker, runtime_dir.clone());
-        let ibc_relayer_node = ibc_relayer_node(&docker, runtime_dir);
-        let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
-        let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
-        let qtum_node = qtum_docker_node(&docker, 9000);
-        let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
-        let geth_node = geth_docker_node(&docker, "ETH", 8545);
-        let zombie_node = zombie_asset_docker_node(&docker, 7090);
+        let nucleus_node = nucleus_node(runtime_dir.clone());
+        let atom_node = atom_node(runtime_dir.clone());
+        let ibc_relayer_node = ibc_relayer_node(runtime_dir);
+        let utxo_node = utxo_asset_docker_node("MYCOIN", 7000);
+        let utxo_node1 = utxo_asset_docker_node("MYCOIN1", 8000);
+        let qtum_node = qtum_docker_node(9000);
+        let for_slp_node = utxo_asset_docker_node("FORSLP", 10000);
+        let geth_node = geth_docker_node("ETH", 8545);
+        let zombie_node = zombie_asset_docker_node(7090);
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");

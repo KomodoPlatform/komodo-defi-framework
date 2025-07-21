@@ -767,7 +767,7 @@ async fn trade_base_rel_electrum(
     let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 600, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
-    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
+    let uuids = start_swaps(&mm_bob, &mm_alice, pairs, maker_price, taker_price, volume).await;
 
     #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {
@@ -4515,7 +4515,7 @@ fn test_mm2_db_migration() {
 
     let coins = json!([rick_conf(), morty_conf(), eth_dev_conf(),]);
 
-    let mm2_folder = new_mm2_temp_folder_path(None);
+    let mm2_folder = new_mm2_temp_folder_path(None, None);
     let swaps_dir = mm2_folder.join(format!(
         "{}/SWAPS/STATS/MAKER",
         hex::encode(rmd160_from_passphrase(&bob_passphrase))
@@ -7020,7 +7020,7 @@ mod trezor_tests {
         .unwrap();
 
         let coin = block_on(lp_coinfind(&ctx, ticker_coin)).unwrap();
-        let eth_coin = if let Some(MmCoinEnum::EthCoin(eth_coin)) = coin {
+        let eth_coin = if let Some(MmCoinEnum::EthCoinVariant(eth_coin)) = coin {
             eth_coin
         } else {
             panic!("eth coin not enabled");

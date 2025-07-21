@@ -49,7 +49,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --features "enable-sia" --release
 
       - name: Compress kdf build output
         env:
@@ -61,6 +61,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -113,7 +114,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --release --target x86_64-apple-darwin
+        run: cargo build --features "enable-sia" --release --target x86_64-apple-darwin
 
       - name: Compress kdf build output
         env:
@@ -125,6 +126,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -165,7 +167,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --features "enable-sia" --release --target aarch64-apple-darwin
 
       - name: Compress kdf build output
         env:
@@ -177,6 +179,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -216,7 +219,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --features "enable-sia" --release
 
       - name: Compress kdf build output
         env:
@@ -228,6 +231,12 @@ jobs:
           $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+
+          # Generate the SHA256 hash for the zip file
+          Get-FileHash ./$SAFE_DIR_NAME/$NAME -Algorithm SHA256 | Format-Table Hash | Out-File "./$SAFE_DIR_NAME/$NAME.sha256" -Encoding ascii
+
+          # Display the SHA256 hash in Actions logs
+          Get-Content "./$SAFE_DIR_NAME/$NAME.sha256"
 
       - name: Upload build artifact
         env:
@@ -268,7 +277,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --features "enable-sia" --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
@@ -281,6 +290,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -334,7 +344,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
+        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release --features enable-sia
 
       - name: Compress build output
         env:
@@ -346,6 +356,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -386,7 +397,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --features "enable-sia" --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
@@ -399,6 +410,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -453,7 +465,7 @@ jobs:
       - name: Build
         run: |
           export PATH=$PATH:/android-ndk/bin
-          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --features "enable-sia" --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress kdf build output
         env:
@@ -466,6 +478,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -520,7 +533,7 @@ jobs:
       - name: Build
         run: |
           export PATH=$PATH:/android-ndk/bin
-          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --features "enable-sia" --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress kdf build output
         env:
@@ -533,6 +546,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:

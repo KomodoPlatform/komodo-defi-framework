@@ -82,6 +82,14 @@ mod swap_versioning;
 
 use clap::Parser;
 
+#[cfg(all(
+    feature = "enable-sia",
+    feature = "run-sia-functional-tests",
+    test,
+    not(target_arch = "wasm32")
+))]
+mod sia_tests;
+
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]

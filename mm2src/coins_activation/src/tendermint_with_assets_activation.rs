@@ -344,7 +344,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::Tendermint(coin) => Some(coin),
+            MmCoinEnum::TendermintVariant(coin) => Some(coin),
             _ => None,
         }
     }
