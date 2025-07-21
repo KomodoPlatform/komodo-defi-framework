@@ -13,11 +13,11 @@ use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, delete_wallet, enable_qrc20, enable_utxo_v2_electrum,
-                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
-                                  get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf,
-                                  sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  check_recent_swaps, delete_wallet, enable_eth_with_tokens_v2, enable_qrc20,
+                                  enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
+                                  get_new_address, get_shared_db_id, get_wallet_names, mm_spat, morty_conf,
+                                  my_balance, rick_conf, sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf,
+                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
                                   DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
@@ -1993,6 +1993,99 @@ fn test_show_priv_key() {
         &mm,
         "ETH",
         "0xb8c774f071de08c7fd8f62b97f1a5726f6ce9f1bcf141b70b86689254ed6714e",
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_derive_priv_key() {
+    let coins = json!([rick_conf(), eth_dev_conf()]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": "february soldier message acid member jump shadow walk novel impose puppy tornado",
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true,
+            "enable_hd": true
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("Log path: {}", mm.log_path.display());
+
+    let enable_rick_res = block_on(enable_utxo_v2_electrum(&mm, "RICK", doc_electrums(), None, 60, None));
+    log!("enable RICK: {:?}", enable_rick_res);
+
+    let enable_eth_res = block_on(enable_eth_with_tokens_v2(
+        &mm,
+        "ETH",
+        &[],
+        ETH_SEPOLIA_SWAP_CONTRACT,
+        ETH_SEPOLIA_NODES,
+        60,
+        None,
+    ));
+    log!("enable ETH: {:?}", enable_eth_res);
+
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "derive_priv_key",
+        "params": {
+            "coin": "RICK",
+            "account_id": 0,
+            "address_id": 12
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!derive_priv_key: {}", rc.1);
+    let privkey: Json = json::from_str(&rc.1).unwrap();
+    assert_eq!(privkey["result"]["coin"], "RICK");
+    assert_eq!(privkey["result"]["address"], "RXJDtxUcmSZ8MQpFW7GMm8McMkK7349zV6");
+    assert_eq!(privkey["result"]["derivation_path"], "m/44'/141'/0'/0/12");
+    assert_eq!(
+        privkey["result"]["priv_key"],
+        "UrerqiGFWB9obJnKuDdscisN7feGcvGQG67MfUD1ni4VYMjXpvkJ"
+    );
+    assert_eq!(
+        privkey["result"]["pub_key"],
+        "02a478f38a006e89f9667b3a6bf93c011ba2016d703f120d32f9691a025374afbf"
+    );
+
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "derive_priv_key",
+        "params": {
+            "coin": "ETH",
+            "account_id": 0,
+            "address_id": 3
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!derive_priv_key: {}", rc.1);
+    let privkey: Json = json::from_str(&rc.1).unwrap();
+    assert_eq!(privkey["result"]["coin"], "ETH");
+    assert_eq!(
+        privkey["result"]["address"],
+        "0x1e8B4aA6a8B8a376E0357504cF2ebC11Bc02288b"
+    );
+    assert_eq!(privkey["result"]["derivation_path"], "m/44'/60'/0'/0/3");
+    assert_eq!(
+        privkey["result"]["priv_key"],
+        "0x932ec93805200317394d6f63216791cf6052e6bb7412153f799c0b0660086e24"
+    );
+    assert_eq!(
+        privkey["result"]["pub_key"],
+        "0x036b521bb1f9e845301f8bcb1f025151784ac2ea54b95fa50b9c491aced4a34c04"
     );
 }
 

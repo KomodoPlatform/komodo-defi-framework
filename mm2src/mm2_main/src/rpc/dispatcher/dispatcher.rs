@@ -20,12 +20,12 @@ use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contrac
                                               one_inch_v6_0_classic_swap_liquidity_sources_rpc,
                                               one_inch_v6_0_classic_swap_quote_rpc,
                                               one_inch_v6_0_classic_swap_tokens_rpc};
+use crate::rpc::lp_commands::priv_key::derive_priv_key;
 use crate::rpc::lp_commands::pubkey::*;
 use crate::rpc::lp_commands::tokens::get_token_info;
 use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
 use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
-use crate::rpc::lp_commands::priv_key::derive_priv_key;
 use crate::rpc::wc_commands::{new_connection, ping_session};
 
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;

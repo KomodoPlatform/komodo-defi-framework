@@ -15,10 +15,7 @@ pub struct DerivePrivKeyRequest {
     pub chain: Option<Bip44Chain>,
 }
 
-pub async fn derive_priv_key(
-    ctx: MmArc,
-    req: DerivePrivKeyRequest,
-) -> MmResult<DerivedPrivKey, DerivePrivKeyError> {
+pub async fn derive_priv_key(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<DerivedPrivKey, DerivePrivKeyError> {
     let coin_ticker = req.coin.clone();
     let coin = lp_coinfind_any(&ctx, &req.coin)
         .await
@@ -37,8 +34,6 @@ pub async fn derive_priv_key(
         MmCoinEnum::Bch(c) => c.derive_priv_key(&req).await,
         MmCoinEnum::QtumCoin(c) => c.derive_priv_key(&req).await,
         MmCoinEnum::EthCoin(c) => c.derive_priv_key(&req).await,
-        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation(
-            coin_ticker,
-        )),
+        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation(coin_ticker)),
     }
 }

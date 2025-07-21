@@ -1,8 +1,5 @@
 use crate::hd_wallet::{HDAccountOps, HDWalletOps};
-use crate::{
-    CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MarketCoinOps, MmCoin,
-    PrivKeyPolicy,
-};
+use crate::{CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MarketCoinOps, MmCoin, PrivKeyPolicy};
 use async_trait::async_trait;
 use bip32::ChildNumber;
 use common::HttpStatusCode;
@@ -107,31 +104,29 @@ where
                     .map_err(|e| DerivePrivKeyError::Internal(format!("Error creating key pair from secret: {}", e)))?;
 
                 let pubkey_slice = key_pair.public_slice();
-                let pubkey: [u8; 33] = pubkey_slice.try_into().map_err(|_| {
-                    DerivePrivKeyError::Internal("Error converting pubkey slice to array".to_string())
-                })?;
+                let pubkey: [u8; 33] = pubkey_slice
+                    .try_into()
+                    .map_err(|_| DerivePrivKeyError::Internal("Error converting pubkey slice to array".to_string()))?;
 
                 let address = self
                     .address_from_pubkey(&pubkey.into())
-                    .map_err(|e| {
-                        DerivePrivKeyError::Internal(format!("Error getting address from pubkey: {}", e))
-                    })?;
+                    .map_err(|e| DerivePrivKeyError::Internal(format!("Error getting address from pubkey: {}", e)))?;
 
                 let priv_key_wif = key_pair.private().to_string();
                 let priv_key_hex = format!("0x{}", hex::encode(key_pair.private_bytes()));
 
-                let priv_key = if self.is_utxo() {
-                    priv_key_wif
-                } else {
-                    priv_key_hex
-                };
+                let priv_key = if self.is_utxo() { priv_key_wif } else { priv_key_hex };
 
                 let response = DerivedPrivKey {
                     coin: self.ticker().to_string(),
-                    address,
+                    address: address.to_string(),
                     derivation_path: path_to_address.to_string(),
                     priv_key,
-                    pub_key: hex::encode(key_pair.public_slice()),
+                    pub_key: if self.is_utxo() {
+                        hex::encode(pubkey)
+                    } else {
+                        format!("0x{}", hex::encode(pubkey))
+                    },
                 };
                 Ok(response)
             },
