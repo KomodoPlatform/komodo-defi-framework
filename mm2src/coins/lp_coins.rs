@@ -2157,8 +2157,8 @@ pub trait MarketCoinOps {
     /// Returns the WIF prefix for the coin.
     fn wif_prefix(&self) -> Option<u8> { None }
 
-    fn is_utxo(&self) -> bool { true }
-    
+    fn is_utxo(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool;
 }
 
