@@ -1225,7 +1225,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
-        min_block_number: std::u64::MAX,
+        min_block_number: u64::MAX,
         lock_duration,
     }))
     .unwrap_err()
@@ -1332,7 +1332,7 @@ fn test_watcher_validate_taker_fee_eth() {
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
-        min_block_number: std::u64::MAX,
+        min_block_number: u64::MAX,
         lock_duration,
     }))
     .unwrap_err()
@@ -1423,7 +1423,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
-        min_block_number: std::u64::MAX,
+        min_block_number: u64::MAX,
         lock_duration,
     }))
     .unwrap_err()

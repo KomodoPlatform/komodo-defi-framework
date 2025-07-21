@@ -53,6 +53,23 @@ impl StandardHDPath {
     pub fn chain(&self) -> Bip44Chain { self.child().child().child().value() }
 
     pub fn address_id(&self) -> u32 { self.child().child().child().child().value() }
+
+    /// Derive `HDPathToCoin` from `StandardHDPath`
+    pub fn path_to_coin(&self) -> HDPathToCoin {
+        let Bip32Child {
+            value: purpose,
+            child: rest,
+        } = self;
+        let Bip32Child { value: coin_type, .. } = rest;
+
+        Bip32Child {
+            value: purpose.clone(),
+            child: Bip32Child {
+                value: coin_type.clone(),
+                child: Bip44Tail,
+            },
+        }
+    }
 }
 
 impl HDPathToCoin {
@@ -90,6 +107,10 @@ pub enum StandardHDPathError {
     },
     #[display(fmt = "Unknown BIP32 error: {}", _0)]
     Bip32Error(Bip32Error),
+    #[display(fmt = "Invalid coin type '{}', expected '{}'", found, expected)]
+    InvalidCoinType { expected: u32, found: u32 },
+    #[display(fmt = "Invalid path to coin '{}', expected '{}'", found, expected)]
+    InvalidPathToCoin { expected: String, found: String },
 }
 
 impl From<Bip32DerPathError> for StandardHDPathError {

@@ -3,6 +3,7 @@ use crate::lightning::ln_serialization::PaymentInfoForRPC;
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use mm2_core::mm_ctx::MmArc;
@@ -61,7 +62,7 @@ pub async fn get_payment_details(
     ctx: MmArc,
     req: GetPaymentDetailsRequest,
 ) -> GetPaymentDetailsResult<GetPaymentDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(e.ticker().to_string())),
     };

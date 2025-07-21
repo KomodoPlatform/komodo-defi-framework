@@ -6,25 +6,31 @@ use async_trait::async_trait;
 use common::log::error;
 use futures::channel::oneshot;
 use futures_util::StreamExt;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput};
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 pub struct ZCoinBalanceEventStreamer {
     coin: ZCoin,
 }
 
-impl ZCoinBalanceEventStreamer {
-    #[inline(always)]
-    pub fn new(coin: ZCoin) -> Self { Self { coin } }
+impl<'a> DeriveStreamerId<'a> for ZCoinBalanceEventStreamer {
+    type InitParam = ZCoin;
+    type DeriveParam = &'a str;
+
+    fn new(coin: Self::InitParam) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> String { format!("BALANCE:{coin}") }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
 }
 
 #[async_trait]
 impl EventStreamer for ZCoinBalanceEventStreamer {
     type DataInType = ();
 
-    fn streamer_id(&self) -> String { Self::derive_streamer_id(self.coin.ticker()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker().to_string(),
+        }
+    }
 
     async fn handle(
         self,

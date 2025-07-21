@@ -136,7 +136,7 @@ impl RpcTask for InitHwTask {
     }
 
     async fn run(&mut self, task_handle: InitHwTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
-        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx).map_mm_err()?;
 
         match self.hw_wallet_type {
             HwWalletType::Trezor => {
@@ -154,7 +154,8 @@ impl RpcTask for InitHwTask {
                 let trezor_connect_processor = Arc::new(trezor_connect_processor);
                 let (device_info, hw_ctx) = crypto_ctx
                     .init_hw_ctx_with_trezor(trezor_connect_processor, self.req.device_pubkey)
-                    .await?;
+                    .await
+                    .map_mm_err()?;
                 let device_pubkey = hw_ctx.hw_pubkey();
                 Ok(InitHwResponse {
                     device_info,
@@ -174,7 +175,8 @@ pub async fn init_trezor(ctx: MmArc, req: RpcInitReq<InitHwRequest>) -> MmResult
         hw_wallet_type: HwWalletType::Trezor,
         req,
     };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task, client_id)?;
+    let task_id =
+        RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -198,7 +200,7 @@ pub async fn init_trezor_user_action(
         .init_hw_task_manager
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -211,6 +213,6 @@ pub async fn cancel_init_trezor(
         .init_hw_task_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }

@@ -12,7 +12,7 @@ use common::log;
 use futures::channel::oneshot;
 use futures::StreamExt;
 use keys::Address;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput};
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 use std::collections::{HashMap, HashSet};
 
 macro_rules! try_or_continue {
@@ -31,8 +31,11 @@ pub struct UtxoBalanceEventStreamer {
     coin: UtxoStandardCoin,
 }
 
-impl UtxoBalanceEventStreamer {
-    pub fn new(utxo_arc: UtxoArc) -> Self {
+impl<'a> DeriveStreamerId<'a> for UtxoBalanceEventStreamer {
+    type InitParam = UtxoArc;
+    type DeriveParam = &'a str;
+
+    fn new(utxo_arc: Self::InitParam) -> Self {
         Self {
             // We wrap the UtxoArc in a UtxoStandardCoin for easier method accessibility.
             // The UtxoArc might belong to a different coin type though.
@@ -40,14 +43,18 @@ impl UtxoBalanceEventStreamer {
         }
     }
 
-    pub fn derive_streamer_id(coin: &str) -> String { format!("BALANCE:{coin}") }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
 }
 
 #[async_trait]
 impl EventStreamer for UtxoBalanceEventStreamer {
     type DataInType = ScripthashNotification;
 
-    fn streamer_id(&self) -> String { format!("BALANCE:{}", self.coin.ticker()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker().to_string(),
+        }
+    }
 
     async fn handle(
         self,

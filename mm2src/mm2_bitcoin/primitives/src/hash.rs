@@ -31,11 +31,7 @@ macro_rules! impl_hash {
         // FIXME Alright - This is not ideal either because it allows cloning private key material.
         // See above comment about Copy.
         impl Clone for $name {
-            fn clone(&self) -> Self {
-                let mut result = Self::default();
-                result.copy_from_slice(&self.0);
-                result
-            }
+            fn clone(&self) -> Self { *self }
         }
 
         impl From<[u8; $size]> for $name {
@@ -122,7 +118,7 @@ macro_rules! impl_hash {
                 H: Hasher,
             {
                 state.write(&self.0);
-                state.finish();
+                let _ = state.finish();
             }
         }
 

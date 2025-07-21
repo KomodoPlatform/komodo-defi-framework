@@ -22,19 +22,18 @@
 //! 1. AFee: OP_DUP OP_HASH160 FEE_RMD160 OP_EQUALVERIFY OP_CHECKSIG
 //!
 //! 2. BPayment:
-//! OP_IF
-//! <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
-//! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
-//! OP_ENDIF
+//!     OP_IF
+//!         <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
+//!     OP_ELSE
+//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
+//!     OP_ENDIF
 //!
 //! 3. APayment:
-//! OP_IF
-//! <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
-//! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
-//! OP_ENDIF
-//!
+//!     OP_IF
+//!         <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
+//!     OP_ELSE
+//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
+//!     OP_ENDIF
 
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
@@ -532,7 +531,7 @@ struct LockedAmountInfo {
 struct SwapsContext {
     running_swaps: Mutex<HashMap<Uuid, Arc<dyn AtomicSwap>>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
-    banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
+    banned_pubkeys: Mutex<TimedMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
     taker_swap_watchers: PaMutex<TimedMap<Vec<u8>, ()>>,
@@ -548,7 +547,7 @@ impl SwapsContext {
             Ok(SwapsContext {
                 running_swaps: Mutex::new(HashMap::new()),
                 active_swaps_v2_infos: Mutex::new(HashMap::new()),
-                banned_pubkeys: Mutex::new(HashMap::new()),
+                banned_pubkeys: Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
                 swap_msgs: Mutex::new(HashMap::new()),
                 swap_v2_msgs: Mutex::new(HashMap::new()),
                 taker_swap_watchers: PaMutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
@@ -615,7 +614,7 @@ pub async fn get_locked_amount_rpc(
     ctx: MmArc,
     req: GetLockedAmountReq,
 ) -> Result<GetLockedAmountResp, MmError<GetLockedAmountRpcError>> {
-    lp_coinfind_or_err(&ctx, &req.coin).await?;
+    lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let locked_amount = get_locked_amount(&ctx, &req.coin);
 
     Ok(GetLockedAmountResp {
@@ -962,10 +961,12 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf { ctx.address_dir(address).join("SWAPS").join("MY") }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
+pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
+    my_swaps_dir(ctx, address).join(format!("{}.json", uuid))
+}
 
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
@@ -1080,7 +1081,7 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
 
     match swap_type {
         Some(LEGACY_SWAP_TYPE) => {
-            let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+            let status = match SavedSwap::load_my_swap_from_db(&ctx, None, uuid).await {
                 Ok(Some(status)) => status,
                 Ok(None) => return Err("swap data is not found".to_owned()),
                 Err(e) => return ERR!("{}", e),
@@ -1142,7 +1143,7 @@ struct SwapStatus {
 
 /// Broadcasts `my` swap status to P2P network
 async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String> {
-    let mut status = match try_s!(SavedSwap::load_my_swap_from_db(ctx, uuid).await) {
+    let mut status = match try_s!(SavedSwap::load_my_swap_from_db(ctx, None, uuid).await) {
         Some(status) => status,
         None => return ERR!("swap data is not found"),
     };
@@ -1251,7 +1252,7 @@ pub async fn latest_swaps_for_pair(
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     // TODO this is needed for trading bot, which seems not used as of now. Remove the code?
     for (uuid, _) in db_result.uuids_and_types.iter() {
-        let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+        let swap = match SavedSwap::load_my_swap_from_db(&ctx, None, *uuid).await {
             Ok(Some(swap)) => swap,
             Ok(None) => {
                 error!("No such swap with the uuid '{}'", uuid);
@@ -1278,7 +1279,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match *swap_type {
-            LEGACY_SWAP_TYPE => match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+            LEGACY_SWAP_TYPE => match SavedSwap::load_my_swap_from_db(&ctx, None, *uuid).await {
                 Ok(Some(swap)) => {
                     let swap_json = try_s!(json::to_value(MySwapStatusResponse::from(swap)));
                     swaps.push(swap_json)
@@ -1329,7 +1330,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
     let legacy_unfinished_uuids = try_s!(get_unfinished_swaps_uuids(ctx.clone(), LEGACY_SWAP_TYPE).await);
     for uuid in legacy_unfinished_uuids {
-        let swap = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+        let swap = match SavedSwap::load_my_swap_from_db(&ctx, None, uuid).await {
             Ok(Some(s)) => s,
             Ok(None) => {
                 warn!("Swap {} is indexed, but doesn't exist in DB", uuid);
@@ -1477,7 +1478,7 @@ pub async fn coins_needed_for_kick_start(ctx: MmArc) -> Result<Response<Vec<u8>>
 
 pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
-    let swap = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+    let swap = match SavedSwap::load_my_swap_from_db(&ctx, None, uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => return ERR!("swap data is not found"),
         Err(e) => return ERR!("{}", e),
@@ -1554,7 +1555,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         for (uuid, swap_type) in uuids_with_types.iter() {
             match *swap_type {
                 LEGACY_SWAP_TYPE => {
-                    let status = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+                    let status = match SavedSwap::load_my_swap_from_db(&ctx, None, *uuid).await {
                         Ok(Some(status)) => status,
                         Ok(None) => continue,
                         Err(e) => {
@@ -2163,6 +2164,7 @@ mod lp_swap_tests {
             "p2p_in_memory": true,
             "p2p_in_memory_port": 777,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         });
 
         let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
@@ -2251,7 +2253,7 @@ mod lp_swap_tests {
             uuid,
             None,
             conf_settings,
-            rick_maker.into(),
+            rick_maker.clone().into(),
             morty_maker.into(),
             lock_duration,
             None,
@@ -2272,7 +2274,7 @@ mod lp_swap_tests {
             uuid,
             None,
             conf_settings,
-            rick_taker.into(),
+            rick_taker.clone().into(),
             morty_taker.into(),
             lock_duration,
             None,
@@ -2285,15 +2287,18 @@ mod lp_swap_tests {
             run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), taker_ctx.clone()),
         ));
 
+        let makers_maker_coin_address = rick_maker.my_address().unwrap();
+        let takers_maker_coin_address = rick_taker.my_address().unwrap();
+
         println!(
             "Maker swap path {}",
-            std::fs::canonicalize(my_swap_file_path(&maker_ctx, &uuid))
+            std::fs::canonicalize(my_swap_file_path(&maker_ctx, &makers_maker_coin_address, &uuid))
                 .unwrap()
                 .display()
         );
         println!(
             "Taker swap path {}",
-            std::fs::canonicalize(my_swap_file_path(&taker_ctx, &uuid))
+            std::fs::canonicalize(my_swap_file_path(&taker_ctx, &takers_maker_coin_address, &uuid))
                 .unwrap()
                 .display()
         );

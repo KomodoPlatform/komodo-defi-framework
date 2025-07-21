@@ -196,6 +196,7 @@ pub enum SiaRefundPaymentArgsError {
 }
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum SiaValidateFeeArgsError {
     #[error("SiaValidateFeeArgs::TryFrom<ValidateFeeArgs>: failed to parse uuid from bytes {0}")]
     ParseUuid(#[from] uuid::Error),
@@ -269,6 +270,7 @@ pub enum SiaCheckIfMyPaymentSentArgsError {
 }
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum SiaCheckIfMyPaymentSentError {
     #[error("SiaCoin::new_check_if_my_payment_sent: failed to parse CheckIfMyPaymentSentArgs: {0}")]
     ParseArgs(#[from] SiaCheckIfMyPaymentSentArgsError),
@@ -281,6 +283,7 @@ pub enum SiaCheckIfMyPaymentSentError {
 }
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum SiaCoinSiaExtractSecretError {
     #[error("SiaCoin::sia_extract_secret: failed to parse spend_tx {0}")]
     ParseTx(#[from] SiaTransactionError),
@@ -331,6 +334,7 @@ pub enum SiaValidatePaymentInputError {
 }
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum SiaValidateHtlcPaymentError {
     #[error("SiaCoin::validate_htlc_payment: failed to parse ValidatePaymentInput: {0}")]
     ParseArgs(#[from] SiaValidatePaymentInputError),

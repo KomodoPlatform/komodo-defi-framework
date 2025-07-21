@@ -2,14 +2,12 @@
 JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 [target.'cfg(all())']
-rustflags = [ "-Zshare-generics=y" ]
+rustflags = [ "-Zshare-generics=y", '--cfg=curve25519_dalek_backend="fiat"' ]
 
+# Todo: remove these as we are on newer nightly now
 # curve-25519 defaults to using stdarch_x86_avx512 feature for nightly builds
 # remove this once KDF is on stable rust or a newer nightly
 [target.x86_64-unknown-linux-gnu]
-rustflags = ['--cfg=curve25519_dalek_backend="serial"']
-
-[target.x86_64-pc-windows-msvc]
 rustflags = ['--cfg=curve25519_dalek_backend="serial"']
 
 [target.x86_64-apple-darwin]
@@ -36,3 +34,7 @@ rustflags = ['--cfg=curve25519_dalek_backend="serial"']
 [target.wasm32-unknown-unknown]
 runner = 'wasm-bindgen-test-runner'
 rustflags = [ "--cfg=web_sys_unstable_apis" ]
+
+# Todo: remove `--cfg=curve25519_dalek_backend="serial"` from here too
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-Ctarget-feature=+crt-static", '--cfg=curve25519_dalek_backend="serial"']

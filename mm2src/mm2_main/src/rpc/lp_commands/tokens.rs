@@ -11,6 +11,7 @@ use ethereum_types::Address as EthAddress;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::map_mm_error::MmResultExt;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmError, prelude::MmResult};
 use mm2_number::BigDecimal;
 
@@ -73,7 +74,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
         req.protocol
     )))?;
     // Platform coin should be activated
-    let platform_coin = lp_coinfind_or_err(&ctx, platform).await?;
+    let platform_coin = lp_coinfind_or_err(&ctx, platform).await.map_mm_err()?;
     match platform_coin {
         MmCoinEnum::EthCoinVariant(eth_coin) => {
             let contract_address_str =
@@ -87,7 +88,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
                 TokenInfoError::InvalidRequest(error)
             })?;
 
-            let config_ticker = get_erc20_ticker_by_contract_address(&ctx, platform, contract_address_str);
+            let config_ticker = get_erc20_ticker_by_contract_address(&ctx, platform, &contract_address);
             let token_info = get_erc20_token_info(&eth_coin, contract_address)
                 .await
                 .map_to_mm(TokenInfoError::RetrieveInfoError)?;
@@ -141,8 +142,8 @@ pub struct Erc20AllowanceRequest {
 /// Returns BigDecimal allowance value.
 pub async fn get_token_allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> MmResult<BigDecimal, Erc20CallError> {
     let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
-    let wei = eth_coin.allowance(req.spender).compat().await?;
-    let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
+    let wei = eth_coin.allowance(req.spender).compat().await.map_mm_err()?;
+    let amount = u256_to_big_decimal(wei, eth_coin.decimals()).map_mm_err()?;
     Ok(amount)
 }
 
@@ -157,7 +158,7 @@ pub struct Erc20ApproveRequest {
 /// Returns approval transaction hash.
 pub async fn approve_token_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<String, Erc20CallError> {
     let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
-    let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
+    let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals()).map_mm_err()?;
     let tx = eth_coin.approve(req.spender, amount).compat().await?;
     Ok(format!("0x{:02x}", tx.tx_hash_as_bytes()))
 }

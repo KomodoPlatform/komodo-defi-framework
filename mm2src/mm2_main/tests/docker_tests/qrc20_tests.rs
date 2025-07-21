@@ -25,8 +25,8 @@ use std::convert::TryFrom;
 use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
-use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
+use testcontainers::runners::SyncRunner;
 use testcontainers::{GenericImage, RunnableImage};
 
 pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
@@ -85,7 +85,7 @@ impl QtumDockerOps {
     }
 }
 
-pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
+pub fn qtum_docker_node(port: u16) -> DockerNode {
     let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
         .with_env_var("CLIENTS", "2")
         .with_env_var("COIN_RPC_PORT", port.to_string())
@@ -93,7 +93,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
         .with_env_var("FILL_MEMPOOL", "true")
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Qtum regtest docker container");
 
     let name = "qtum";
     let mut conf_path = temp_dir().join("qtum-regtest");
@@ -808,7 +808,8 @@ fn test_wait_for_tx_spend() {
     log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
-    // also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    /// Also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    #[allow(static_mut_refs)]
     static mut SPEND_TX: Option<TransactionEnum> = None;
 
     let maker_pub_c = maker_pub.to_vec();
@@ -888,6 +889,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -987,6 +989,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1162,6 +1165,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1221,6 +1225,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1282,6 +1287,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1341,6 +1347,7 @@ fn test_segwit_native_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1387,6 +1394,7 @@ fn test_withdraw_and_send_from_segwit() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1435,6 +1443,7 @@ fn test_withdraw_and_send_legacy_to_segwit() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1635,6 +1644,7 @@ fn segwit_address_in_the_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,

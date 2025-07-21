@@ -1,22 +1,24 @@
 use super::{BalanceError, CoinBalance, CoinsContext, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionError,
             RawTransactionFut, RawTransactionRequest, SignatureError, SwapOps, SwapTxTypeWithSecretHash, TradeFee,
             TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionType, VerificationError};
+use crate::hd_wallet::HDAddressSelector;
 use crate::siacoin::sia_withdraw::SiaWithdrawBuilder;
-use crate::{coin_errors::MyAddressError, now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
-            ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes, RefundPaymentArgs, SearchForSwapTxSpendInput,
-            SendPaymentArgs, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentInput, ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WeakSpawner, WithdrawFut, WithdrawRequest};
+use crate::{coin_errors::{AddressFromPubkeyError, MyAddressError},
+            now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage,
+            FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes,
+            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionResult,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, ValidatePaymentResult,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{debug, info};
 use common::DEX_FEE_PUBKEY_ED25519;
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
+use rpc::v1::types::H264 as H264Json;
 /*
 TODO Alright — this is now the third type in our codebase representing BIP32 derivation paths.
 
@@ -693,9 +695,22 @@ impl MarketCoinOps for SiaCoin {
                 )
                 .into());
             },
+            PrivKeyPolicy::WalletConnect { .. } => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "WalletConnect not yet supported. Must use iguana seed.".to_string(),
+                )
+                .into())
+            },
         };
         let address = key_pair.public().address();
         Ok(address.to_string())
+    }
+
+    // Todo: Implement in this PR, this was added to dev while work in this code was being done
+    fn address_from_pubkey(&self, _pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        MmError::err(AddressFromPubkeyError::InternalError(
+            "SiaCoin::address_from_pubkey: Unsupported".to_string(),
+        ))
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -711,6 +726,9 @@ impl MarketCoinOps for SiaCoin {
             PrivKeyPolicy::Metamask(_) => {
                 return MmError::err(UnexpectedDerivationMethod::ExpectedSingleAddress);
             },
+            PrivKeyPolicy::WalletConnect { .. } => {
+                return MmError::err(UnexpectedDerivationMethod::ExpectedSingleAddress);
+            },
         };
         Ok(public_key.to_string())
     }
@@ -718,7 +736,8 @@ impl MarketCoinOps for SiaCoin {
     // TODO Alright - Unsupported and will be removed - see dev comments in trait declaration
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
+    // Todo: needed as part of feature completion
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
         MmError::err(SignatureError::InternalError(
             "SiaCoin::sign_message: Unsupported".to_string(),
         ))
@@ -1301,6 +1320,7 @@ impl SiaCoin {
         Ok(Some(SiaTransaction(tx).into()))
     }
 
+    #[allow(clippy::result_large_err)]
     fn sia_extract_secret(
         &self,
         expected_hash_slice: &[u8],

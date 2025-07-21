@@ -63,7 +63,7 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         _protocol_info: Self::StandaloneProtocol,
         task_handle: UtxoStandardRpcTaskHandleShared,
     ) -> MmResult<Self, InitUtxoStandardError> {
-        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy)?;
+        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy).map_mm_err()?;
 
         let coin = UtxoArcBuilder::new(
             &ctx,
@@ -105,7 +105,7 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
                         },
                         UtxoSyncStatus::Finished { .. } => break,
                     };
-                task_handle.update_in_progress_status(in_progress_status)?;
+                task_handle.update_in_progress_status(in_progress_status).map_mm_err()?;
             }
         }
 

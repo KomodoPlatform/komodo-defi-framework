@@ -25,6 +25,7 @@ pub type SiaHDAccount = HDAccount<SiaHDAddress, SiaFauxExtendedPublicKey>;
 // this will be left unfinished in the RC, but this was intended to be the type of abstraction
 // mentioned in the dev comment. The hope was to integrate cleanly into the existing HD wallet traits.
 // If this is pattern implemented, this type must be treated securely.
+#[allow(dead_code)]
 pub struct SiaFauxExtendedPublicKey(Arc<ExtendedSigningKey>);
 
 impl FromStr for SiaFauxExtendedPublicKey {
@@ -39,6 +40,7 @@ impl ExtendedPublicKeyOps for SiaFauxExtendedPublicKey {
     fn to_string(&self, _: bip32::Prefix) -> String { todo!() }
 }
 
+#[allow(dead_code)]
 pub struct SiaHdWallet(HDWallet<SiaHDAccount>);
 
 #[async_trait]

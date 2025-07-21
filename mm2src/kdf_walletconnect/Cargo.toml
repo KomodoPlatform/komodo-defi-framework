@@ -1,0 +1,50 @@
+[package]
+name = "kdf_walletconnect"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+chrono = { workspace = true, "features" = ["serde"] }
+common = { path = "../common" }
+hex.workspace = true
+cfg-if.workspace = true
+db_common = { path = "../db_common" }
+derive_more.workspace = true
+enum_derives = { path = "../derives/enum_derives" }
+futures = { workspace = true, features = ["compat", "async-await"] }
+hkdf.workspace = true
+mm2_db = { path = "../mm2_db" }
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+parking_lot = { workspace = true, features = ["nightly"] }
+pairing_api.workspace = true
+rand = "0.8"
+relay_client.workspace = true
+relay_rpc.workspace = true
+secp256k1.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+sha2.workspace = true
+timed-map = { workspace = true, features = ["rustc-hash"] }
+thiserror.workspace = true
+tokio.workspace = true
+x25519-dalek.workspace = true
+wc_common.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+mm2_db = { path = "../mm2_db" }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
+wasm-bindgen.workspace = true
+wasm-bindgen-test.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase",
+    "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore",
+    "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode",
+    "IdbVersionChangeEvent", "MessageEvent", "MessagePort", "ReadableStreamDefaultReader", "ReadableStream"]}
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }

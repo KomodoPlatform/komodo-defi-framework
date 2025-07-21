@@ -36,7 +36,7 @@ pub struct GetHistoryResult {
     pub total: usize,
 }
 
-pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotEqual + Send {}
+pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + Send {}
 
 #[async_trait]
 pub trait TxHistoryStorage: Send + Sync + 'static {
@@ -187,6 +187,9 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
         self.from_addresses.insert(address);
     }
 
+    /// TODO: This implementation is messy. We should do all the calculations before storing them
+    /// to the database. We shouldn’t need these on-demand calculations in this module; it's better
+    /// to remove this function entirely but some coins like UTXOs still depend on it.
     pub fn build(self) -> TransactionDetails {
         let (block_height, timestamp) = match self.block_height_and_time {
             Some(height_with_time) => (height_with_time.height, height_with_time.timestamp),
@@ -210,15 +213,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
-            TransactionType::TendermintIBCTransfer { token_id }
-            | TransactionType::CustomTendermintMsg { token_id, .. } => {
-                if let Some(token_id) = token_id {
-                    let mut bytes_for_hash = tx_hash.0.clone();
-                    bytes_for_hash.extend_from_slice(&token_id.0);
-                    sha256(&bytes_for_hash).to_vec().into()
-                } else {
-                    tx_hash.clone()
-                }
+            TransactionType::TendermintIBCTransfer { .. } | TransactionType::CustomTendermintMsg { .. } => {
+                unreachable!("Tendermint never invokes this function.")
             },
             TransactionType::StakingDelegation
             | TransactionType::RemoveDelegation
@@ -373,7 +369,7 @@ pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<BytesJson>,
 ) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
-    match lp_coinfind_or_err(&ctx, &request.coin).await? {
+    match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
         MmCoinEnum::BchVariant(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
         MmCoinEnum::SlpTokenVariant(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
         MmCoinEnum::UtxoCoinVariant(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
@@ -394,10 +390,10 @@ pub(crate) async fn my_tx_history_v2_impl<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
+    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build().map_mm_err()?;
 
     let wallet_id = coin.history_wallet_id();
-    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
+    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await.map_mm_err()?;
     if !is_storage_init {
         let msg = format!("Storage is not initialized for {:?}", wallet_id);
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
@@ -411,7 +407,8 @@ where
     let filters = coin.get_tx_history_filters(request.target.clone()).await?;
     let history = tx_history_storage
         .get_history(&wallet_id, filters, request.paging_options.clone(), request.limit)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     let coin_conf = coin_conf(&ctx, coin.ticker());
     let protocol_type = coin_conf["protocol"]["type"].as_str().unwrap_or_default();
@@ -510,7 +507,7 @@ pub async fn z_coin_tx_history_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<i64>,
 ) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-    match lp_coinfind_or_err(&ctx, &request.coin).await? {
+    match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
         MmCoinEnum::ZCoinVariant(z_coin) => z_coin.tx_history(request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }

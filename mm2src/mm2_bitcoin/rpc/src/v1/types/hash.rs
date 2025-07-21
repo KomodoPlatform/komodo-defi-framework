@@ -131,11 +131,7 @@ macro_rules! impl_hash {
         }
 
         impl PartialOrd for $name {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                let self_ref: &[u8] = &self.0;
-                let other_ref: &[u8] = &other.0;
-                self_ref.partial_cmp(other_ref)
-            }
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
         }
 
         impl Hash for $name {

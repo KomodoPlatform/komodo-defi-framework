@@ -31,7 +31,7 @@ impl XPubConverter {
     /// The input string must start with the standard `xpub` prefix and contain a valid checksum.
     pub fn is_standard_xpub(xpub: &str) -> MmResult<(), XpubError> {
         let bytes = bs58::decode(&xpub).with_check(None).into_vec()?;
-        if has_xpub_prefix(&bytes)? {
+        if has_xpub_prefix(&bytes).map_mm_err()? {
             Ok(())
         } else {
             MmError::err(XpubError::UnknownPrefix)
@@ -43,7 +43,7 @@ impl XPubConverter {
     pub fn replace_magic_prefix(xpub: XPub) -> MmResult<XPub, XpubError> {
         let mut bytes = bs58::decode(&xpub).with_check(None).into_vec()?;
 
-        if has_xpub_prefix(&bytes)? {
+        if has_xpub_prefix(&bytes).map_mm_err()? {
             return Ok(xpub);
         }
 

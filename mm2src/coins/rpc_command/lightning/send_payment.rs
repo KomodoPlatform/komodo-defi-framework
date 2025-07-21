@@ -5,6 +5,7 @@ use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::log::LogOnError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning_invoice::Invoice;
 use mm2_core::mm_ctx::MmArc;
@@ -85,7 +86,7 @@ pub struct SendPaymentResponse {
 }
 
 pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<SendPaymentResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(SendPaymentError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -99,12 +100,15 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice, None).await?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice, None).await.map_mm_err()?,
         Payment::Keysend {
             destination,
             amount_in_msat,
             expiry,
-        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await?,
+        } => ln_coin
+            .keysend(destination.into(), amount_in_msat, expiry)
+            .await
+            .map_mm_err()?,
     };
 
     Ok(SendPaymentResponse {

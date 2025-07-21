@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -14,8 +15,8 @@ use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, Qt
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
 use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
-                               ElectrumClientSettings, GetAddressInfoRes, ListSinceBlockRes, NativeClient,
-                               NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
+                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -43,14 +44,12 @@ use futures::future::{join_all, Either, FutureExt, TryFutureExt};
 use hex::FromHex;
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_event_stream::StreamingManager;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_number::MmNumber;
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
                                   MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
 use mocktopus::mocking::*;
-use rand::{rngs::ThreadRng, Rng};
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
@@ -456,6 +455,9 @@ fn test_wait_for_payment_spend_timeout_native() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
+    use mm2_event_stream::StreamingManager;
+    use rpc_clients::ElectrumClientSettings;
+
     static mut OUTPUT_SPEND_CALLED: bool = false;
 
     ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
@@ -1076,7 +1078,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
+    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object {"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")}) }"#;
     let actual = format!("{}", err);
 
     assert!(actual.contains(expected));
@@ -1212,6 +1214,8 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_generate_transaction_random_values() {
+    use rand::{rngs::ThreadRng, Rng};
+
     let client = NativeClientImpl::default();
     let mut rng = rand::thread_rng();
 
@@ -5038,7 +5042,7 @@ fn test_sign_verify_message() {
     );
 
     let message = "test";
-    let signature = coin.sign_message(message).unwrap();
+    let signature = coin.sign_message(message, None).unwrap();
     assert_eq!(
         signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
@@ -5059,7 +5063,7 @@ fn test_sign_verify_message_segwit() {
     );
 
     let message = "test";
-    let signature = coin.sign_message(message).unwrap();
+    let signature = coin.sign_message(message, None).unwrap();
     assert_eq!(
         signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="

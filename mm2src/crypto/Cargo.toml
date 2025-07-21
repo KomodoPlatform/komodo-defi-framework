@@ -7,58 +7,59 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-aes = "0.8.3"
-argon2 = { version = "0.5.2", features = ["zeroize"] }
-arrayref = "0.3"
-async-trait = "0.1"
-base64 = "0.21.2"
-bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi", "std"] }
-bip39 = { version = "2.1.0", features = ["rand_core", "zeroize", "std"], default-features = false }
+aes.workspace = true
+argon2.workspace = true
+arrayref.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+bip32.workspace = true
+bip39.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-bs58 = "0.4.0"
-cbc = "0.1.2"
-cipher = "0.4.4"
+bs58.workspace = true
+cbc.workspace = true
+cipher.workspace = true
 common = { path = "../common" }
-derive_more = "0.99"
-ed25519-dalek-bip32 = "0.3.0"
+derive_more.workspace = true
+ed25519-dalek-bip32.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
-enum-primitive-derive = "0.2"
-futures = "0.3"
-hex = "0.4.2"
-hmac = "0.12.1"
-http = "0.2"
+enum-primitive-derive.workspace = true
+futures.workspace = true
+hex.workspace = true
+hmac.workspace = true
+http.workspace = true
 hw_common = { path = "../hw_common" }
 keys = { path = "../mm2_bitcoin/keys" }
-lazy_static = "1.4"
+lazy_static.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-num-traits = "0.2"
-parking_lot = { version = "0.12.0", features = ["nightly"] }
+num-traits.workspace = true
+parking_lot = { workspace = true, features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
-rustc-hex = "2"
-secp256k1 = "0.20"
+rustc-hex.workspace = true
+secp256k1.workspace = true
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-sha2 = "0.10"
-thiserror = "1.0.30"
+serde.workspace = true
+serde_derive.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+sha2.workspace = true
+thiserror.workspace = true
 trezor = { path = "../trezor" }
-zeroize = { version = "1.5", features = ["zeroize_derive"] }
+zeroize.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-cfg-if = "1.0"
+cfg-if.workspace = true
 mm2_eth = { path = "../mm2_eth" }
 mm2_metamask = { path = "../mm2_metamask" }
-wasm-bindgen-test = { version = "0.3.2" }
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false }
+wasm-bindgen-test.workspace = true
+web3 = { workspace = true, default-features = false }
+
 
 [dev-dependencies]
-cfg-if = "1.0"
-tokio = { version = "1.20", default-features = false }
+cfg-if.workspace = true
+tokio.workspace = true
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]

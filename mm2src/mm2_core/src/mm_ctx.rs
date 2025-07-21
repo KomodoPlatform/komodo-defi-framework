@@ -38,6 +38,7 @@ cfg_native! {
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
+    use derive_more::Display;
     use std::sync::MutexGuard;
 }
 
@@ -161,6 +162,7 @@ pub struct MmCtx {
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
     pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
+    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 
 impl MmCtx {
@@ -219,8 +221,11 @@ impl MmCtx {
             healthcheck_response_handler: AsyncMutex::new(
                 TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
             ),
+            wallet_connect: Mutex::new(None),
         }
     }
+
+    pub fn enable_hd(&self) -> bool { self.conf["enable_hd"].as_bool().unwrap_or(false) }
 
     pub fn rmd160(&self) -> &H160 {
         lazy_static! {
@@ -322,7 +327,7 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
 
-    /// MM database path.  
+    /// MM database path.
     /// Defaults to a relative "DB".
     ///
     /// Can be changed via the "dbdir" configuration field, for example:
@@ -348,8 +353,13 @@ impl MmCtx {
     ///
     /// Such directory isn't bound to a specific seed/wallet or address.
     /// Data that should be stored there is public and shared between all seeds and addresses (e.g. stats, block headers, etc...).
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_dir(&self) -> PathBuf { self.db_root().join("global") }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn global_dir(&self) -> PathBuf {
+        if cfg!(not(feature = "new-db-arch")) {
+            return self.dbdir();
+        }
+        self.db_root().join("global")
+    }
 
     /// Returns the path to wallet's data directory.
     ///
@@ -357,8 +367,11 @@ impl MmCtx {
     /// For HD wallets, this `rmd160` is derived from `mm2_internal_derivation_path`.
     /// For Iguana, this `rmd160` is simply a hash of the seed.
     /// Use this directory to store seed/wallet related data rather than address related data (e.g. HD wallet accounts, HD wallet tx history, etc...)
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn wallet_dir(&self) -> PathBuf {
+        if cfg!(not(feature = "new-db-arch")) {
+            return self.dbdir();
+        }
         self.db_root()
             .join("wallets")
             .join(hex::encode(self.rmd160().as_slice()))
@@ -368,13 +381,12 @@ impl MmCtx {
     ///
     /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
     /// This makes sure that when this address is activated using a different technique, this data is still accessible.
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn address_dir(&self, address: &str) -> Result<PathBuf, AddressDataError> {
-        let path = self.db_root().join("addresses").join(address);
-        if !path.exists() {
-            std::fs::create_dir_all(&path).map_err(AddressDataError::CreateAddressDirFailure)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn address_dir(&self, address: &str) -> PathBuf {
+        if cfg!(not(feature = "new-db-arch")) {
+            return self.dbdir();
         }
-        Ok(path)
+        self.db_root().join("addresses").join(address)
     }
 
     /// Returns a SQL connection to the global database.
@@ -396,9 +408,10 @@ impl MmCtx {
     }
 
     /// Returns a SQL connection to the address database.
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn address_db(&self, address: &str) -> Result<Connection, AddressDataError> {
-        let path = self.address_dir(address)?.join("MM2.db");
+        let path = self.address_dir(address).join("MM2.db");
+        mm2_io::fs::create_parents(&path).map_err(|err| AddressDataError::CreateAddressDirFailure(err.into_inner()))?;
         log_sqlite_file_open_attempt(&path);
         let connection = Connection::open(path).map_err(AddressDataError::SqliteConnectionFailure)?;
         Ok(connection)
@@ -414,6 +427,29 @@ impl MmCtx {
             panic!("netid {} is too big", netid)
         }
         netid as u16
+    }
+
+    pub fn disable_p2p(&self) -> bool {
+        if let Some(disable_p2p) = self.conf["disable_p2p"].as_bool() {
+            return disable_p2p;
+        }
+
+        let default = !self.conf["is_bootstrap_node"].as_bool().unwrap_or(false)
+            && self.conf["seednodes"].as_array().is_none()
+            && !self.p2p_in_memory();
+
+        default
+    }
+
+    pub fn is_bootstrap_node(&self) -> bool {
+        if let Some(is_bootstrap_node) = self.conf["is_bootstrap_node"].as_bool() {
+            return is_bootstrap_node;
+        }
+
+        let default = !self.conf["disable_p2p"].as_bool().unwrap_or(false)
+            && self.conf["seednodes"].as_array().is_none_or(|t| t.is_empty());
+
+        default
     }
 
     pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
@@ -533,7 +569,8 @@ impl Drop for MmCtx {
     }
 }
 
-#[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Display)]
 pub enum AddressDataError {
     CreateAddressDirFailure(std::io::Error),
     SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
@@ -660,6 +697,8 @@ impl MmArc {
 
     #[cfg(feature = "track-ctx-pointer")]
     fn track_ctx_pointer(&self) {
+        use common::executor::SpawnFuture;
+
         let ctx_weak = self.weak();
         let fut = async move {
             let level = log::log_crate::Level::Info;
@@ -709,7 +748,7 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {

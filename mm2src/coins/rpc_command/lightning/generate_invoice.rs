@@ -6,6 +6,7 @@ use bitcoin_hashes::Hash;
 use common::log::LogOnError;
 use common::{async_blocking, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use lightning_invoice::utils::create_invoice_from_channelmanager;
@@ -75,7 +76,7 @@ pub async fn generate_invoice(
     ctx: MmArc,
     req: GenerateInvoiceRequest,
 ) -> GenerateInvoiceResult<GenerateInvoiceResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(GenerateInvoiceError::UnsupportedCoin(e.ticker().to_string())),
     };

@@ -1,6 +1,6 @@
 use crate::lp_native_dex::lp_init;
 use crate::lp_network::MAX_NETID;
-pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey};
+pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair};
 pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
 
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
@@ -287,6 +287,8 @@ pub async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
 /// let _leaked = Box::leak(Box::new(container));
 pub struct SiaTestnetContainer {
     /// Docker container running walletd.
+    // Todo: check why this field was added
+    #[allow(dead_code)]
     pub container: ContainerAsync<GenericImage>,
     /// SiaClient to interact with the walletd API within the container
     pub client: SiaClient,
@@ -615,7 +617,7 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer {
+pub async fn init_walletd_container(temp_dir: &Path) -> SiaTestnetContainer {
     // Create a directory within the shared temp directory to mount as the /config within the container
     // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
     let config_dir = temp_dir.join("walletd_config");
@@ -664,7 +666,7 @@ pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer 
 
 /// Initialize a walletd container that will sync the Sia ZEN testnet.
 /// creates an insecure HTTP API on a random port on the host.
-pub async fn init_zen_container<'a>(temp_dir: &Path) -> SiaTestnetContainer {
+pub async fn init_zen_container(temp_dir: &Path) -> SiaTestnetContainer {
     // Create a directory within the shared temp directory to mount as the /config within the container
     // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
     let config_dir = temp_dir.join("walletd_config");
@@ -738,7 +740,7 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
 /// The container will run until it falls out of scope.
 /// args:
 /// - working_dir: The directory to use for the container's data. This is where the config file will be created.
-pub async fn init_ocean_container(working_dir: &PathBuf) -> (ContainerAsync<GenericImage>, KomododClient) {
+pub async fn init_ocean_container(working_dir: &Path) -> (ContainerAsync<GenericImage>, KomododClient) {
     let utxo_data_dir = working_dir.join("DOCKER");
     std::fs::create_dir_all(&utxo_data_dir).unwrap();
     let config_path = utxo_data_dir.join("DOCKER.conf");
@@ -838,7 +840,7 @@ Imports funded_key.address to miner node and unfunded_key.address to nonminer no
 Returns the container and both clients.
 The docker container will run until this container falls out of scope.
 **/
-pub async fn init_komodod_clients<'a>(
+pub async fn init_komodod_clients(
     funded_key: TestKeyPair<'_>,
     unfunded_key: TestKeyPair<'_>,
 ) -> (ContainerAsync<GenericImage>, (KomododClient, KomododClient)) {

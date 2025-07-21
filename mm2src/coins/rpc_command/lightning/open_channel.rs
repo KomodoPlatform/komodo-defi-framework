@@ -11,6 +11,7 @@ use chain::TransactionOutput;
 use common::log::error;
 use common::{async_blocking, new_uuid, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use keys::AddressHashEnum;
 use lightning::util::config::UserConfig;
@@ -134,7 +135,7 @@ pub struct OpenChannelResponse {
 
 /// Opens a channel on the lightning network.
 pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelResult<OpenChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(OpenChannelError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -146,15 +147,20 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;
-    let my_address = platform_coin.as_ref().derivation_method.single_addr_or_err().await?;
-    let (unspents, _) = platform_coin.get_unspent_ordered_list(&my_address).await?;
+    let my_address = platform_coin
+        .as_ref()
+        .derivation_method
+        .single_addr_or_err()
+        .await
+        .map_mm_err()?;
+    let (unspents, _) = platform_coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
     let (value, fee_policy) = match req.amount.clone() {
         ChannelOpenAmount::Max => (
             unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
             FeePolicy::DeductFromOutput(0),
         ),
         ChannelOpenAmount::Exact(v) => {
-            let value = sat_from_big_decimal(&v, decimals)?;
+            let value = sat_from_big_decimal(&v, decimals).map_mm_err()?;
             (value, FeePolicy::SendExact)
         },
     };
@@ -179,7 +185,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .map_err(|e| OpenChannelError::RpcError(e.to_string()))?;
     tx_builder = tx_builder.with_fee(fee);
 
-    let (unsigned, _) = tx_builder.build().await?;
+    let (unsigned, _) = tx_builder.build().await.map_mm_err()?;
 
     let amount_in_sat = unsigned.outputs[0].value;
     let push_msat = req.push_msat;

@@ -113,7 +113,7 @@ where
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         coin_protocol: CoinProtocol,
     ) -> MmResult<RpcTaskXPubExtractor<Task>, HDExtractPubkeyError> {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| HDExtractPubkeyError::HwContextNotInitialized)?;
@@ -141,7 +141,7 @@ where
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
         let pubkey_processor = Arc::new(pubkey_processor);
-        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await?;
+        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         let xpub = trezor_session
             .get_public_key(
                 derivation_path,
@@ -150,9 +150,11 @@ where
                 SHOW_PUBKEY_ON_DISPLAY,
                 IGNORE_XPUB_MAGIC,
             )
-            .await?
+            .await
+            .map_mm_err()?
             .process(pubkey_processor.clone())
-            .await?;
+            .await
+            .map_mm_err()?;
         // Despite we pass `IGNORE_XPUB_MAGIC` to the [`TrezorSession::get_public_key`] method,
         // Trezor sometimes returns pubkeys with magic prefixes like `dgub` prefix for DOGE coin.
         // So we need to replace the magic prefix manually.
@@ -167,10 +169,11 @@ where
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
         let pubkey_processor = Arc::new(pubkey_processor);
-        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await?;
+        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         trezor_session
             .get_eth_public_key(&derivation_path, SHOW_PUBKEY_ON_DISPLAY)
-            .await?
+            .await
+            .map_mm_err()?
             .process(pubkey_processor)
             .await
             .mm_err(HDExtractPubkeyError::from)

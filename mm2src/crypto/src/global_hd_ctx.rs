@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use crate::privkey::{bip39_seed_from_mnemonic, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitResult};
 use bip32::{DerivationPath, ExtendedPrivateKey};
@@ -44,12 +46,14 @@ pub struct GlobalHDAccountCtx {
 
 impl GlobalHDAccountCtx {
     pub fn new(mnemonic_str: &str) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
-        let bip39_seed = bip39_seed_from_mnemonic(mnemonic_str)?;
-        let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> =
-            ExtendedPrivateKey::new(bip39_seed.0).map_to_mm(PrivKeyError::Secp256k1MasterKey)?;
+        let bip39_seed = bip39_seed_from_mnemonic(mnemonic_str).map_mm_err()?;
+        let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> = ExtendedPrivateKey::new(bip39_seed.0)
+            .map_to_mm(PrivKeyError::Secp256k1MasterKey)
+            .map_mm_err()?;
 
-        let ed25519_master_priv_key =
-            ExtendedSigningKey::from_seed(&bip39_seed.0).map_to_mm(PrivKeyError::Ed25519MasterKey)?;
+        let ed25519_master_priv_key = ExtendedSigningKey::from_seed(&bip39_seed.0)
+            .map_to_mm(PrivKeyError::Ed25519MasterKey)
+            .map_mm_err()?;
 
         // The derivation path for an "internal key". See CryptoCtx::mm2_internal_key_pair comment.
         let derivation_path = mm2_internal_der_path();
@@ -58,10 +62,11 @@ impl GlobalHDAccountCtx {
         for child in derivation_path {
             internal_priv_key = internal_priv_key
                 .derive_child(child)
-                .map_to_mm(PrivKeyError::Secp256k1InternalKey)?
+                .map_to_mm(PrivKeyError::Secp256k1InternalKey)
+                .map_mm_err()?
         }
 
-        let mm2_internal_key_pair = key_pair_from_secret(internal_priv_key.private_key().as_ref())?;
+        let mm2_internal_key_pair = key_pair_from_secret(internal_priv_key.private_key().as_ref()).map_mm_err()?;
 
         let global_hd_ctx = GlobalHDAccountCtx {
             bip39_seed,

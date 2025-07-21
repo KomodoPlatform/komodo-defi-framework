@@ -172,20 +172,30 @@ pub struct SetBalanceRequest {
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     let account_id = match req.policy {
         EnableAccountPolicy::Existing(account_id) => account_id,
         EnableAccountPolicy::New(new_account) => {
             let account_id = new_account.account_id;
             account_ctx
                 .storage()
-                .await?
+                .await
+                .map_mm_err()?
                 .upload_account(AccountInfo::from(new_account))
-                .await?;
+                .await
+                .map_mm_err()?;
             account_id
         },
     };
-    account_ctx.storage().await?.enable_account(account_id).await?;
+    account_ctx
+        .storage()
+        .await
+        .map_mm_err()?
+        .enable_account(account_id)
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -197,12 +207,16 @@ pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<S
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_new_account(&req.account)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .upload_account(AccountInfo::from(req.account))
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -214,7 +228,13 @@ pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<Success
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn delete_account(ctx: MmArc, req: DeleteAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    account_ctx.storage().await?.delete_account(req.account_id).await?;
+    account_ctx
+        .storage()
+        .await
+        .map_mm_err()?
+        .delete_account(req.account_id)
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -228,12 +248,16 @@ pub async fn get_accounts(
     ctx: MmArc,
     _req: GetAccountsRequest,
 ) -> MmResult<Vec<AccountWithEnabledFlag>, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     let accounts = account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .load_accounts_with_enabled_flag()
-        .await?
+        .await
+        .map_mm_err()?
         // The given `BTreeMap<AccountId, AccountWithEnabledFlag>` accounts are sorted by `AccountId`.
         .into_values()
         .collect();
@@ -249,12 +273,16 @@ pub async fn get_account_coins(
     ctx: MmArc,
     req: GetAccountCoinsRequest,
 ) -> MmResult<GetAccountCoinsResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     let coins = account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .load_account_coins(req.account_id.clone())
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(GetAccountCoinsResponse {
         account_id: req.account_id,
         coins,
@@ -271,16 +299,32 @@ pub async fn get_enabled_account(
     ctx: MmArc,
     _req: GetEnabledAccountRequest,
 ) -> MmResult<AccountWithCoins, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    let account = account_ctx.storage().await?.load_enabled_account_with_coins().await?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
+    let account = account_ctx
+        .storage()
+        .await
+        .map_mm_err()?
+        .load_enabled_account_with_coins()
+        .await
+        .map_mm_err()?;
     Ok(account)
 }
 
 /// Sets the account name.
 pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    validate_account_name(&req.name)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    account_ctx.storage().await?.set_name(req.account_id, req.name).await?;
+    validate_account_name(&req.name).map_mm_err()?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
+    account_ctx
+        .storage()
+        .await
+        .map_mm_err()?
+        .set_name(req.account_id, req.name)
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -290,12 +334,16 @@ pub async fn set_account_description(
     req: SetAccountDescriptionRequest,
 ) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_account_desc(&req.description)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .set_description(req.account_id, req.description)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -305,12 +353,16 @@ pub async fn set_account_description(
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn set_account_balance(ctx: MmArc, req: SetBalanceRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .set_balance(req.account_id, req.balance_usd)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -321,12 +373,16 @@ pub async fn set_account_balance(ctx: MmArc, req: SetBalanceRequest) -> MmResult
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn activate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_tickers(&req.tickers)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .activate_coins(req.account_id, req.tickers)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -336,18 +392,22 @@ pub async fn activate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessRes
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn deactivate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx)
+        .map_to_mm(AccountRpcError::Internal)
+        .map_mm_err()?;
     account_ctx
         .storage()
-        .await?
+        .await
+        .map_mm_err()?
         .deactivate_coins(req.account_id, req.tickers)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
 fn validate_new_account<Id>(account: &NewAccount<Id>) -> MmResult<(), AccountRpcError> {
-    validate_account_name(&account.name)?;
-    validate_account_desc(&account.description)
+    validate_account_name(&account.name).map_mm_err()?;
+    validate_account_desc(&account.description).map_mm_err()
 }
 
 fn validate_account_name(name: &str) -> MmResult<(), AccountRpcError> {

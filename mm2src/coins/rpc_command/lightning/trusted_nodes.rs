@@ -2,6 +2,7 @@ use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -53,7 +54,7 @@ pub struct AddTrustedNodeResponse {
 }
 
 pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<AddTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -82,7 +83,7 @@ pub async fn remove_trusted_node(
     ctx: MmArc,
     req: RemoveTrustedNodeReq,
 ) -> TrustedNodeResult<RemoveTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -107,7 +108,7 @@ pub struct ListTrustedNodesResponse {
 }
 
 pub async fn list_trusted_nodes(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
     };
