@@ -211,6 +211,7 @@ use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
 pub mod lp_price;
 pub mod watcher_common;
+pub mod priv_key;
 
 pub mod coin_errors;
 use coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentFut,
@@ -2153,6 +2154,11 @@ pub trait MarketCoinOps {
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
 
+    /// Returns the WIF prefix for the coin.
+    fn wif_prefix(&self) -> Option<u8> { None }
+
+    fn is_utxo(&self) -> bool { true }
+    
     fn is_trezor(&self) -> bool;
 }
 
