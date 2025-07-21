@@ -156,11 +156,16 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    use crate::rpc::lp_commands::experimental::offline_export_privkey::offline_export_privkey;
+
     if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
         return staking_dispatcher(request, ctx, staking_method).await;
     }
 
-    MmError::err(DispatcherError::NoSuchMethod)
+    match experimental_method {
+        "offline_export_privkey" => handle_mmrpc(ctx, request, offline_export_privkey).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
+    }
 }
 
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
