@@ -371,7 +371,7 @@ impl PeersExchange {
         let mut components = address.iter();
         match components.next() {
             Some(Protocol::Ip4(addr)) => {
-                if is_global_ipv4(&addr) {
+                if !is_global_ipv4(&addr) {
                     return false;
                 }
             },
