@@ -923,10 +923,6 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
 
-    fn wif_prefix(&self) -> Option<u8> { Some(self.as_ref().conf.wif_prefix) }
-
-    fn is_utxo(&self) -> bool { true }
-
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 

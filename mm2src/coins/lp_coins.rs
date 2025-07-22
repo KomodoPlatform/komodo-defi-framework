@@ -2154,11 +2154,6 @@ pub trait MarketCoinOps {
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
 
-    /// Returns the WIF prefix for the coin.
-    fn wif_prefix(&self) -> Option<u8> { None }
-
-    fn is_utxo(&self) -> bool { false }
-
     fn is_trezor(&self) -> bool;
 }
 
@@ -3741,6 +3736,8 @@ impl MmCoinEnum {
     }
 
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
+
+
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 

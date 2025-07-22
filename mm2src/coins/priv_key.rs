@@ -1,5 +1,6 @@
 use crate::hd_wallet::{HDAccountOps, HDWalletOps};
-use crate::{CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MarketCoinOps, MmCoin, PrivKeyPolicy};
+use crate::{BchCoin, QtumCoin, Qrc20Coin, UtxoStandardCoin, ZCoin, SlpToken, EthCoin, TendermintCoin, CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MmCoin, PrivKeyPolicy};
+use crate::utxo::UtxoCoinFields;
 use async_trait::async_trait;
 use bip32::ChildNumber;
 use common::HttpStatusCode;
@@ -51,6 +52,42 @@ impl HttpStatusCode for DerivePrivKeyError {
     }
 }
 
+trait CoinKeyInfo {
+    fn wif_prefix(&self) -> u8;
+    fn uses_utxo_format(&self) -> bool;
+}
+
+macro_rules! impl_utxo_key_info {
+    ($coin_type:ty) => {
+        impl CoinKeyInfo for $coin_type {
+            fn wif_prefix(&self) -> u8 { self.as_ref().conf.wif_prefix }
+            fn uses_utxo_format(&self) -> bool { true }
+        }
+    };
+}
+
+macro_rules! impl_non_utxo_key_info {
+    ($coin_type:ty) => {
+        impl CoinKeyInfo for $coin_type {
+            fn wif_prefix(&self) -> u8 { 0 }
+            fn uses_utxo_format(&self) -> bool { false }
+        }
+    };
+}
+
+// UTXO coins
+impl_utxo_key_info!(UtxoStandardCoin);
+impl_utxo_key_info!(QtumCoin);
+impl_utxo_key_info!(BchCoin);
+impl_utxo_key_info!(Qrc20Coin);
+impl_utxo_key_info!(SlpToken);
+#[cfg(not(target_arch = "wasm32"))]
+impl_utxo_key_info!(ZCoin);
+
+// Non-UTXO coins
+impl_non_utxo_key_info!(EthCoin);
+impl_non_utxo_key_info!(TendermintCoin);
+
 #[async_trait]
 pub trait DerivePrivKeyV2: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + Sized {
     async fn derive_priv_key(&self, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>>;
@@ -59,7 +96,7 @@ pub trait DerivePrivKeyV2: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMe
 #[async_trait]
 impl<Coin> DerivePrivKeyV2 for Coin
 where
-    Coin: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + MarketCoinOps + Sync,
+    Coin: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + CoinKeyInfo + Sync,
 {
     async fn derive_priv_key(&self, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
         match self.priv_key_policy() {
@@ -94,7 +131,7 @@ where
                     .map_err(|e| DerivePrivKeyError::Internal(format!("Error deriving secret key: {}", e)))?;
 
                 let private = Private {
-                    prefix: self.wif_prefix().unwrap_or(0),
+                    prefix: self.wif_prefix(),
                     secret: secret_key.into(),
                     compressed: true,
                     checksum_type: Default::default(),
@@ -115,18 +152,20 @@ where
                 let priv_key_wif = key_pair.private().to_string();
                 let priv_key_hex = format!("0x{}", hex::encode(key_pair.private_bytes()));
 
-                let priv_key = if self.is_utxo() { priv_key_wif } else { priv_key_hex };
+                let priv_key = if self.uses_utxo_format() { priv_key_wif } else { priv_key_hex };
+
+                let pub_key = if self.uses_utxo_format() {
+                    hex::encode(pubkey)
+                } else {
+                    format!("0x{}", hex::encode(pubkey))
+                };
 
                 let response = DerivedPrivKey {
                     coin: self.ticker().to_string(),
                     address: address.to_string(),
                     derivation_path: path_to_address.to_string(),
                     priv_key,
-                    pub_key: if self.is_utxo() {
-                        hex::encode(pubkey)
-                    } else {
-                        format!("0x{}", hex::encode(pubkey))
-                    },
+                    pub_key,
                 };
                 Ok(response)
             },
