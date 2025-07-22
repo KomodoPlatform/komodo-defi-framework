@@ -1,6 +1,5 @@
 use crate::hd_wallet::{HDAccountOps, HDWalletOps};
 use crate::{BchCoin, QtumCoin, Qrc20Coin, UtxoStandardCoin, ZCoin, SlpToken, EthCoin, TendermintCoin, CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MmCoin, PrivKeyPolicy};
-use crate::utxo::UtxoCoinFields;
 use async_trait::async_trait;
 use bip32::ChildNumber;
 use common::HttpStatusCode;
@@ -31,23 +30,29 @@ pub struct DerivePrivKeyReq {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum DerivePrivKeyError {
-    #[display(fmt = "No such coin: {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "Coin {} doesn't support HD wallet derivation", _0)]
-    CoinDoesntSupportDerivation(String),
+    #[display(fmt = "No such coin: {}", ticker)]
+    NoSuchCoin {
+        ticker: String,
+    },
+    #[display(fmt = "Coin {} doesn't support HD wallet derivation", ticker)]
+    CoinDoesntSupportDerivation {
+        ticker: String,
+    },
     #[display(fmt = "Hardware/remote wallet doesn't allow exporting private keys")]
     HwWalletNotAllowed,
-    #[display(fmt = "Internal error: {}", _0)]
-    Internal(String),
+    #[display(fmt = "Internal error: {}", reason)]
+    Internal {
+        reason: String,
+    },
 }
 
 impl HttpStatusCode for DerivePrivKeyError {
     fn status_code(&self) -> StatusCode {
         match self {
-            DerivePrivKeyError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            DerivePrivKeyError::CoinDoesntSupportDerivation(_) => StatusCode::BAD_REQUEST,
+            DerivePrivKeyError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
+            DerivePrivKeyError::CoinDoesntSupportDerivation { .. } => StatusCode::BAD_REQUEST,
             DerivePrivKeyError::HwWalletNotAllowed => StatusCode::FORBIDDEN,
-            DerivePrivKeyError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            DerivePrivKeyError::Internal { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -100,9 +105,9 @@ where
 {
     async fn derive_priv_key(&self, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
         match self.priv_key_policy() {
-            PrivKeyPolicy::Iguana(_) => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation(
-                self.ticker().to_string(),
-            )),
+            PrivKeyPolicy::Iguana(_) => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+                ticker: self.ticker().to_string(),
+            }),
             PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => {
                 MmError::err(DerivePrivKeyError::HwWalletNotAllowed)
             },
@@ -110,16 +115,18 @@ where
                 let hd_wallet = match self.derivation_method() {
                     DerivationMethod::HDWallet(hd_wallet) => hd_wallet,
                     _ => {
-                        return MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation(
-                            self.ticker().to_string(),
-                        ))
+                        return MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+                            ticker: self.ticker().to_string(),
+                        })
                     },
                 };
 
                 let account = hd_wallet
                     .get_account(req.account_id)
                     .await
-                    .ok_or_else(|| DerivePrivKeyError::Internal(format!("Account {} not found", req.account_id)))?;
+                    .ok_or_else(|| DerivePrivKeyError::Internal {
+                        reason: format!("Account {} not found", req.account_id),
+                    })?;
 
                 let mut path_to_address = account.account_derivation_path();
                 path_to_address.push(req.chain.unwrap_or(Bip44Chain::External).to_child_number());
@@ -128,7 +135,9 @@ where
                 let secret_key = self
                     .priv_key_policy()
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| DerivePrivKeyError::Internal(format!("Error deriving secret key: {}", e)))?;
+                    .map_err(|e| DerivePrivKeyError::Internal {
+                        reason: format!("Error deriving secret key: {}", e),
+                    })?;
 
                 let private = Private {
                     prefix: self.wif_prefix(),
@@ -138,16 +147,22 @@ where
                 };
 
                 let key_pair = KeyPair::from_private(private)
-                    .map_err(|e| DerivePrivKeyError::Internal(format!("Error creating key pair from secret: {}", e)))?;
+                    .map_err(|e| DerivePrivKeyError::Internal {
+                        reason: format!("Error creating key pair from secret: {}", e),
+                    })?;
 
                 let pubkey_slice = key_pair.public_slice();
                 let pubkey: [u8; 33] = pubkey_slice
                     .try_into()
-                    .map_err(|_| DerivePrivKeyError::Internal("Error converting pubkey slice to array".to_string()))?;
+                    .map_err(|_| DerivePrivKeyError::Internal {
+                        reason: "Error converting pubkey slice to array".to_string(),
+                    })?;
 
                 let address = self
                     .address_from_pubkey(&pubkey.into())
-                    .map_err(|e| DerivePrivKeyError::Internal(format!("Error getting address from pubkey: {}", e)))?;
+                    .map_err(|e| DerivePrivKeyError::Internal {
+                        reason: format!("Error getting address from pubkey: {}", e),
+                    })?;
 
                 let priv_key_wif = key_pair.private().to_string();
                 let priv_key_hex = format!("0x{}", hex::encode(key_pair.private_bytes()));

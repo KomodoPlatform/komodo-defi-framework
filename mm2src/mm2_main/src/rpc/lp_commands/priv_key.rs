@@ -19,8 +19,12 @@ pub async fn derive_priv_key(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<
     let coin_ticker = req.coin.clone();
     let coin = lp_coinfind_any(&ctx, &req.coin)
         .await
-        .map_err(|e| DerivePrivKeyError::Internal(e.to_string()))?
-        .ok_or_else(|| DerivePrivKeyError::NoSuchCoin(req.coin.clone()))?
+        .map_err(|e| DerivePrivKeyError::Internal {
+            reason: e.to_string(),
+        })?
+        .ok_or_else(|| DerivePrivKeyError::NoSuchCoin {
+            ticker: req.coin.clone(),
+        })?
         .inner;
 
     let req = DerivePrivKeyReq {
@@ -34,6 +38,8 @@ pub async fn derive_priv_key(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<
         MmCoinEnum::Bch(c) => c.derive_priv_key(&req).await,
         MmCoinEnum::QtumCoin(c) => c.derive_priv_key(&req).await,
         MmCoinEnum::EthCoin(c) => c.derive_priv_key(&req).await,
-        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation(coin_ticker)),
+        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+            ticker: coin_ticker,
+        }),
     }
 }
