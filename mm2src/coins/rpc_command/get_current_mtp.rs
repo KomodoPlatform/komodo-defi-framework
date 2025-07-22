@@ -3,9 +3,11 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-use crate::{lp_coinfind_or_err,
-            utxo::{rpc_clients::UtxoRpcError, UtxoCommonOps},
-            CoinFindError, MmCoinEnum};
+use crate::{
+    lp_coinfind_or_err,
+    utxo::{rpc_clients::UtxoRpcError, UtxoCommonOps},
+    CoinFindError, MmCoinEnum,
+};
 
 pub type GetCurrentMtpRpcResult<T> = Result<T, MmError<GetCurrentMtpError>>;
 
@@ -39,11 +41,15 @@ impl HttpStatusCode for GetCurrentMtpError {
 }
 
 impl From<UtxoRpcError> for GetCurrentMtpError {
-    fn from(err: UtxoRpcError) -> Self { Self::RpcError(err.to_string()) }
+    fn from(err: UtxoRpcError) -> Self {
+        Self::RpcError(err.to_string())
+    }
 }
 
 impl From<CoinFindError> for GetCurrentMtpError {
-    fn from(err: CoinFindError) -> Self { Self::NoSuchCoin(err.to_string()) }
+    fn from(err: CoinFindError) -> Self {
+        Self::NoSuchCoin(err.to_string())
+    }
 }
 
 pub async fn get_current_mtp_rpc(

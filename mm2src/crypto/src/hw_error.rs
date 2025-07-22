@@ -83,7 +83,9 @@ impl From<TrezorError> for HwError {
 }
 
 impl From<Bip32Error> for HwError {
-    fn from(e: Bip32Error) -> Self { HwError::InvalidXpub(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        HwError::InvalidXpub(e.to_string())
+    }
 }
 
 /// This error enumeration is involved to be used as a part of another RPC error.

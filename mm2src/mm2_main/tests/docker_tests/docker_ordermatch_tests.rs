@@ -6,11 +6,15 @@ use crate::{generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
-use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, enable_eth_coin, eth_dev_conf, mm_dump,
-                                  my_balance, mycoin1_conf, mycoin_conf, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{
+    best_orders_v2, best_orders_v2_by_number, enable_eth_coin, eth_dev_conf, mm_dump, my_balance, mycoin1_conf,
+    mycoin_conf, MarketMakerIt, Mm2TestConf,
+};
 
-use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult,
-                                OrderbookDepthResponse, RpcV2Response, SetPriceResponse};
+use mm2_test_helpers::structs::{
+    BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult, OrderbookDepthResponse,
+    RpcV2Response, SetPriceResponse,
+};
 use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
@@ -753,9 +757,11 @@ fn get_bob_alice() -> (MarketMakerIt, MarketMakerIt) {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -1138,9 +1144,11 @@ fn test_best_orders_filter_response() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &alice_coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &alice_coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();

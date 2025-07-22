@@ -16,7 +16,9 @@ pub struct TendermintBalanceEventStreamer {
 }
 
 impl TendermintBalanceEventStreamer {
-    pub fn new(coin: TendermintCoin) -> Self { Self { coin } }
+    pub fn new(coin: TendermintCoin) -> Self {
+        Self { coin }
+    }
 }
 
 #[async_trait]

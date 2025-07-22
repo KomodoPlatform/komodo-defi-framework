@@ -1,4 +1,5 @@
-#[cfg(not(target_arch = "wasm32"))] use super::*;
+#[cfg(not(target_arch = "wasm32"))]
+use super::*;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 #[cfg(not(target_arch = "wasm32"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, ETH_SEPOLIA_SWAP_CONTRACT};

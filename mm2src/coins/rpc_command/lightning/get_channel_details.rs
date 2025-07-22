@@ -43,7 +43,9 @@ impl From<CoinFindError> for GetChannelDetailsError {
 }
 
 impl From<SqlError> for GetChannelDetailsError {
-    fn from(err: SqlError) -> GetChannelDetailsError { GetChannelDetailsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> GetChannelDetailsError {
+        GetChannelDetailsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

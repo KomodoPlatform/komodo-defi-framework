@@ -5,8 +5,10 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
-            PrivKeyPolicyNotAllowed, UnexpectedDerivationMethod};
+use coins::{
+    lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum, PrivKeyPolicyNotAllowed,
+    UnexpectedDerivationMethod,
+};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -14,10 +16,14 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes, TaskId};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError, RpcTaskUserActionRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes, TaskId,
+};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -337,7 +343,9 @@ impl From<CreateTxHistoryStorageError> for EnablePlatformCoinWithTokensError {
 }
 
 impl From<CryptoCtxError> for EnablePlatformCoinWithTokensError {
-    fn from(e: CryptoCtxError) -> Self { EnablePlatformCoinWithTokensError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        EnablePlatformCoinWithTokensError::Internal(e.to_string())
+    }
 }
 
 impl From<RpcTaskError> for EnablePlatformCoinWithTokensError {
@@ -552,7 +560,9 @@ pub enum InitPlatformCoinWithTokensInProgressStatus {
 }
 
 impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensInProgressStatus {
-    fn initial_status() -> Self { InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        InitPlatformCoinWithTokensInProgressStatus::ActivatingCoin
+    }
 }
 
 /// Implementation of the init platform coin with tokens RPC command.
@@ -668,10 +678,11 @@ pub mod for_tests {
     use mm2_err_handle::prelude::MmResult;
     use rpc_task::{RpcInitReq, RpcTaskStatus};
 
-    use super::{init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
-                EnablePlatformCoinWithTokensError, EnablePlatformCoinWithTokensReq,
-                EnablePlatformCoinWithTokensStatusRequest, InitPlatformCoinWithTokensInitialStatus,
-                PlatformCoinWithTokensActivationOps};
+    use super::{
+        init_platform_coin_with_tokens, init_platform_coin_with_tokens_status, EnablePlatformCoinWithTokensError,
+        EnablePlatformCoinWithTokensReq, EnablePlatformCoinWithTokensStatusRequest,
+        InitPlatformCoinWithTokensInitialStatus, PlatformCoinWithTokensActivationOps,
+    };
 
     /// test helper to activate platform coin with waiting for the result
     pub async fn init_platform_coin_with_tokens_loop<Platform>(

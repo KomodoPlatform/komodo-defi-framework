@@ -29,6 +29,10 @@ pub fn validate_watcher_reward(
     Ok(())
 }
 
-fn get_reward_lower_boundary(reward: u64) -> u64 { (reward as f64 * (1. - REWARD_MARGIN)) as u64 }
+fn get_reward_lower_boundary(reward: u64) -> u64 {
+    (reward as f64 * (1. - REWARD_MARGIN)) as u64
+}
 
-fn get_reward_upper_boundary(reward: u64) -> u64 { (reward as f64 * (1. + REWARD_MARGIN)) as u64 }
+fn get_reward_upper_boundary(reward: u64) -> u64 {
+    (reward as f64 * (1. + REWARD_MARGIN)) as u64
+}

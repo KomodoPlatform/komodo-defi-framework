@@ -39,7 +39,9 @@ pub struct DbUpgrader {
 }
 
 impl DbUpgrader {
-    pub(crate) fn new(db: IdbDatabase, transaction: IdbTransaction) -> DbUpgrader { DbUpgrader { db, transaction } }
+    pub(crate) fn new(db: IdbDatabase, transaction: IdbTransaction) -> DbUpgrader {
+        DbUpgrader { db, transaction }
+    }
 
     pub fn create_table(&self, table: &str) -> OnUpgradeResult<TableUpgrader> {
         // We use the [in-line](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Basic_Concepts_Behind_IndexedDB#gloss_inline_key) primary keys.

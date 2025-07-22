@@ -1,15 +1,21 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage,
-                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
-                               UtxoRpcClientEnum};
+use crate::hd_wallet::{
+    load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletStorageError,
+    DEFAULT_GAP_LIMIT,
+};
+use crate::utxo::rpc_clients::{
+    ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod, UtxoRpcClientEnum,
+};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields,
-                  UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
-use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
-            SharableRpcTransportEventHandler, UtxoActivationParams};
+use crate::utxo::{
+    output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoHDWallet,
+    UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT,
+};
+use crate::{
+    BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey, PrivKeyBuildPolicy,
+    PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler, UtxoActivationParams,
+};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
@@ -80,36 +86,52 @@ pub enum UtxoCoinBuildError {
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
-    fn from(e: UtxoConfError) -> Self { UtxoCoinBuildError::ConfError(e) }
+    fn from(e: UtxoConfError) -> Self {
+        UtxoCoinBuildError::ConfError(e)
+    }
 }
 
 impl From<CryptoCtxError> for UtxoCoinBuildError {
     /// `CryptoCtx` is expected to be initialized already.
-    fn from(crypto_err: CryptoCtxError) -> Self { UtxoCoinBuildError::Internal(crypto_err.to_string()) }
+    fn from(crypto_err: CryptoCtxError) -> Self {
+        UtxoCoinBuildError::Internal(crypto_err.to_string())
+    }
 }
 
 impl From<Bip32DerPathError> for UtxoCoinBuildError {
-    fn from(e: Bip32DerPathError) -> Self { UtxoCoinBuildError::Internal(StandardHDPathError::from(e).to_string()) }
+    fn from(e: Bip32DerPathError) -> Self {
+        UtxoCoinBuildError::Internal(StandardHDPathError::from(e).to_string())
+    }
 }
 
 impl From<HDWalletStorageError> for UtxoCoinBuildError {
-    fn from(e: HDWalletStorageError) -> Self { UtxoCoinBuildError::HDWalletStorageError(e) }
+    fn from(e: HDWalletStorageError) -> Self {
+        UtxoCoinBuildError::HDWalletStorageError(e)
+    }
 }
 
 impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
-    fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
+    fn from(e: BlockHeaderStorageError) -> Self {
+        UtxoCoinBuildError::BlockHeaderStorageError(e)
+    }
 }
 
 impl From<AbortedError> for UtxoCoinBuildError {
-    fn from(e: AbortedError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        UtxoCoinBuildError::Internal(e.to_string())
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for UtxoCoinBuildError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { UtxoCoinBuildError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        UtxoCoinBuildError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<keys::Error> for UtxoCoinBuildError {
-    fn from(e: keys::Error) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        UtxoCoinBuildError::Internal(e.to_string())
+    }
 }
 
 #[async_trait]
@@ -228,7 +250,9 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy, derivation_method).await
     }
 
-    fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
+    fn gap_limit(&self) -> u32 {
+        self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT)
+    }
 }
 
 async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
@@ -370,9 +394,13 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         Ok(coin)
     }
 
-    fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
+    fn gap_limit(&self) -> u32 {
+        self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT)
+    }
 
-    fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
+    fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool {
+        conf.trezor_coin.is_some()
+    }
 
     fn trezor_wallet_rmd160(&self) -> UtxoCoinBuildResult<H160> {
         let crypto_ctx = CryptoCtx::from_ctx(self.ctx()).map_mm_err()?;
@@ -459,7 +487,9 @@ pub trait UtxoCoinBuilderCommonOps {
             .unwrap_or(if self.ticker() == "BTC" { 5 } else { 85 }) as u8
     }
 
-    fn dust_amount(&self) -> u64 { json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT) }
+    fn dust_amount(&self) -> u64 {
+        json::from_value(self.conf()["dust"].clone()).unwrap_or(UTXO_DUST_AMOUNT)
+    }
 
     fn network(&self) -> UtxoCoinBuildResult<BlockchainNetwork> {
         let conf = self.conf();
@@ -689,7 +719,9 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self) -> PathBuf { self.ctx().global_dir().join("TX_CACHE") }
+    fn tx_cache_path(&self) -> PathBuf {
+        self.ctx().global_dir().join("TX_CACHE")
+    }
 
     fn block_header_status_channel(
         &self,

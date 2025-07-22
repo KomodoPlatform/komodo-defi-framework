@@ -1,14 +1,20 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
-use coins::lightning::ln_events::{CHANNEL_READY_LOG, PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
+use coins::lightning::ln_events::{
+    CHANNEL_READY_LOG, PAYMENT_CLAIMABLE_LOG, SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG,
+};
 use common::executor::Timer;
 use common::{block_on, log, wait_until_ms};
 use gstuff::now_ms;
 use http::StatusCode;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{disable_coin, init_lightning, init_lightning_status, my_balance, sign_message,
-                                  start_swaps, verify_message, wait_for_swaps_finish_and_check_status, MarketMakerIt};
-use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
-                                SignatureResponse, VerificationResponse};
+use mm2_test_helpers::for_tests::{
+    disable_coin, init_lightning, init_lightning_status, my_balance, sign_message, start_swaps, verify_message,
+    wait_for_swaps_finish_and_check_status, MarketMakerIt,
+};
+use mm2_test_helpers::structs::{
+    InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response, SignatureResponse,
+    VerificationResponse,
+};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 use std::str::FromStr;

@@ -3,13 +3,15 @@ pub mod behaviours;
 mod relay_address;
 mod swarm_runtime;
 
-#[cfg(feature = "application")] pub mod application;
+#[cfg(feature = "application")]
+pub mod application;
 pub mod p2p_ctx;
 
 use derive_more::Display;
 use lazy_static::lazy_static;
-use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,
-                VerifyOnly};
+use secp256k1::{
+    Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature, VerifyOnly,
+};
 use serde::{de, Deserialize, Serialize, Serializer};
 use sha2::digest::Update;
 use sha2::{Digest, Sha256};
@@ -18,11 +20,11 @@ use std::str::FromStr;
 pub use crate::swarm_runtime::SwarmRuntime;
 
 // atomicdex related re-exports
-pub use behaviours::atomicdex::{get_directly_connected_peers, get_gossip_mesh, get_gossip_peer_topics,
-                                get_gossip_topic_peers, get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd,
-                                AdexBehaviourError, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
-                                AdexResponseChannel, GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash,
-                                WssCerts};
+pub use behaviours::atomicdex::{
+    get_directly_connected_peers, get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_relay_mesh,
+    spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
+    AdexResponseChannel, GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts,
+};
 
 // peers-exchange re-exports
 pub use behaviours::peers_exchange::PeerAddresses;
@@ -32,7 +34,9 @@ pub use behaviours::request_response::RequestResponseBehaviourEvent;
 
 // libp2p related re-exports
 pub use libp2p::identity::DecodingError;
-pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, Keypair, PublicKey as Libp2pPublic, SigningError};
+pub use libp2p::identity::{
+    secp256k1::PublicKey as Libp2pSecpPublic, Keypair, PublicKey as Libp2pPublic, SigningError,
+};
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports
@@ -51,11 +55,15 @@ lazy_static! {
 pub struct PeerAddress(PeerId);
 
 impl From<PeerId> for PeerAddress {
-    fn from(value: PeerId) -> Self { Self(value) }
+    fn from(value: PeerId) -> Self {
+        Self(value)
+    }
 }
 
 impl From<PeerAddress> for PeerId {
-    fn from(value: PeerAddress) -> Self { value.0 }
+    fn from(value: PeerAddress) -> Self {
+        value.0
+    }
 }
 
 impl Serialize for PeerAddress {
@@ -116,7 +124,9 @@ pub enum NetworkInfo {
 }
 
 impl NetworkInfo {
-    pub fn in_memory(&self) -> bool { matches!(self, NetworkInfo::InMemory) }
+    pub fn in_memory(&self) -> bool {
+        matches!(self, NetworkInfo::InMemory)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -179,21 +189,29 @@ pub fn decode_signed<'de, T: de::Deserialize<'de>>(
     Ok((payload, signature, helper.pubkey))
 }
 
-fn sha256(input: impl AsRef<[u8]>) -> [u8; 32] { Sha256::new().chain(input).finalize().into() }
+fn sha256(input: impl AsRef<[u8]>) -> [u8; 32] {
+    Sha256::new().chain(input).finalize().into()
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Secp256k1PubkeySerialize(Secp256k1Pubkey);
 
 impl From<Secp256k1PubkeySerialize> for Secp256k1Pubkey {
-    fn from(pubkey: Secp256k1PubkeySerialize) -> Secp256k1Pubkey { pubkey.0 }
+    fn from(pubkey: Secp256k1PubkeySerialize) -> Secp256k1Pubkey {
+        pubkey.0
+    }
 }
 
 impl From<Secp256k1Pubkey> for Secp256k1PubkeySerialize {
-    fn from(pubkey: Secp256k1Pubkey) -> Self { Secp256k1PubkeySerialize(pubkey) }
+    fn from(pubkey: Secp256k1Pubkey) -> Self {
+        Secp256k1PubkeySerialize(pubkey)
+    }
 }
 
 impl Secp256k1PubkeySerialize {
-    pub fn to_bytes(&self) -> [u8; 33] { self.0.serialize() }
+    pub fn to_bytes(&self) -> [u8; 33] {
+        self.0.serialize()
+    }
 }
 
 impl Serialize for Secp256k1PubkeySerialize {
@@ -243,7 +261,9 @@ impl PublicKey {
 }
 
 impl From<Secp256k1Pubkey> for PublicKey {
-    fn from(pubkey: Secp256k1Pubkey) -> Self { PublicKey::Secp256k1(Secp256k1PubkeySerialize(pubkey)) }
+    fn from(pubkey: Secp256k1Pubkey) -> Self {
+        PublicKey::Secp256k1(Secp256k1PubkeySerialize(pubkey))
+    }
 }
 
 pub type TopicPrefix = &'static str;

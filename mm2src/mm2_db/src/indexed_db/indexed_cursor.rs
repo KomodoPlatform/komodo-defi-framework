@@ -141,7 +141,9 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     /// // Apply the default condition to the cursor builder to return the first item
     /// let updated_cursor_builder = cursor_builder.where_first().open_cursor().next();
     /// ```
-    pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> { self.where_(|_| Ok(true)) }
+    pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> {
+        self.where_(|_| Ok(true))
+    }
 
     pub fn limit(mut self, limit: usize) -> CursorBuilder<'transaction, 'reference, Table> {
         if limit < 1 {

@@ -26,11 +26,15 @@ pub enum MnemonicError {
 }
 
 impl From<bip39::Error> for MnemonicError {
-    fn from(e: bip39::Error) -> Self { MnemonicError::BIP39Error(e.to_string()) }
+    fn from(e: bip39::Error) -> Self {
+        MnemonicError::BIP39Error(e.to_string())
+    }
 }
 
 impl From<KeyDerivationError> for MnemonicError {
-    fn from(e: KeyDerivationError) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
+    fn from(e: KeyDerivationError) -> Self {
+        MnemonicError::KeyDerivationError(e.to_string())
+    }
 }
 
 /// Generates a new mnemonic passphrase.

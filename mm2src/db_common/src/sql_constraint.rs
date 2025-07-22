@@ -33,7 +33,9 @@ macro_rules! named_constraint {
         }
 
         impl From<$constraint_ident> for SqlConstraint {
-            fn from(constraint: $constraint_ident) -> Self { SqlConstraint::$constraint_ident(constraint) }
+            fn from(constraint: $constraint_ident) -> Self {
+                SqlConstraint::$constraint_ident(constraint)
+            }
         }
 
         impl fmt::Display for $constraint_ident {
@@ -191,7 +193,9 @@ pub mod foreign_key {
     }
 
     impl From<ForeignKey> for SqlConstraint {
-        fn from(foreign: ForeignKey) -> Self { SqlConstraint::ForeignKey(foreign) }
+        fn from(foreign: ForeignKey) -> Self {
+            SqlConstraint::ForeignKey(foreign)
+        }
     }
 
     impl fmt::Display for ForeignKey {
@@ -238,7 +242,9 @@ pub mod foreign_key {
     }
 
     impl fmt::Display for ActionOnEvent<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{} {}", self.event, self.action) }
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{} {}", self.event, self.action)
+        }
     }
 }
 

@@ -1,12 +1,15 @@
 use super::*;
 use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
 use crate::eth::web3_transport::http_transport::HttpTransport;
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
-                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{
+    load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
+    HDWalletStorageError, DEFAULT_GAP_LIMIT,
+};
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
-#[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
+#[cfg(target_arch = "wasm32")]
+use crate::EthMetamaskPolicy;
 
 use common::executor::AbortedError;
 use compatible_time::Instant;
@@ -81,19 +84,27 @@ pub enum EthActivationV2Error {
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::InternalError(err.to_string())
+    }
 }
 
 impl From<AbortedError> for EthActivationV2Error {
-    fn from(e: AbortedError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<CryptoCtxError> for EthActivationV2Error {
-    fn from(e: CryptoCtxError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
-    fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<EthTokenActivationError> for EthActivationV2Error {
@@ -115,19 +126,27 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
 }
 
 impl From<HDWalletStorageError> for EthActivationV2Error {
-    fn from(e: HDWalletStorageError) -> Self { EthActivationV2Error::HDWalletStorageError(e.to_string()) }
+    fn from(e: HDWalletStorageError) -> Self {
+        EthActivationV2Error::HDWalletStorageError(e.to_string())
+    }
 }
 
 impl From<HwError> for EthActivationV2Error {
-    fn from(e: HwError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: HwError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<Bip32Error> for EthActivationV2Error {
-    fn from(e: Bip32Error) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<TrezorError> for EthActivationV2Error {
-    fn from(e: TrezorError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: TrezorError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<RpcTaskError> for EthActivationV2Error {
@@ -141,15 +160,21 @@ impl From<RpcTaskError> for EthActivationV2Error {
 
 #[cfg(target_arch = "wasm32")]
 impl From<MetamaskError> for EthActivationV2Error {
-    fn from(e: MetamaskError) -> Self { from_metamask_error(e) }
+    fn from(e: MetamaskError) -> Self {
+        from_metamask_error(e)
+    }
 }
 
 impl From<ParseChainTypeError> for EthActivationV2Error {
-    fn from(e: ParseChainTypeError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: ParseChainTypeError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<String> for EthActivationV2Error {
-    fn from(e: String) -> Self { EthActivationV2Error::InternalError(e) }
+    fn from(e: String) -> Self {
+        EthActivationV2Error::InternalError(e)
+    }
 }
 
 impl From<EnableCoinBalanceError> for EthActivationV2Error {
@@ -181,7 +206,9 @@ pub enum EthPrivKeyActivationPolicy {
 }
 
 impl EthPrivKeyActivationPolicy {
-    pub fn is_hw_policy(&self) -> bool { matches!(self, EthPrivKeyActivationPolicy::Trezor) }
+    pub fn is_hw_policy(&self) -> bool {
+        matches!(self, EthPrivKeyActivationPolicy::Trezor)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
@@ -236,15 +263,21 @@ pub enum EthTokenActivationError {
 }
 
 impl From<AbortedError> for EthTokenActivationError {
-    fn from(e: AbortedError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        EthTokenActivationError::InternalError(e.to_string())
+    }
 }
 
 impl From<MyAddressError> for EthTokenActivationError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::InternalError(err.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for EthTokenActivationError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { EthTokenActivationError::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        EthTokenActivationError::UnexpectedDerivationMethod(e)
+    }
 }
 
 impl From<GetNftInfoError> for EthTokenActivationError {
@@ -276,15 +309,21 @@ impl From<GetNftInfoError> for EthTokenActivationError {
 }
 
 impl From<ParseChainTypeError> for EthTokenActivationError {
-    fn from(e: ParseChainTypeError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+    fn from(e: ParseChainTypeError) -> Self {
+        EthTokenActivationError::InternalError(e.to_string())
+    }
 }
 
 impl From<String> for EthTokenActivationError {
-    fn from(e: String) -> Self { EthTokenActivationError::InternalError(e) }
+    fn from(e: String) -> Self {
+        EthTokenActivationError::InternalError(e)
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for EthTokenActivationError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { EthTokenActivationError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        EthTokenActivationError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<GenerateSignedMessageError> for EthTokenActivationError {
@@ -306,11 +345,15 @@ pub enum GenerateSignedMessageError {
 }
 
 impl From<PrivKeyPolicyNotAllowed> for GenerateSignedMessageError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GenerateSignedMessageError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        GenerateSignedMessageError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<SignatureError> for GenerateSignedMessageError {
-    fn from(e: SignatureError) -> Self { GenerateSignedMessageError::InternalError(e.to_string()) }
+    fn from(e: SignatureError) -> Self {
+        GenerateSignedMessageError::InternalError(e.to_string())
+    }
 }
 
 /// Represents the parameters required for activating either an ERC-20 token or an NFT on the Ethereum platform.

@@ -5,8 +5,10 @@ use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::{sat_from_big_decimal, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
-            UnexpectedDerivationMethod, UtxoRpcError};
+use crate::{
+    lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
+    UnexpectedDerivationMethod, UtxoRpcError,
+};
 use chain::TransactionOutput;
 use common::log::error;
 use common::{async_blocking, new_uuid, HttpStatusCode};
@@ -67,7 +69,9 @@ impl HttpStatusCode for OpenChannelError {
 }
 
 impl From<ConnectionError> for OpenChannelError {
-    fn from(err: ConnectionError) -> OpenChannelError { OpenChannelError::ConnectToNodeError(err.to_string()) }
+    fn from(err: ConnectionError) -> OpenChannelError {
+        OpenChannelError::ConnectToNodeError(err.to_string())
+    }
 }
 
 impl From<CoinFindError> for OpenChannelError {
@@ -79,31 +83,45 @@ impl From<CoinFindError> for OpenChannelError {
 }
 
 impl From<BalanceError> for OpenChannelError {
-    fn from(e: BalanceError) -> Self { OpenChannelError::BalanceError(e.to_string()) }
+    fn from(e: BalanceError) -> Self {
+        OpenChannelError::BalanceError(e.to_string())
+    }
 }
 
 impl From<NumConversError> for OpenChannelError {
-    fn from(e: NumConversError) -> Self { OpenChannelError::InternalError(e.to_string()) }
+    fn from(e: NumConversError) -> Self {
+        OpenChannelError::InternalError(e.to_string())
+    }
 }
 
 impl From<GenerateTxError> for OpenChannelError {
-    fn from(e: GenerateTxError) -> Self { OpenChannelError::GenerateTxErr(e.to_string()) }
+    fn from(e: GenerateTxError) -> Self {
+        OpenChannelError::GenerateTxErr(e.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for OpenChannelError {
-    fn from(e: UtxoRpcError) -> Self { OpenChannelError::RpcError(e.to_string()) }
+    fn from(e: UtxoRpcError) -> Self {
+        OpenChannelError::RpcError(e.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for OpenChannelError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { OpenChannelError::InternalError(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        OpenChannelError::InternalError(e.to_string())
+    }
 }
 
 impl From<std::io::Error> for OpenChannelError {
-    fn from(err: std::io::Error) -> OpenChannelError { OpenChannelError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> OpenChannelError {
+        OpenChannelError::IOError(err.to_string())
+    }
 }
 
 impl From<SqlError> for OpenChannelError {
-    fn from(err: SqlError) -> OpenChannelError { OpenChannelError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> OpenChannelError {
+        OpenChannelError::DbError(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

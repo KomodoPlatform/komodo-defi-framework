@@ -6,9 +6,10 @@ use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
-use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState,
-            MarketCoinOps, MmCoin, NumConversError, ParseBigDecimalError, TransactionDetails,
-            UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
+use crate::{
+    BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState, MarketCoinOps, MmCoin,
+    NumConversError, ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx,
+};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -42,11 +43,15 @@ pub enum UtxoMyAddressesHistoryError {
 }
 
 impl From<AddressDerivingError> for UtxoMyAddressesHistoryError {
-    fn from(e: AddressDerivingError) -> Self { UtxoMyAddressesHistoryError::AddressDerivingError(e) }
+    fn from(e: AddressDerivingError) -> Self {
+        UtxoMyAddressesHistoryError::AddressDerivingError(e)
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for UtxoMyAddressesHistoryError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e)
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -69,19 +74,27 @@ pub enum UtxoTxDetailsError {
 }
 
 impl From<serialization::Error> for UtxoTxDetailsError {
-    fn from(e: serialization::Error) -> Self { UtxoTxDetailsError::TxDeserializationError(e) }
+    fn from(e: serialization::Error) -> Self {
+        UtxoTxDetailsError::TxDeserializationError(e)
+    }
 }
 
 impl From<UtxoRpcError> for UtxoTxDetailsError {
-    fn from(e: UtxoRpcError) -> Self { UtxoTxDetailsError::RpcError(e) }
+    fn from(e: UtxoRpcError) -> Self {
+        UtxoTxDetailsError::RpcError(e)
+    }
 }
 
 impl From<NumConversError> for UtxoTxDetailsError {
-    fn from(e: NumConversError) -> Self { UtxoTxDetailsError::NumConversionErr(e) }
+    fn from(e: NumConversError) -> Self {
+        UtxoTxDetailsError::NumConversionErr(e)
+    }
 }
 
 impl From<ParseBigDecimalError> for UtxoTxDetailsError {
-    fn from(e: ParseBigDecimalError) -> Self { UtxoTxDetailsError::from(NumConversError::from(e)) }
+    fn from(e: ParseBigDecimalError) -> Self {
+        UtxoTxDetailsError::from(NumConversError::from(e))
+    }
 }
 
 impl From<ParseSlpScriptError> for UtxoTxDetailsError {
@@ -94,7 +107,9 @@ impl<StorageErr> From<StorageErr> for UtxoTxDetailsError
 where
     StorageErr: TxHistoryStorageError,
 {
-    fn from(e: StorageErr) -> Self { UtxoTxDetailsError::StorageError(format!("{:?}", e)) }
+    fn from(e: StorageErr) -> Self {
+        UtxoTxDetailsError::StorageError(format!("{:?}", e))
+    }
 }
 
 pub struct UtxoTxDetailsParams<'a, Storage> {

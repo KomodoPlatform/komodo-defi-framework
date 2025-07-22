@@ -22,8 +22,10 @@ use jsonrpc_core::Call;
 use mm2_p2p::Keypair;
 use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
-use std::sync::{atomic::{AtomicUsize, Ordering},
-                Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use timed_map::TimedMap;
 use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};

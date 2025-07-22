@@ -2,8 +2,9 @@
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenInfo};
 use coins::eth::valid_addr_from_str;
 use coins::eth::{u256_to_big_decimal, wei_from_big_decimal, EthCoin, Web3RpcError};
-use coins::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction,
-            TransactionErr};
+use coins::{
+    lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction, TransactionErr,
+};
 use common::HttpStatusCode;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;

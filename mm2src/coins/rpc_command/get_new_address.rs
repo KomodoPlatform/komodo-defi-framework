@@ -1,12 +1,17 @@
 use crate::coin_balance::HDAddressBalance;
-use crate::hd_wallet::{AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError,
-                       InvalidBip44ChainError, NewAddressDeriveConfirmError, NewAddressDerivingError,
-                       RpcTaskConfirmAddress};
-use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
-            UnexpectedDerivationMethod};
+use crate::hd_wallet::{
+    AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError, InvalidBip44ChainError,
+    NewAddressDeriveConfirmError, NewAddressDerivingError, RpcTaskConfirmAddress,
+};
+use crate::{
+    lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
+    UnexpectedDerivationMethod,
+};
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::hw_rpc_task::{
+    HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
+};
 use crypto::trezor::TrezorMessageType;
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -14,10 +19,14 @@ use enum_derives::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes,
+};
 use std::time::Duration;
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
@@ -102,7 +111,9 @@ impl From<CoinFindError> for GetNewAddressRpcError {
 }
 
 impl From<InvalidBip44ChainError> for GetNewAddressRpcError {
-    fn from(e: InvalidBip44ChainError) -> Self { GetNewAddressRpcError::InvalidBip44Chain { chain: e.chain } }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        GetNewAddressRpcError::InvalidBip44Chain { chain: e.chain }
+    }
 }
 
 impl From<NewAddressDerivingError> for GetNewAddressRpcError {
@@ -158,7 +169,9 @@ impl From<HDConfirmAddressError> for GetNewAddressRpcError {
 }
 
 impl From<HwError> for GetNewAddressRpcError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<RpcTaskError> for GetNewAddressRpcError {
@@ -289,7 +302,9 @@ impl RpcTaskTypes for InitGetNewAddressTask {
 
 #[async_trait]
 impl RpcTask for InitGetNewAddressTask {
-    fn initial_status(&self) -> Self::InProgressStatus { GetNewAddressInProgressStatus::Preparing }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        GetNewAddressInProgressStatus::Preparing
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}

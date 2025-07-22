@@ -73,27 +73,39 @@ impl Address {
     }
 
     /// Show as base58 string (canonical user format).
-    pub fn to_base58(&self) -> String { bs58::encode(self.inner).with_check().into_string() }
+    pub fn to_base58(&self) -> String {
+        bs58::encode(self.inner).with_check().into_string()
+    }
 
     /// Show as hex string, lowercase (canonical hex format).
-    pub fn to_hex(&self) -> String { hex::encode(self.inner) }
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.inner)
+    }
 
     /// Return the 21 bytes (0x41 + 20).
-    pub fn as_bytes(&self) -> &[u8] { &self.inner }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.inner
+    }
 }
 
 impl TryFrom<[u8; ADDRESS_BYTES_LEN]> for Address {
     type Error = String;
 
-    fn try_from(bytes: [u8; ADDRESS_BYTES_LEN]) -> Result<Self, Self::Error> { Self::from_bytes(bytes) }
+    fn try_from(bytes: [u8; ADDRESS_BYTES_LEN]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
 }
 
 impl AsRef<[u8]> for Address {
-    fn as_ref(&self) -> &[u8] { &self.inner }
+    fn as_ref(&self) -> &[u8] {
+        &self.inner
+    }
 }
 
 impl fmt::Display for Address {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.to_base58()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_base58())
+    }
 }
 
 impl fmt::Debug for Address {

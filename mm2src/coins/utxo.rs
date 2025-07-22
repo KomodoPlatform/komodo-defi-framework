@@ -56,7 +56,8 @@ use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
 use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
-#[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
+#[cfg(not(target_arch = "wasm32"))]
+use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -64,8 +65,10 @@ use futures01::Future;
 use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
-pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressPrefix,
-               AddressScriptType, KeyPair, LegacyAddress, Private, Public, Secret};
+pub use keys::{
+    Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType,
+    KeyPair, LegacyAddress, Private, Public, Secret,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
@@ -73,7 +76,8 @@ use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::UtxoMergeParams;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
@@ -100,18 +104,22 @@ use utxo_hd_wallet::UtxoHDWallet;
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
-                        EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
-                        UtxoRpcFut, UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
-            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
-            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
+use self::rpc_clients::{
+    electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod, EstimateFeeMode, NativeClient,
+    UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult,
+};
+use super::{
+    big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
+    DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin,
+    NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
+    RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction,
+    TransactionDetails, TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WeakSpawner,
+    WithdrawError, WithdrawRequest,
+};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps,
-                       HDWalletOps};
+use crate::hd_wallet::{
+    AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
+};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -119,8 +127,10 @@ pub mod tx_cache;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub mod utxo_common_tests;
-#[cfg(test)] pub mod utxo_tests;
-#[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
+#[cfg(test)]
+pub mod utxo_tests;
+#[cfg(target_arch = "wasm32")]
+pub mod utxo_wasm_tests;
 
 const KILO_BYTE: u64 = 1000;
 /// https://bitcoin.stackexchange.com/a/77192
@@ -168,7 +178,9 @@ fn get_special_folder_path() -> PathBuf {
 
 #[cfg(not(windows))]
 #[cfg(not(target_arch = "wasm32"))]
-fn get_special_folder_path() -> PathBuf { panic!("!windows") }
+fn get_special_folder_path() -> PathBuf {
+    panic!("!windows")
+}
 
 impl Transaction for UtxoTx {
     fn tx_hex(&self) -> Vec<u8> {
@@ -179,11 +191,15 @@ impl Transaction for UtxoTx {
         }
     }
 
-    fn tx_hash_as_bytes(&self) -> BytesJson { self.hash().reversed().to_vec().into() }
+    fn tx_hash_as_bytes(&self) -> BytesJson {
+        self.hash().reversed().to_vec().into()
+    }
 }
 
 impl From<JsonRpcError> for BalanceError {
-    fn from(e: JsonRpcError) -> Self { BalanceError::Transport(e.to_string()) }
+    fn from(e: JsonRpcError) -> Self {
+        BalanceError::Transport(e.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for BalanceError {
@@ -196,7 +212,9 @@ impl From<UtxoRpcError> for BalanceError {
 }
 
 impl From<keys::Error> for BalanceError {
-    fn from(e: keys::Error) -> Self { BalanceError::Internal(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        BalanceError::Internal(e.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for WithdrawError {
@@ -212,7 +230,9 @@ impl From<UtxoRpcError> for WithdrawError {
 }
 
 impl From<JsonRpcError> for TradePreimageError {
-    fn from(e: JsonRpcError) -> Self { TradePreimageError::Transport(e.to_string()) }
+    fn from(e: JsonRpcError) -> Self {
+        TradePreimageError::Transport(e.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for TradePreimageError {
@@ -669,11 +689,15 @@ pub enum UnsupportedAddr {
 }
 
 impl From<UnsupportedAddr> for WithdrawError {
-    fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+    fn from(e: UnsupportedAddr) -> Self {
+        WithdrawError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<keys::Error> for UnsupportedAddr {
-    fn from(e: keys::Error) -> Self { UnsupportedAddr::InternalError(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        UnsupportedAddr::InternalError(e.to_string())
+    }
 }
 
 #[derive(Debug)]
@@ -684,11 +708,15 @@ pub enum GetTxError {
 }
 
 impl From<UtxoRpcError> for GetTxError {
-    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
+    fn from(err: UtxoRpcError) -> GetTxError {
+        GetTxError::Rpc(err)
+    }
 }
 
 impl From<SerError> for GetTxError {
-    fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
+    fn from(err: SerError) -> GetTxError {
+        GetTxError::TxDeserialization(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -709,15 +737,21 @@ impl From<GetTxHeightError> for SPVError {
 }
 
 impl From<UtxoRpcError> for GetTxHeightError {
-    fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
+    fn from(e: UtxoRpcError) -> Self {
+        GetTxHeightError::HeightNotFound(e.to_string())
+    }
 }
 
 impl From<BlockHeaderStorageError> for GetTxHeightError {
-    fn from(e: BlockHeaderStorageError) -> Self { GetTxHeightError::StorageError(e) }
+    fn from(e: BlockHeaderStorageError) -> Self {
+        GetTxHeightError::StorageError(e)
+    }
 }
 
 impl From<TryFromIntError> for GetTxHeightError {
-    fn from(err: TryFromIntError) -> GetTxHeightError { GetTxHeightError::ConversionError(err) }
+    fn from(err: TryFromIntError) -> GetTxHeightError {
+        GetTxHeightError::ConversionError(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -737,7 +771,9 @@ pub enum GetBlockHeaderError {
 }
 
 impl From<JsonRpcError> for GetBlockHeaderError {
-    fn from(err: JsonRpcError) -> Self { GetBlockHeaderError::RpcError(err) }
+    fn from(err: JsonRpcError) -> Self {
+        GetBlockHeaderError::RpcError(err)
+    }
 }
 
 impl From<UtxoRpcError> for GetBlockHeaderError {
@@ -751,15 +787,21 @@ impl From<UtxoRpcError> for GetBlockHeaderError {
 }
 
 impl From<serialization::Error> for GetBlockHeaderError {
-    fn from(err: serialization::Error) -> Self { GetBlockHeaderError::SerializationError(err) }
+    fn from(err: serialization::Error) -> Self {
+        GetBlockHeaderError::SerializationError(err)
+    }
 }
 
 impl From<BlockHeaderStorageError> for GetBlockHeaderError {
-    fn from(err: BlockHeaderStorageError) -> Self { GetBlockHeaderError::StorageError(err) }
+    fn from(err: BlockHeaderStorageError) -> Self {
+        GetBlockHeaderError::StorageError(err)
+    }
 }
 
 impl From<GetBlockHeaderError> for SPVError {
-    fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
+    fn from(e: GetBlockHeaderError) -> Self {
+        SPVError::UnableToGetHeader(e.to_string())
+    }
 }
 
 #[derive(Debug, Display)]
@@ -772,19 +814,27 @@ pub enum GetConfirmedTxError {
 }
 
 impl From<GetTxHeightError> for GetConfirmedTxError {
-    fn from(err: GetTxHeightError) -> Self { GetConfirmedTxError::HeightNotFound(err) }
+    fn from(err: GetTxHeightError) -> Self {
+        GetConfirmedTxError::HeightNotFound(err)
+    }
 }
 
 impl From<GetBlockHeaderError> for GetConfirmedTxError {
-    fn from(err: GetBlockHeaderError) -> Self { GetConfirmedTxError::UnableToGetHeader(err) }
+    fn from(err: GetBlockHeaderError) -> Self {
+        GetConfirmedTxError::UnableToGetHeader(err)
+    }
 }
 
 impl From<JsonRpcError> for GetConfirmedTxError {
-    fn from(err: JsonRpcError) -> Self { GetConfirmedTxError::RpcError(err) }
+    fn from(err: JsonRpcError) -> Self {
+        GetConfirmedTxError::RpcError(err)
+    }
 }
 
 impl From<serialization::Error> for GetConfirmedTxError {
-    fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
+    fn from(err: serialization::Error) -> Self {
+        GetConfirmedTxError::SerializationError(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -796,15 +846,21 @@ pub enum AddrFromStrError {
 }
 
 impl From<UnsupportedAddr> for AddrFromStrError {
-    fn from(e: UnsupportedAddr) -> Self { AddrFromStrError::Unsupported(e) }
+    fn from(e: UnsupportedAddr) -> Self {
+        AddrFromStrError::Unsupported(e)
+    }
 }
 
 impl From<AddrFromStrError> for VerificationError {
-    fn from(e: AddrFromStrError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+    fn from(e: AddrFromStrError) -> Self {
+        VerificationError::AddressDecodingError(e.to_string())
+    }
 }
 
 impl From<AddrFromStrError> for WithdrawError {
-    fn from(e: AddrFromStrError) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+    fn from(e: AddrFromStrError) -> Self {
+        WithdrawError::InvalidAddress(e.to_string())
+    }
 }
 
 impl UtxoCoinFields {
@@ -860,7 +916,9 @@ pub enum BroadcastTxErr {
 }
 
 impl From<UtxoRpcError> for BroadcastTxErr {
-    fn from(err: UtxoRpcError) -> Self { BroadcastTxErr::Rpc(err) }
+    fn from(err: UtxoRpcError) -> Self {
+        BroadcastTxErr::Rpc(err)
+    }
 }
 
 #[async_trait]
@@ -963,7 +1021,9 @@ impl MatureUnspentList {
     }
 
     #[inline]
-    pub fn only_mature(self) -> Vec<UnspentInfo> { self.mature }
+    pub fn only_mature(self) -> Vec<UnspentInfo> {
+        self.mature
+    }
 
     #[inline]
     pub fn to_coin_balance(&self, decimals: u8) -> CoinBalance {
@@ -1050,15 +1110,21 @@ pub trait UtxoCommonOps:
 }
 
 impl ToBytes for UtxoTx {
-    fn to_bytes(&self) -> Vec<u8> { self.tx_hex() }
+    fn to_bytes(&self) -> Vec<u8> {
+        self.tx_hex()
+    }
 }
 
 impl ToBytes for Signature {
-    fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_vec()
+    }
 }
 
 impl AddrToString for Address {
-    fn addr_to_string(&self) -> String { self.to_string() }
+    fn addr_to_string(&self) -> String {
+        self.to_string()
+    }
 }
 
 #[async_trait]
@@ -1103,7 +1169,9 @@ impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     }
 
     #[inline]
-    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
+    fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> {
+        self.parse_tx(tx)
+    }
 
     fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> {
         SecpSignature::from_der(sig)?;
@@ -1211,21 +1279,31 @@ pub trait UtxoStandardOps {
 pub struct UtxoArc(Arc<UtxoCoinFields>);
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
-    fn deref(&self) -> &UtxoCoinFields { &self.0 }
+    fn deref(&self) -> &UtxoCoinFields {
+        &self.0
+    }
 }
 
 impl From<UtxoCoinFields> for UtxoArc {
-    fn from(coin: UtxoCoinFields) -> UtxoArc { UtxoArc::new(coin) }
+    fn from(coin: UtxoCoinFields) -> UtxoArc {
+        UtxoArc::new(coin)
+    }
 }
 
 impl From<Arc<UtxoCoinFields>> for UtxoArc {
-    fn from(arc: Arc<UtxoCoinFields>) -> UtxoArc { UtxoArc(arc) }
+    fn from(arc: Arc<UtxoCoinFields>) -> UtxoArc {
+        UtxoArc(arc)
+    }
 }
 
 impl UtxoArc {
-    pub fn new(fields: UtxoCoinFields) -> UtxoArc { UtxoArc(Arc::new(fields)) }
+    pub fn new(fields: UtxoCoinFields) -> UtxoArc {
+        UtxoArc(Arc::new(fields))
+    }
 
-    pub fn with_arc(inner: Arc<UtxoCoinFields>) -> UtxoArc { UtxoArc(inner) }
+    pub fn with_arc(inner: Arc<UtxoCoinFields>) -> UtxoArc {
+        UtxoArc(inner)
+    }
 
     /// Returns weak reference to the inner UtxoCoinFields
     pub fn downgrade(&self) -> UtxoWeak {
@@ -1238,11 +1316,15 @@ impl UtxoArc {
 pub struct UtxoWeak(Weak<UtxoCoinFields>);
 
 impl From<Weak<UtxoCoinFields>> for UtxoWeak {
-    fn from(weak: Weak<UtxoCoinFields>) -> Self { UtxoWeak(weak) }
+    fn from(weak: Weak<UtxoCoinFields>) -> Self {
+        UtxoWeak(weak)
+    }
 }
 
 impl UtxoWeak {
-    pub fn upgrade(&self) -> Option<UtxoArc> { self.0.upgrade().map(UtxoArc::from) }
+    pub fn upgrade(&self) -> Option<UtxoArc> {
+        self.0.upgrade().map(UtxoArc::from)
+    }
 }
 
 // We can use a shared UTXO lock for all UTXO coins at 1 time.
@@ -1286,7 +1368,9 @@ pub enum GenerateTxError {
 }
 
 impl From<JsonRpcError> for GenerateTxError {
-    fn from(rpc_err: JsonRpcError) -> Self { GenerateTxError::Transport(rpc_err.to_string()) }
+    fn from(rpc_err: JsonRpcError) -> Self {
+        GenerateTxError::Transport(rpc_err.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for GenerateTxError {
@@ -1302,11 +1386,15 @@ impl From<UtxoRpcError> for GenerateTxError {
 }
 
 impl From<NumConversError> for GenerateTxError {
-    fn from(e: NumConversError) -> Self { GenerateTxError::Internal(e.to_string()) }
+    fn from(e: NumConversError) -> Self {
+        GenerateTxError::Internal(e.to_string())
+    }
 }
 
 impl From<keys::Error> for GenerateTxError {
-    fn from(e: keys::Error) -> Self { GenerateTxError::Internal(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        GenerateTxError::Internal(e.to_string())
+    }
 }
 
 pub enum RequestTxHistoryResult {
@@ -1539,7 +1627,9 @@ pub enum UtxoRpcMode {
 
 impl UtxoRpcMode {
     #[inline]
-    pub fn is_native(&self) -> bool { matches!(*self, UtxoRpcMode::Native) }
+    pub fn is_native(&self) -> bool {
+        matches!(*self, UtxoRpcMode::Native)
+    }
 }
 
 #[derive(Debug)]
@@ -1828,7 +1918,9 @@ pub fn output_script(address: &Address) -> Result<Script, keys::Error> {
 }
 
 /// Builds transaction output script for a legacy P2PK address
-pub fn output_script_p2pk(pubkey: &Public) -> Script { Builder::build_p2pk(pubkey) }
+pub fn output_script_p2pk(pubkey: &Public) -> Script {
+    Builder::build_p2pk(pubkey)
+}
 
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,

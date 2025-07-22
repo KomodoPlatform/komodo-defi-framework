@@ -53,10 +53,13 @@ fn tag_with_enabled_flag(
     accounts
         .into_iter()
         .map(|(account_id, account_info)| {
-            (account_id.clone(), AccountWithEnabledFlag {
-                account_info,
-                enabled: account_id == enabled,
-            })
+            (
+                account_id.clone(),
+                AccountWithEnabledFlag {
+                    account_info,
+                    enabled: account_id == enabled,
+                },
+            )
         })
         .collect()
 }
@@ -227,11 +230,10 @@ async fn test_activate_deactivate_coins_impl() {
         .await
         .unwrap();
     storage
-        .activate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .activate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
 
@@ -309,11 +311,10 @@ async fn test_load_enabled_account_with_coins_impl() {
         .await
         .unwrap();
     storage
-        .activate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .activate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
 
@@ -340,11 +341,10 @@ async fn test_load_enabled_account_with_coins_impl() {
 
     // Deactivate all `HD{0}` account's coins.
     storage
-        .deactivate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .deactivate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
@@ -519,31 +519,49 @@ mod native_tests {
     use common::block_on;
 
     #[test]
-    fn test_init_collection() { block_on(super::test_init_collection_impl()) }
+    fn test_init_collection() {
+        block_on(super::test_init_collection_impl())
+    }
 
     #[test]
-    fn test_upload_account() { block_on(super::test_upload_account_impl()) }
+    fn test_upload_account() {
+        block_on(super::test_upload_account_impl())
+    }
 
     #[test]
-    fn test_enable_account() { block_on(super::test_enable_account_impl()) }
+    fn test_enable_account() {
+        block_on(super::test_enable_account_impl())
+    }
 
     #[test]
-    fn test_set_name_desc_balance() { block_on(super::test_set_name_desc_balance_impl()) }
+    fn test_set_name_desc_balance() {
+        block_on(super::test_set_name_desc_balance_impl())
+    }
 
     #[test]
-    fn test_activate_deactivate_coins() { block_on(super::test_activate_deactivate_coins_impl()) }
+    fn test_activate_deactivate_coins() {
+        block_on(super::test_activate_deactivate_coins_impl())
+    }
 
     #[test]
-    fn test_load_enabled_account_with_coins() { block_on(super::test_load_enabled_account_with_coins_impl()) }
+    fn test_load_enabled_account_with_coins() {
+        block_on(super::test_load_enabled_account_with_coins_impl())
+    }
 
     #[test]
-    fn test_load_accounts_with_enabled_flag() { block_on(super::test_load_accounts_with_enabled_flag_impl()) }
+    fn test_load_accounts_with_enabled_flag() {
+        block_on(super::test_load_accounts_with_enabled_flag_impl())
+    }
 
     #[test]
-    fn test_delete_account() { block_on(super::test_delete_account_impl()) }
+    fn test_delete_account() {
+        block_on(super::test_delete_account_impl())
+    }
 
     #[test]
-    fn test_delete_account_clears_coins() { block_on(super::test_delete_account_clears_coins_impl()) }
+    fn test_delete_account_clears_coins() {
+        block_on(super::test_delete_account_clears_coins_impl())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -553,29 +571,47 @@ mod wasm_tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    async fn test_init_collection() { super::test_init_collection_impl().await }
+    async fn test_init_collection() {
+        super::test_init_collection_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_upload_account() { super::test_upload_account_impl().await }
+    async fn test_upload_account() {
+        super::test_upload_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_enable_account() { super::test_enable_account_impl().await }
+    async fn test_enable_account() {
+        super::test_enable_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_set_name_desc_balance() { super::test_set_name_desc_balance_impl().await }
+    async fn test_set_name_desc_balance() {
+        super::test_set_name_desc_balance_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_activate_deactivate_coins() { super::test_activate_deactivate_coins_impl().await }
+    async fn test_activate_deactivate_coins() {
+        super::test_activate_deactivate_coins_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_load_enabled_account_with_coins() { super::test_load_enabled_account_with_coins_impl().await }
+    async fn test_load_enabled_account_with_coins() {
+        super::test_load_enabled_account_with_coins_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_load_accounts_with_enabled_flag() { super::test_load_accounts_with_enabled_flag_impl().await }
+    async fn test_load_accounts_with_enabled_flag() {
+        super::test_load_accounts_with_enabled_flag_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_delete_account() { super::test_delete_account_impl().await }
+    async fn test_delete_account() {
+        super::test_delete_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_delete_account_clears_coins() { super::test_delete_account_clears_coins_impl().await }
+    async fn test_delete_account_clears_coins() {
+        super::test_delete_account_clears_coins_impl().await
+    }
 }

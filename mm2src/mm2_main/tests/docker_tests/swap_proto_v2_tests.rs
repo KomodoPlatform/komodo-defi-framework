@@ -1,19 +1,21 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1, SET_BURN_PUBKEY_TO_ALICE};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MakerCoinSwapOpsV2, MarketCoinOps, ParseCoinAssocTypes, RefundFundingSecretArgs,
-            RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs,
-            SendMakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction,
-            ValidateMakerPaymentArgs, ValidateTakerFundingArgs};
+use coins::{
+    ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+    MakerCoinSwapOpsV2, MarketCoinOps, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+    RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+    SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs, ValidateTakerFundingArgs,
+};
 use crypto::privkey::key_pair_from_secret;
 //use futures01::Future;
 use common::{block_on, block_on_f01, now_sec};
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
-                                  disable_coin_err, enable_native, get_locked_amount, mm_dump, my_swap_status,
-                                  mycoin1_conf, mycoin_conf, start_swaps, wait_for_swap_finished,
-                                  wait_for_swap_status, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{
+    active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin, disable_coin_err, enable_native,
+    get_locked_amount, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps, wait_for_swap_finished,
+    wait_for_swap_status, MarketMakerIt, Mm2TestConf,
+};
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
 use serialization::serialize;
@@ -622,7 +624,9 @@ fn send_and_refund_maker_payment_taker_secret() {
 }
 
 #[test]
-fn test_v2_swap_utxo_utxo() { test_v2_swap_utxo_utxo_impl(); }
+fn test_v2_swap_utxo_utxo() {
+    test_v2_swap_utxo_utxo_impl();
+}
 
 // test a swap when taker is burn pubkey (no dex fee should be paid)
 #[test]
@@ -658,10 +662,11 @@ fn test_v2_swap_utxo_utxo_impl() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
+    let alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf,
         alice_conf.rpc_password,
@@ -769,10 +774,11 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let mut alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
+    let mut alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -884,10 +890,11 @@ fn test_v2_swap_utxo_utxo_file_lock() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let mut alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
+    let mut alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());

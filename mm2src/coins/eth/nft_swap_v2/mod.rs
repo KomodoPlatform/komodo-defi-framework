@@ -11,10 +11,13 @@ use web3::types::TransactionId;
 use super::ContractType;
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
-use crate::eth::{decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT,
-                 NFT_MAKER_SWAP_V2};
-use crate::{ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
-            TransactionErr, ValidateNftMakerPaymentArgs};
+use crate::eth::{
+    decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT, NFT_MAKER_SWAP_V2,
+};
+use crate::{
+    ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, TransactionErr,
+    ValidateNftMakerPaymentArgs,
+};
 
 pub(crate) mod errors;
 use errors::{Erc721FunctionError, HtlcParamsError};
@@ -498,7 +501,9 @@ fn htlc_params() -> &'static [ethabi::ParamType] {
 
 /// function to check if BigDecimal is a positive integer
 #[inline(always)]
-fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount.is_positive() }
+fn is_positive_integer(amount: &BigDecimal) -> bool {
+    amount == &amount.with_scale(0) && amount.is_positive()
+}
 
 fn validate_payment_args<'a>(
     taker_secret_hash: &'a [u8],

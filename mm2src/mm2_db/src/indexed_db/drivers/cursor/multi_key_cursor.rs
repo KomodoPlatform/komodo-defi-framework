@@ -14,7 +14,9 @@ pub struct IdbMultiKeyCursor {
 }
 
 impl IdbMultiKeyCursor {
-    pub(super) fn new(only_values: Vec<(String, Json)>) -> IdbMultiKeyCursor { IdbMultiKeyCursor { only_values } }
+    pub(super) fn new(only_values: Vec<(String, Json)>) -> IdbMultiKeyCursor {
+        IdbMultiKeyCursor { only_values }
+    }
 }
 
 impl CursorDriverImpl for IdbMultiKeyCursor {

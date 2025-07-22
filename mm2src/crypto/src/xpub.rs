@@ -20,7 +20,9 @@ pub enum XpubError {
 }
 
 impl From<Base58Error> for XpubError {
-    fn from(e: Base58Error) -> Self { XpubError::Base58Error(e) }
+    fn from(e: Base58Error) -> Self {
+        XpubError::Base58Error(e)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -85,10 +85,14 @@ impl Transport for HttpTransport {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn send(&self, _id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(request, self.clone())) }
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
+        Box::pin(send_request(request, self.clone()))
+    }
 
     #[cfg(target_arch = "wasm32")]
-    fn send(&self, _id: RequestId, request: Call) -> Self::Out { Box::pin(send_request(request, self.clone())) }
+    fn send(&self, _id: RequestId, request: Call) -> Self::Out {
+        Box::pin(send_request(request, self.clone()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

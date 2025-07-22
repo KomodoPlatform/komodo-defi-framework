@@ -1,10 +1,13 @@
-use crate::proto::{messages_ethereum as proto_ethereum, messages_ethereum_definitions as proto_ethereum_definitions,
-                   TrezorMessage};
+use crate::proto::{
+    messages_ethereum as proto_ethereum, messages_ethereum_definitions as proto_ethereum_definitions, TrezorMessage,
+};
 use crate::response_processor::ProcessTrezorResponse;
 use crate::result_handler::ResultHandler;
 use crate::{serialize_derivation_path, OperationFailure, TrezorError, TrezorResponse, TrezorResult, TrezorSession};
-use ethcore_transaction::{eip155_methods::check_replay_protection, Action, Eip1559Transaction, LegacyTransaction,
-                          TransactionShared, TransactionWrapper, UnverifiedTransactionWrapper};
+use ethcore_transaction::{
+    eip155_methods::check_replay_protection, Action, Eip1559Transaction, LegacyTransaction, TransactionShared,
+    TransactionWrapper, UnverifiedTransactionWrapper,
+};
 use ethereum_types::H256;
 use ethkey::Signature;
 use hw_common::primitives::{DerivationPath, XPub};

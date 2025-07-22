@@ -64,27 +64,39 @@ impl HttpStatusCode for EnableLightningError {
 }
 
 impl From<std::io::Error> for EnableLightningError {
-    fn from(err: std::io::Error) -> EnableLightningError { EnableLightningError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> EnableLightningError {
+        EnableLightningError::IOError(err.to_string())
+    }
 }
 
 impl From<SqlError> for EnableLightningError {
-    fn from(err: SqlError) -> EnableLightningError { EnableLightningError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> EnableLightningError {
+        EnableLightningError::DbError(err.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for EnableLightningError {
-    fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
+    fn from(e: UtxoRpcError) -> Self {
+        EnableLightningError::RpcError(e.to_string())
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for EnableLightningError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { EnableLightningError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        EnableLightningError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<RpcTaskError> for EnableLightningError {
-    fn from(e: RpcTaskError) -> Self { EnableLightningError::RpcTaskError(e.to_string()) }
+    fn from(e: RpcTaskError) -> Self {
+        EnableLightningError::RpcTaskError(e.to_string())
+    }
 }
 
 impl From<AbortedError> for EnableLightningError {
-    fn from(e: AbortedError) -> Self { EnableLightningError::Internal(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        EnableLightningError::Internal(e.to_string())
+    }
 }
 
 #[derive(Display, PartialEq)]
@@ -104,9 +116,13 @@ pub enum SaveChannelClosingError {
 }
 
 impl From<SqlError> for SaveChannelClosingError {
-    fn from(err: SqlError) -> SaveChannelClosingError { SaveChannelClosingError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> SaveChannelClosingError {
+        SaveChannelClosingError::DbError(err.to_string())
+    }
 }
 
 impl From<TryFromIntError> for SaveChannelClosingError {
-    fn from(err: TryFromIntError) -> SaveChannelClosingError { SaveChannelClosingError::ConversionError(err) }
+    fn from(err: TryFromIntError) -> SaveChannelClosingError {
+        SaveChannelClosingError::ConversionError(err)
+    }
 }

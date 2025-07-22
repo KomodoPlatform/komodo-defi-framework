@@ -1,12 +1,20 @@
-use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use crate::{
+    prelude::TryPlatformCoinFromMmCoinEnum,
+    token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
+};
 use async_trait::async_trait;
-use coins::{tendermint::{TendermintCoin, TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
-                         TendermintTokenProtocolInfo},
-            CoinBalance, MarketCoinOps, MmCoinEnum};
+use coins::{
+    tendermint::{
+        TendermintCoin, TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
+        TendermintTokenProtocolInfo,
+    },
+    CoinBalance, MarketCoinOps, MmCoinEnum,
+};
 use common::Future01CompatExt;
-use mm2_err_handle::{map_mm_error::MmResultExt,
-                     prelude::{MapMmError, MmError}};
+use mm2_err_handle::{
+    map_mm_error::MmResultExt,
+    prelude::{MapMmError, MmError},
+};
 use serde::Serialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -41,7 +49,9 @@ impl TryPlatformCoinFromMmCoinEnum for TendermintCoin {
 }
 
 impl TokenProtocolParams for TendermintTokenProtocolInfo {
-    fn platform_coin_ticker(&self) -> &str { &self.platform }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform
+    }
 }
 
 #[async_trait]

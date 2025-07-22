@@ -1,5 +1,7 @@
-use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
-            TakerOrderCancellationReason};
+use super::{
+    MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
+    TakerOrderCancellationReason,
+};
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::{BoxFut, PagingOptions};
@@ -7,7 +9,8 @@ use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use uuid::Uuid;
 
 pub type MyOrdersResult<T> = Result<T, MmError<MyOrdersError>>;
@@ -207,10 +210,14 @@ pub trait MyOrdersFilteringHistory {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::database::my_orders::{insert_maker_order, insert_taker_order, select_orders_by_filter,
-                                     select_status_by_uuid, update_maker_order, update_order_status, update_was_taker};
-    use crate::lp_ordermatch::{my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path,
-                               my_taker_order_file_path, my_taker_orders_dir};
+    use crate::database::my_orders::{
+        insert_maker_order, insert_taker_order, select_orders_by_filter, select_status_by_uuid, update_maker_order,
+        update_order_status, update_was_taker,
+    };
+    use crate::lp_ordermatch::{
+        my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path, my_taker_order_file_path,
+        my_taker_orders_dir,
+    };
     use mm2_io::fs::{read_dir_json, read_json, remove_file_async, write_json, FsJsonError};
 
     const USE_TMP_FILE: bool = true;
@@ -234,7 +241,9 @@ mod native_impl {
     }
 
     impl MyOrdersStorage {
-        pub fn new(ctx: MmArc) -> MyOrdersStorage { MyOrdersStorage { ctx } }
+        pub fn new(ctx: MmArc) -> MyOrdersStorage {
+            MyOrdersStorage { ctx }
+        }
     }
 
     #[async_trait]
@@ -353,9 +362,10 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::lp_ordermatch::ordermatch_wasm_db::{DbTransactionError, InitDbError, MyActiveMakerOrdersTable,
-                                                   MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
-                                                   MyHistoryOrdersTable};
+    use crate::lp_ordermatch::ordermatch_wasm_db::{
+        DbTransactionError, InitDbError, MyActiveMakerOrdersTable, MyActiveTakerOrdersTable,
+        MyFilteringHistoryOrdersTable, MyHistoryOrdersTable,
+    };
     use crate::lp_ordermatch::OrdermatchContext;
     use common::log::warn;
     use mm2_rpc::data::legacy::TakerAction;
@@ -363,7 +373,9 @@ mod wasm_impl {
     use std::sync::Arc;
 
     impl From<InitDbError> for MyOrdersError {
-        fn from(e: InitDbError) -> Self { MyOrdersError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            MyOrdersError::InternalError(e.to_string())
+        }
     }
 
     impl From<DbTransactionError> for MyOrdersError {
@@ -898,9 +910,12 @@ mod tests {
         let error = storage.load_order_from_history(taker2.request.uuid).await.expect_err(
             "!MyOrdersStorage::load_order_from_history should have failed with the 'MyOrdersError::NoSuchOrder' error",
         );
-        assert_eq!(error.into_inner(), MyOrdersError::NoSuchOrder {
-            uuid: taker2.request.uuid
-        });
+        assert_eq!(
+            error.into_inner(),
+            MyOrdersError::NoSuchOrder {
+                uuid: taker2.request.uuid
+            }
+        );
     }
 
     #[wasm_bindgen_test]

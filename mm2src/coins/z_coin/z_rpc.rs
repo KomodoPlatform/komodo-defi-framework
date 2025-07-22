@@ -383,7 +383,9 @@ impl ZRpcOps for NativeClient {
         Ok(self.get_block_count().compat().await.map_mm_err()?)
     }
 
-    async fn get_tree_state(&self, _height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>> { todo!() }
+    async fn get_tree_state(&self, _height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>> {
+        todo!()
+    }
 
     async fn scan_blocks(
         &self,

@@ -39,7 +39,9 @@ impl From<CoinFindError> for TrustedNodeError {
 }
 
 impl From<std::io::Error> for TrustedNodeError {
-    fn from(err: std::io::Error) -> TrustedNodeError { TrustedNodeError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> TrustedNodeError {
+        TrustedNodeError::IOError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

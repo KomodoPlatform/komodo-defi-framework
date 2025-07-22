@@ -1,7 +1,8 @@
 use common::password_policy::{password_policy, PasswordPolicyError};
 use common::HttpStatusCode;
-use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
-             MnemonicError};
+use crypto::{
+    decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData, MnemonicError,
+};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use http::StatusCode;
@@ -24,8 +25,10 @@ cfg_wasm32! {
 cfg_native! {
     use mnemonics_storage::{delete_wallet, read_all_wallet_names, read_encrypted_passphrase, save_encrypted_passphrase, WalletsStorageError};
 }
-#[cfg(not(target_arch = "wasm32"))] mod mnemonics_storage;
-#[cfg(target_arch = "wasm32")] mod mnemonics_wasm_db;
+#[cfg(not(target_arch = "wasm32"))]
+mod mnemonics_storage;
+#[cfg(target_arch = "wasm32")]
+mod mnemonics_wasm_db;
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
@@ -57,11 +60,15 @@ pub enum WalletInitError {
 }
 
 impl From<MnemonicError> for WalletInitError {
-    fn from(e: MnemonicError) -> Self { WalletInitError::MnemonicError(e.to_string()) }
+    fn from(e: MnemonicError) -> Self {
+        WalletInitError::MnemonicError(e.to_string())
+    }
 }
 
 impl From<CryptoInitError> for WalletInitError {
-    fn from(e: CryptoInitError) -> Self { WalletInitError::CryptoInitError(e.to_string()) }
+    fn from(e: CryptoInitError) -> Self {
+        WalletInitError::CryptoInitError(e.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize)]
@@ -101,7 +108,9 @@ impl WalletsContext {
         })))
     }
 
-    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> { self.wallets_db.get_or_initialize().await }
+    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> {
+        self.wallets_db.get_or_initialize().await
+    }
 }
 
 // Utility function for deserialization to reduce repetition
@@ -434,7 +443,9 @@ impl From<EncryptedData> for MnemonicForRpc {
 }
 
 impl From<String> for MnemonicForRpc {
-    fn from(mnemonic: String) -> Self { MnemonicForRpc::PlainText { mnemonic } }
+    fn from(mnemonic: String) -> Self {
+        MnemonicForRpc::PlainText { mnemonic }
+    }
 }
 
 /// [`GetMnemonicResponse`] is a struct representing the response to a get mnemonic request.
@@ -501,12 +512,16 @@ impl HttpStatusCode for MnemonicRpcError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<WalletsStorageError> for MnemonicRpcError {
-    fn from(e: WalletsStorageError) -> Self { MnemonicRpcError::WalletsStorageError(e.to_string()) }
+    fn from(e: WalletsStorageError) -> Self {
+        MnemonicRpcError::WalletsStorageError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<WalletsDBError> for MnemonicRpcError {
-    fn from(e: WalletsDBError) -> Self { MnemonicRpcError::WalletsStorageError(e.to_string()) }
+    fn from(e: WalletsDBError) -> Self {
+        MnemonicRpcError::WalletsStorageError(e.to_string())
+    }
 }
 
 impl From<ReadPassphraseError> for MnemonicRpcError {

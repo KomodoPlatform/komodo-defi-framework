@@ -1,7 +1,9 @@
 use super::errors::ApiIntegrationRpcError;
-use super::types::{AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapLiquiditySourcesRequest,
-                   ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse,
-                   ClassicSwapTokensRequest, ClassicSwapTokensResponse};
+use super::types::{
+    AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapLiquiditySourcesRequest,
+    ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
+    ClassicSwapTokensResponse,
+};
 use coins::eth::{wei_from_big_decimal, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
 use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum, Ticker};
@@ -9,8 +11,9 @@ use ethereum_types::Address;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use std::str::FromStr;
-use trading_api::one_inch_api::classic_swap_types::{ClassicSwapCreateParams, ClassicSwapQuoteParams,
-                                                    ProtocolsResponse, TokensResponse};
+use trading_api::one_inch_api::classic_swap_types::{
+    ClassicSwapCreateParams, ClassicSwapQuoteParams, ProtocolsResponse, TokensResponse,
+};
 use trading_api::one_inch_api::client::{ApiClient, SwapApiMethods, SwapUrlBuilder};
 
 /// "1inch_v6_0_classic_swap_contract" rpc impl
@@ -180,9 +183,10 @@ fn api_supports_pair(base_chain_id: u64, rel_chain_id: u64) -> MmResult<(), ApiI
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::lp_commands::one_inch::{rpcs::{one_inch_v6_0_classic_swap_create_rpc,
-                                                   one_inch_v6_0_classic_swap_quote_rpc},
-                                            types::{ClassicSwapCreateRequest, ClassicSwapQuoteRequest}};
+    use crate::rpc::lp_commands::one_inch::{
+        rpcs::{one_inch_v6_0_classic_swap_create_rpc, one_inch_v6_0_classic_swap_quote_rpc},
+        types::{ClassicSwapCreateRequest, ClassicSwapQuoteRequest},
+    };
     use coins::eth::EthCoin;
     use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
     use common::block_on;

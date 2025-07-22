@@ -1,10 +1,14 @@
 use crate::coin_balance::{BalanceObjectOps, HDAccountBalance, HDAccountBalanceEnum};
 use crate::hd_wallet::{HDExtractPubkeyError, HDXPubExtractor, NewAccountCreationError, RpcTaskXPubExtractor};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinProtocol, CoinWithDerivationMethod, CoinsContext,
-            MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::{
+    lp_coinfind_or_err, BalanceError, CoinFindError, CoinProtocol, CoinWithDerivationMethod, CoinsContext,
+    MarketCoinOps, MmCoinEnum, UnexpectedDerivationMethod,
+};
 use async_trait::async_trait;
 use common::{true_f, HttpStatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::hw_rpc_task::{
+    HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
+};
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, RpcDerivationPath, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
@@ -12,10 +16,14 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -118,7 +126,9 @@ impl From<BalanceError> for CreateAccountRpcError {
 }
 
 impl From<HDExtractPubkeyError> for CreateAccountRpcError {
-    fn from(e: HDExtractPubkeyError) -> Self { CreateAccountRpcError::from(NewAccountCreationError::from(e)) }
+    fn from(e: HDExtractPubkeyError) -> Self {
+        CreateAccountRpcError::from(NewAccountCreationError::from(e))
+    }
 }
 
 impl From<RpcTaskError> for CreateAccountRpcError {
@@ -137,7 +147,9 @@ impl From<RpcTaskError> for CreateAccountRpcError {
 }
 
 impl From<HwError> for CreateAccountRpcError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl HttpStatusCode for CreateAccountRpcError {
@@ -196,9 +208,13 @@ struct StateData {
 pub struct CreateAccountState(Arc<PaMutex<StateData>>);
 
 impl CreateAccountState {
-    pub fn on_account_created(&self, account_id: u32) { self.0.lock().account_id = Some(account_id); }
+    pub fn on_account_created(&self, account_id: u32) {
+        self.0.lock().account_id = Some(account_id);
+    }
 
-    pub fn create_account_id(&self) -> Option<u32> { self.0.lock().account_id }
+    pub fn create_account_id(&self) -> Option<u32> {
+        self.0.lock().account_id
+    }
 }
 
 #[async_trait]
@@ -236,7 +252,9 @@ impl RpcTaskTypes for InitCreateAccountTask {
 
 #[async_trait]
 impl RpcTask for InitCreateAccountTask {
-    fn initial_status(&self) -> Self::InProgressStatus { CreateAccountInProgressStatus::Preparing }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        CreateAccountInProgressStatus::Preparing
+    }
 
     async fn cancel(self) {
         if let Some(account_id) = self.task_state.create_account_id() {
@@ -393,8 +411,10 @@ pub async fn cancel_create_new_account(
 pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
-    use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
-                           HDCoinExtendedPubkey, HDCoinHDAccount, HDWalletOps};
+    use crate::hd_wallet::{
+        create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDCoinExtendedPubkey,
+        HDCoinHDAccount, HDWalletOps,
+    };
 
     pub async fn init_create_new_account_rpc<Coin, XPubExtractor>(
         coin: &Coin,
@@ -488,10 +508,13 @@ pub mod for_tests {
             if now_ms() > timeout {
                 panic!("{} init_withdraw timed out", ticker);
             }
-            let status = init_create_new_account_status(ctx.clone(), RpcTaskStatusRequest {
-                task_id: init.task_id,
-                forget_if_finished: true,
-            })
+            let status = init_create_new_account_status(
+                ctx.clone(),
+                RpcTaskStatusRequest {
+                    task_id: init.task_id,
+                    forget_if_finished: true,
+                },
+            )
             .await;
             if let Ok(status) = status {
                 match status {

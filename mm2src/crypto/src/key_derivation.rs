@@ -31,7 +31,9 @@ pub enum KeyDerivationError {
 }
 
 impl From<argon2::password_hash::Error> for KeyDerivationError {
-    fn from(e: argon2::password_hash::Error) -> Self { KeyDerivationError::PasswordHashingFailed(e.to_string()) }
+    fn from(e: argon2::password_hash::Error) -> Self {
+        KeyDerivationError::PasswordHashingFailed(e.to_string())
+    }
 }
 
 /// Parameters for the Argon2 key derivation function.

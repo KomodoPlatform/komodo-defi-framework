@@ -1,14 +1,16 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
-                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandleShared,
-                             InitStandaloneCoinTaskManagerShared};
+use crate::standalone_coin::{
+    InitStandaloneCoinActivationOps, InitStandaloneCoinError, InitStandaloneCoinInitialStatus,
+    InitStandaloneCoinTaskHandleShared, InitStandaloneCoinTaskManagerShared,
+};
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::siacoin::{sia_coin_from_conf_and_params, SiaCoin, SiaCoinActivationParams, SiaCoinBuildError,
-                     SiaCoinProtocolInfo};
+use coins::siacoin::{
+    sia_coin_from_conf_and_params, SiaCoin, SiaCoinActivationParams, SiaCoinBuildError, SiaCoinProtocolInfo,
+};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
@@ -42,7 +44,9 @@ pub struct SiaCoinActivationResult {
 }
 
 impl CurrentBlock for SiaCoinActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 impl GetAddressesBalances for SiaCoinActivationResult {
@@ -68,7 +72,9 @@ pub enum SiaCoinInProgressStatus {
 }
 
 impl InitStandaloneCoinInitialStatus for SiaCoinInProgressStatus {
-    fn initial_status() -> Self { SiaCoinInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        SiaCoinInProgressStatus::ActivatingCoin
+    }
 }
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
@@ -103,7 +109,9 @@ impl SiaCoinInitError {
 }
 
 impl From<BalanceError> for SiaCoinInitError {
-    fn from(err: BalanceError) -> Self { SiaCoinInitError::CouldNotGetBalance(err.to_string()) }
+    fn from(err: BalanceError) -> Self {
+        SiaCoinInitError::CouldNotGetBalance(err.to_string())
+    }
 }
 
 impl From<RegisterCoinError> for SiaCoinInitError {
@@ -127,7 +135,9 @@ impl From<RpcTaskError> for SiaCoinInitError {
 }
 
 impl From<CryptoCtxError> for SiaCoinInitError {
-    fn from(err: CryptoCtxError) -> Self { SiaCoinInitError::Internal(err.to_string()) }
+    fn from(err: CryptoCtxError) -> Self {
+        SiaCoinInitError::Internal(err.to_string())
+    }
 }
 
 impl From<SiaCoinInitError> for InitStandaloneCoinError {

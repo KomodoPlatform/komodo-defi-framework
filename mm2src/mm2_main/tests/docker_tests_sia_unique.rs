@@ -17,8 +17,10 @@ extern crate lazy_static;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate test;
 
 use std::env;
 use std::io::{BufRead, BufReader};
@@ -30,7 +32,8 @@ use testcontainers::clients::Cli;
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
 
-#[allow(dead_code)] mod integration_tests_common;
+#[allow(dead_code)]
+mod integration_tests_common;
 
 /// Custom test runner intended to initialize the SIA coin daemon in a Docker container.
 pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {

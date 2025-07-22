@@ -76,11 +76,15 @@ impl From<RawHeaderError> for SPVError {
 }
 
 impl From<NextBlockBitsError> for SPVError {
-    fn from(e: NextBlockBitsError) -> Self { SPVError::DifficultyCalculationError(e) }
+    fn from(e: NextBlockBitsError) -> Self {
+        SPVError::DifficultyCalculationError(e)
+    }
 }
 
 impl From<BlockHeaderStorageError> for SPVError {
-    fn from(e: BlockHeaderStorageError) -> Self { SPVError::HeaderStorageError(e) }
+    fn from(e: BlockHeaderStorageError) -> Self {
+        SPVError::HeaderStorageError(e)
+    }
 }
 
 /// A slice of `H256`s for use in a merkle array
@@ -100,7 +104,9 @@ impl<'a> MerkleArray<'a> {
 
 impl MerkleArray<'_> {
     /// The length of the underlying slice
-    fn len(&self) -> usize { self.0.len() / 32 }
+    fn len(&self) -> usize {
+        self.0.len() / 32
+    }
 
     /// Index into the merkle array
     fn index(&self, index: usize) -> Result<H256, SPVError> {
@@ -246,7 +252,9 @@ fn hash256(preimages: &[&[u8]]) -> H256 {
 ///
 /// * `a` - The first hash
 /// * `b` - The second hash
-fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
+fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 {
+    hash256(&[a, b])
+}
 
 /// Verifies a Bitcoin-style merkle tree.
 /// Leaves are 0-indexed.
@@ -315,7 +323,9 @@ pub(crate) fn merkle_prove(
     verify_hash256_merkle(txid.take().into(), merkle_root.take().into(), &nodes, index)
 }
 
-fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { actual == to_compare_with }
+fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool {
+    actual == to_compare_with
+}
 
 /// Checks validity of header chain.
 /// Compares the hash of each header to the prevHash in the next header.

@@ -139,13 +139,19 @@ impl HealthcheckMessage {
     }
 
     #[inline]
-    pub(crate) fn encode(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> { encode_message(self) }
+    pub(crate) fn encode(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        encode_message(self)
+    }
 
     #[inline]
-    pub(crate) fn decode(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> { decode_message(bytes) }
+    pub(crate) fn decode(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        decode_message(bytes)
+    }
 
     #[inline]
-    pub(crate) fn should_reply(&self) -> bool { !self.data.is_a_reply }
+    pub(crate) fn should_reply(&self) -> bool {
+        !self.data.is_a_reply
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -159,7 +165,9 @@ struct HealthcheckData {
 
 impl HealthcheckData {
     #[inline]
-    fn encode(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> { encode_message(self) }
+    fn encode(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        encode_message(self)
+    }
 }
 
 #[inline]

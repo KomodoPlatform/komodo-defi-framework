@@ -34,13 +34,17 @@ impl AbortableQueue {
 }
 
 impl From<InnerShared<QueueInnerState>> for AbortableQueue {
-    fn from(inner: InnerShared<QueueInnerState>) -> Self { AbortableQueue { inner } }
+    fn from(inner: InnerShared<QueueInnerState>) -> Self {
+        AbortableQueue { inner }
+    }
 }
 
 impl AbortableSystem for AbortableQueue {
     type Inner = QueueInnerState;
 
-    fn __inner(&self) -> InnerShared<Self::Inner> { self.inner.clone() }
+    fn __inner(&self) -> InnerShared<Self::Inner> {
+        self.inner.clone()
+    }
 
     fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
         self.inner.lock().insert_handle(subsystem_abort_tx).map(|_| ())
@@ -246,7 +250,9 @@ impl SystemInner for QueueInnerState {
         Ok(())
     }
 
-    fn is_aborted(&self) -> bool { matches!(self, QueueInnerState::Aborted) }
+    fn is_aborted(&self) -> bool {
+        matches!(self, QueueInnerState::Aborted)
+    }
 }
 
 #[cfg(test)]

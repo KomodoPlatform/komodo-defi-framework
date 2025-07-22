@@ -30,7 +30,9 @@ pub enum SlurpError {
 }
 
 impl From<serde_json::Error> for SlurpError {
-    fn from(e: Error) -> Self { SlurpError::Internal(e.to_string()) }
+    fn from(e: Error) -> Self {
+        SlurpError::Internal(e.to_string())
+    }
 }
 
 impl From<SlurpError> for JsonRpcErrorType {
@@ -83,11 +85,15 @@ pub enum GetInfoFromUriError {
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
 impl From<http::Error> for GetInfoFromUriError {
-    fn from(e: http::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+    fn from(e: http::Error) -> Self {
+        GetInfoFromUriError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<serde_json::Error> for GetInfoFromUriError {
-    fn from(e: serde_json::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        GetInfoFromUriError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<SlurpError> for GetInfoFromUriError {
@@ -104,7 +110,9 @@ impl From<SlurpError> for GetInfoFromUriError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<hyper::header::InvalidHeaderValue> for GetInfoFromUriError {
-    fn from(e: hyper::header::InvalidHeaderValue) -> Self { GetInfoFromUriError::Internal(e.to_string()) }
+    fn from(e: hyper::header::InvalidHeaderValue) -> Self {
+        GetInfoFromUriError::Internal(e.to_string())
+    }
 }
 
 /// Sends a POST request to the given URI and expects a 2xx status code in response.

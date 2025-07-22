@@ -1,5 +1,6 @@
 use common::executor::Timer;
-#[cfg(not(target_arch = "wasm32"))] use common::log::error;
+#[cfg(not(target_arch = "wasm32"))]
+use common::log::error;
 use common::log::{LogArc, LogWeak};
 use itertools::Itertools;
 use metrics::{Key, Label};
@@ -99,11 +100,15 @@ pub struct Metrics {
 impl Metrics {
     /// Collect the metrics in Prometheus format.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn collect_prometheus_format(&self) -> String { self.recorder.render_prometheus() }
+    pub fn collect_prometheus_format(&self) -> String {
+        self.recorder.render_prometheus()
+    }
 }
 
 impl MetricsOps for Metrics {
-    fn init(&self) { Metrics::default(); }
+    fn init(&self) {
+        Metrics::default();
+    }
 
     fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
     where
@@ -239,7 +244,9 @@ impl MmHistogram {
     }
 
     /// Create new MmHistogram from `&[f64]`.
-    pub(crate) fn to_tag_message(&self) -> String { format!("count={} min={} max={}", self.count, self.min, self.max) }
+    pub(crate) fn to_tag_message(&self) -> String {
+        format!("count={} min={} max={}", self.count, self.min, self.max)
+    }
 
     /// Create new MmHistogram from `&[f64]`.
     pub(crate) fn to_json_quantiles(&self) -> HashMap<String, f64> {
@@ -385,9 +392,11 @@ mod test {
 
     use crate::{MetricsArc, MetricsOps};
 
-    use common::{block_on,
-                 executor::{abortable_queue::AbortableQueue, Timer},
-                 log::{LogArc, LogState}};
+    use common::{
+        block_on,
+        executor::{abortable_queue::AbortableQueue, Timer},
+        log::{LogArc, LogState},
+    };
     use std::time::Instant;
 
     #[test]

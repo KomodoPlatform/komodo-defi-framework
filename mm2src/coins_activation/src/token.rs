@@ -4,8 +4,10 @@ use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
-            PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod};
+use coins::{
+    lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+    PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod,
+};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;

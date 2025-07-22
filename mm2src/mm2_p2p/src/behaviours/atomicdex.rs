@@ -2,9 +2,11 @@ use common::executor::SpawnFuture;
 use compatible_time::Duration;
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver, Sender};
-use futures::{channel::oneshot,
-              future::{join_all, poll_fn},
-              Future, FutureExt, SinkExt, StreamExt};
+use futures::{
+    channel::oneshot,
+    future::{join_all, poll_fn},
+    Future, FutureExt, SinkExt, StreamExt,
+};
 use futures_rustls::rustls;
 use futures_ticker::Ticker;
 use lazy_static::lazy_static;
@@ -30,8 +32,9 @@ use timed_map::{MapKind, TimedMap};
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
-use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
-                              RequestResponseSender};
+use super::request_response::{
+    build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour, RequestResponseSender,
+};
 use crate::application::request_response::network_info::NetworkInfoRequest;
 use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
@@ -39,8 +42,9 @@ use crate::swarm_runtime::SwarmRuntime;
 use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
-pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
-                            Message as GossipsubMessage};
+pub use libp2p::gossipsub::{
+    ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage,
+};
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
 pub type AdexEventRx = Receiver<AdexBehaviourEvent>;
@@ -107,11 +111,15 @@ impl From<AdexResponse> for PeerResponse {
 pub struct AdexResponseChannel(pub ResponseChannel<PeerResponse>);
 
 impl From<ResponseChannel<PeerResponse>> for AdexResponseChannel {
-    fn from(res: ResponseChannel<PeerResponse>) -> Self { AdexResponseChannel(res) }
+    fn from(res: ResponseChannel<PeerResponse>) -> Self {
+        AdexResponseChannel(res)
+    }
 }
 
 impl From<AdexResponseChannel> for ResponseChannel<PeerResponse> {
-    fn from(res: AdexResponseChannel) -> Self { res.0 }
+    fn from(res: AdexResponseChannel) -> Self {
+        res.0
+    }
 }
 
 #[derive(Debug)]
@@ -398,7 +406,9 @@ impl AtomicDexBehaviour {
         }
     }
 
-    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.runtime.spawn(fut) }
+    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) {
+        self.runtime.spawn(fut)
+    }
 
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) -> Result<(), AdexBehaviourError> {
         match cmd {
@@ -560,15 +570,21 @@ impl AtomicDexBehaviour {
         self.core.floodsub.publish(FloodsubTopic::new(PEERS_TOPIC), serialized);
     }
 
-    pub fn connected_relays_len(&self) -> usize { self.core.gossipsub.connected_relays_len() }
+    pub fn connected_relays_len(&self) -> usize {
+        self.core.gossipsub.connected_relays_len()
+    }
 
-    pub fn relay_mesh_len(&self) -> usize { self.core.gossipsub.relay_mesh_len() }
+    pub fn relay_mesh_len(&self) -> usize {
+        self.core.gossipsub.relay_mesh_len()
+    }
 
     pub fn received_messages_in_period(&self) -> (Duration, usize) {
         self.core.gossipsub.get_received_messages_in_period()
     }
 
-    pub fn connected_peers_len(&self) -> usize { self.core.gossipsub.get_num_peers() }
+    pub fn connected_peers_len(&self) -> usize {
+        self.core.gossipsub.get_num_peers()
+    }
 }
 
 pub enum NodeType {
@@ -601,7 +617,9 @@ impl NodeType {
         }
     }
 
-    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. } | NodeType::RelayInMemory { .. }) }
+    pub fn is_relay(&self) -> bool {
+        matches!(self, NodeType::Relay { .. } | NodeType::RelayInMemory { .. })
+    }
 
     pub fn wss_certs(&self) -> Option<&WssCerts> {
         match self {
@@ -624,15 +642,21 @@ pub enum AdexBehaviourError {
 }
 
 impl From<RelayAddressError> for AdexBehaviourError {
-    fn from(e: RelayAddressError) -> Self { AdexBehaviourError::ParsingRelayAddress(e) }
+    fn from(e: RelayAddressError) -> Self {
+        AdexBehaviourError::ParsingRelayAddress(e)
+    }
 }
 
 impl From<SubscriptionError> for AdexBehaviourError {
-    fn from(e: SubscriptionError) -> Self { AdexBehaviourError::SubscriptionError(e) }
+    fn from(e: SubscriptionError) -> Self {
+        AdexBehaviourError::SubscriptionError(e)
+    }
 }
 
 impl From<PublishError> for AdexBehaviourError {
-    fn from(e: PublishError) -> Self { AdexBehaviourError::PublishError(e) }
+    fn from(e: PublishError) -> Self {
+        AdexBehaviourError::PublishError(e)
+    }
 }
 
 pub fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {

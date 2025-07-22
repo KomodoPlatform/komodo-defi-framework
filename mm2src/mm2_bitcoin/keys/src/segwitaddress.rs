@@ -53,7 +53,9 @@ impl fmt::Display for Error {
 
 #[doc(hidden)]
 impl From<bech32::Error> for Error {
-    fn from(e: bech32::Error) -> Error { Error::Bech32(e) }
+    fn from(e: bech32::Error) -> Error {
+        Error::Bech32(e)
+    }
 }
 
 /// The different types of segwit addresses.
@@ -103,7 +105,9 @@ impl SegwitAddress {
     ///
     /// Segwit addresses with unassigned witness versions or non-standard
     /// program sizes are considered non-standard.
-    pub fn is_standard(&self) -> bool { self.address_type().is_some() }
+    pub fn is_standard(&self) -> bool {
+        self.address_type().is_some()
+    }
 }
 
 struct UpperWriter<W: fmt::Write>(W);

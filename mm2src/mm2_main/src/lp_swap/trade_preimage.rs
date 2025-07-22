@@ -318,7 +318,9 @@ impl From<CoinFindError> for TradePreimageRpcError {
 }
 
 impl From<CryptoCtxError> for TradePreimageRpcError {
-    fn from(e: CryptoCtxError) -> Self { TradePreimageRpcError::InternalError(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        TradePreimageRpcError::InternalError(e.to_string())
+    }
 }
 
 impl TradePreimageRpcError {

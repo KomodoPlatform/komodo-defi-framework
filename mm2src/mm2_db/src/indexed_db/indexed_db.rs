@@ -46,13 +46,17 @@ mod db_lock;
 mod indexed_cursor;
 
 pub use be_big_uint::BeBigUint;
-pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
-                    OnUpgradeError, OnUpgradeResult};
+pub use db_driver::{
+    DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId, OnUpgradeError,
+    OnUpgradeResult,
+};
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
-use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorFiltersExt,
-                     CursorResult, DbCursorEventTx};
+use indexed_cursor::{
+    cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorFiltersExt, CursorResult,
+    DbCursorEventTx,
+};
 
 type DbEventTx = mpsc::UnboundedSender<internal::DbEvent>;
 type DbTransactionEventTx = mpsc::UnboundedSender<internal::DbTransactionEvent>;
@@ -91,7 +95,9 @@ pub struct DbIdentifier {
 }
 
 impl DbIdentifier {
-    pub fn db_name(&self) -> &'static str { self.db_name }
+    pub fn db_name(&self) -> &'static str {
+        self.db_name
+    }
 
     pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: Option<H160>) -> DbIdentifier {
         DbIdentifier {
@@ -1218,10 +1224,10 @@ mod tests {
             .get_items("ticker", "RICK")
             .await
             .expect("Couldn't get items by the index 'ticker=RICK'");
-        assert_eq!(actual_rick_txs, vec![
-            (rick_tx_1_id, rick_tx_1_updated),
-            (rick_tx_2_id, rick_tx_2),
-        ]);
+        assert_eq!(
+            actual_rick_txs,
+            vec![(rick_tx_1_id, rick_tx_1_updated), (rick_tx_2_id, rick_tx_2),]
+        );
     }
 
     #[wasm_bindgen_test]
@@ -1406,9 +1412,12 @@ mod tests {
             .await
         {
             Ok(_) => panic!("!IndexedDb::init should have failed"),
-            Err(e) => assert_eq!(e.into_inner(), InitDbError::DbIsOpenAlready {
-                db_name: db_identifier.to_string()
-            }),
+            Err(e) => assert_eq!(
+                e.into_inner(),
+                InitDbError::DbIsOpenAlready {
+                    db_name: db_identifier.to_string()
+                }
+            ),
         }
     }
 

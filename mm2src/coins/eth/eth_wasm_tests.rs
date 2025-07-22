@@ -47,7 +47,9 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
 }
 
 #[wasm_bindgen_test]
-async fn test_init_eth_coin() { let (_ctx, _coin) = init_eth_coin_helper().await.unwrap(); }
+async fn test_init_eth_coin() {
+    let (_ctx, _coin) = init_eth_coin_helper().await.unwrap();
+}
 
 #[wasm_bindgen_test]
 async fn wasm_test_sign_eth_tx() {

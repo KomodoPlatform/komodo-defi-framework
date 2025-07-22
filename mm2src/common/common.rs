@@ -12,12 +12,18 @@
 
 #![allow(uncommon_codepoints)]
 
-#[macro_use] extern crate arrayref;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate lazy_static;
-#[macro_use] pub extern crate serde_derive;
-#[macro_use] pub extern crate serde_json;
-#[macro_use] extern crate ser_error_derive;
+#[macro_use]
+extern crate arrayref;
+#[macro_use]
+extern crate gstuff;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+pub extern crate serde_derive;
+#[macro_use]
+pub extern crate serde_json;
+#[macro_use]
+extern crate ser_error_derive;
 
 /// Implements a `From` for `enum` with a variant name matching the name of the type stored.
 ///
@@ -30,7 +36,9 @@
 macro_rules! ifrom {
     ($enum: ident, $id: ident) => {
         impl From<$id> for $enum {
-            fn from(t: $id) -> $enum { $enum::$id(t) }
+            fn from(t: $id) -> $enum {
+                $enum::$id(t)
+            }
         }
     };
 }
@@ -129,7 +137,8 @@ pub mod bool_as_int;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
-#[path = "executor/mod.rs"] pub mod executor;
+#[path = "executor/mod.rs"]
+pub mod executor;
 pub mod notifier;
 pub mod number_type_casting;
 pub mod on_drop_callback;
@@ -140,9 +149,11 @@ pub mod seri;
 #[path = "wio.rs"]
 pub mod wio;
 
-#[cfg(target_arch = "wasm32")] pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
-#[cfg(target_arch = "wasm32")] pub use wasm::*;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
 
 use backtrace::SymbolName;
 use chrono::format::ParseError;
@@ -228,7 +239,9 @@ lazy_static! {
 }
 
 /// Converts u64 satoshis to f64
-pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
+pub fn sat_to_f(sat: u64) -> f64 {
+    sat as f64 / SATOSHIS as f64
+}
 
 /// Marker type to indicate that a type is `!Send` in a stable way.
 pub struct NotSend(std::marker::PhantomData<*const ()>);
@@ -288,7 +301,9 @@ impl<'de> de::Deserialize<'de> for bits256 {
         struct Bits256Visitor;
         impl<'de> de::Visitor<'de> for Bits256Visitor {
             type Value = bits256;
-            fn expecting(&self, fm: &mut std::fmt::Formatter) -> std::fmt::Result { fm.write_str("a byte array") }
+            fn expecting(&self, fm: &mut std::fmt::Formatter) -> std::fmt::Result {
+                fm.write_str("a byte array")
+            }
             fn visit_seq<S>(self, mut seq: S) -> Result<bits256, S::Error>
             where
                 S: de::SeqAccess<'de>,
@@ -321,11 +336,15 @@ impl<'de> de::Deserialize<'de> for bits256 {
 }
 
 impl std::fmt::Debug for bits256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { (self as &dyn std::fmt::Display).fmt(f) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        (self as &dyn std::fmt::Display).fmt(f)
+    }
 }
 
 impl From<[u8; 32]> for bits256 {
-    fn from(bytes: [u8; 32]) -> Self { bits256 { bytes } }
+    fn from(bytes: [u8; 32]) -> Self {
+        bits256 { bytes }
+    }
 }
 
 /// Use the value, preventing the compiler and linker from optimizing it away.
@@ -591,18 +610,24 @@ impl std::fmt::Display for SerializationError {
 }
 
 impl SerializationError {
-    pub fn from_error<E: ser::Error>(e: E) -> SerializationError { SerializationError::InternalError(e.to_string()) }
+    pub fn from_error<E: ser::Error>(e: E) -> SerializationError {
+        SerializationError::InternalError(e.to_string())
+    }
 }
 
 #[derive(Clone, Serialize)]
 pub struct SuccessResponse(&'static str);
 
 impl SuccessResponse {
-    pub fn new() -> SuccessResponse { SuccessResponse("success") }
+    pub fn new() -> SuccessResponse {
+        SuccessResponse("success")
+    }
 }
 
 impl Default for SuccessResponse {
-    fn default() -> Self { SuccessResponse::new() }
+    fn default() -> Self {
+        SuccessResponse::new()
+    }
 }
 
 #[derive(Serialize)]
@@ -616,7 +641,9 @@ pub fn err_to_rpc_json_string(err: &str) -> String {
     json::to_string(&err).unwrap()
 }
 
-pub fn err_tp_rpc_json(error: String) -> Json { json::to_value(ErrResponse { error }).unwrap() }
+pub fn err_tp_rpc_json(error: String) -> Json {
+    json::to_value(ErrResponse { error }).unwrap()
+}
 
 /// Returns the `{error: $msg}` JSON response with the given HTTP `status`.
 /// Also logs the error (if possible).
@@ -646,11 +673,15 @@ pub fn env_var_as_bool(name: &str) -> bool {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn env_var_as_bool(_name: &str) -> bool { false }
+pub fn env_var_as_bool(_name: &str) -> bool {
+    false
+}
 
 /// TODO make it wasm32 only
 #[cfg(target_arch = "wasm32")]
-pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable not supported in WASM") }
+pub fn var(_name: &str) -> Result<String, String> {
+    ERR!("Environment variable not supported in WASM")
+}
 
 /// Runs the given future on MM2's executor and waits for the result.
 ///
@@ -699,7 +730,9 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
+pub fn now_ms() -> u64 {
+    js_sys::Date::now() as u64
+}
 
 #[cfg(target_arch = "wasm32")]
 pub fn now_float() -> f64 {
@@ -707,11 +740,17 @@ pub fn now_float() -> f64 {
     duration_to_float(Duration::from_millis(now_ms()))
 }
 
-pub fn wait_until_sec(seconds: u64) -> u64 { (now_ms() / 1000) + seconds }
+pub fn wait_until_sec(seconds: u64) -> u64 {
+    (now_ms() / 1000) + seconds
+}
 
-pub fn wait_until_ms(milliseconds: u64) -> u64 { now_ms() + milliseconds }
+pub fn wait_until_ms(milliseconds: u64) -> u64 {
+    now_ms() + milliseconds
+}
 
-pub fn now_sec() -> u64 { now_ms() / 1000 }
+pub fn now_sec() -> u64 {
+    now_ms() / 1000
+}
 
 pub fn now_sec_u32() -> u32 {
     (now_ms() / 1000)
@@ -726,7 +765,9 @@ pub fn now_sec_i64() -> i64 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn temp_dir() -> PathBuf { env::temp_dir() }
+pub fn temp_dir() -> PathBuf {
+    env::temp_dir()
+}
 
 /// If the `MM_LOG` variable is present then tries to open that file.
 /// Prints a warning to `stdout` if there's a problem opening the file.
@@ -887,10 +928,14 @@ fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> 
     }
 }
 
-pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }
+pub fn small_rng() -> SmallRng {
+    SmallRng::seed_from_u64(now_ms())
+}
 
 #[inline(always)]
-pub fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> { rand::rngs::OsRng.try_fill_bytes(dest) }
+pub fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> {
+    rand::rngs::OsRng.try_fill_bytes(dest)
+}
 
 #[derive(Debug, Clone)]
 /// Ordered from low to height inclusive range.
@@ -899,7 +944,9 @@ pub struct OrdRange<T>(RangeInclusive<T>);
 impl<T> Deref for OrdRange<T> {
     type Target = RangeInclusive<T>;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T: PartialOrd> OrdRange<T> {
@@ -915,28 +962,50 @@ impl<T: PartialOrd> OrdRange<T> {
 
 impl<T: Copy> OrdRange<T> {
     /// Flatten a start-end pair into the vector.
-    pub fn flatten(&self) -> Vec<T> { vec![*self.start(), *self.end()] }
+    pub fn flatten(&self) -> Vec<T> {
+        vec![*self.start(), *self.end()]
+    }
 }
 
-pub const fn true_f() -> bool { true }
+pub const fn true_f() -> bool {
+    true
+}
 
-pub const fn ten() -> usize { 10 }
+pub const fn ten() -> usize {
+    10
+}
 
-pub const fn ten_f64() -> f64 { 10. }
+pub const fn ten_f64() -> f64 {
+    10.
+}
 
-pub const fn one_hundred() -> usize { 100 }
+pub const fn one_hundred() -> usize {
+    100
+}
 
-pub const fn one_thousand_u32() -> u32 { 1000 }
+pub const fn one_thousand_u32() -> u32 {
+    1000
+}
 
-pub const fn one_and_half_f64() -> f64 { 1.5 }
+pub const fn one_and_half_f64() -> f64 {
+    1.5
+}
 
-pub const fn three_hundred_f64() -> f64 { 300. }
+pub const fn three_hundred_f64() -> f64 {
+    300.
+}
 
-pub const fn one_f64() -> f64 { 1. }
+pub const fn one_f64() -> f64 {
+    1.
+}
 
-pub const fn sixty_f64() -> f64 { 60. }
+pub const fn sixty_f64() -> f64 {
+    60.
+}
 
-pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
+pub fn one() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct PagingOptions {
@@ -948,7 +1017,9 @@ pub struct PagingOptions {
 }
 
 #[inline]
-pub fn new_uuid() -> Uuid { Uuid::new_v4() }
+pub fn new_uuid() -> Uuid {
+    Uuid::new_v4()
+}
 
 pub fn first_char_to_upper(input: &str) -> String {
     let mut v: Vec<char> = input.chars().collect();
@@ -1032,7 +1103,9 @@ impl<I> SequentialCount<I>
 where
     I: Iterator,
 {
-    fn new(iter: I) -> Self { SequentialCount { iter: iter.peekable() } }
+    fn new(iter: I) -> Self {
+        SequentialCount { iter: iter.peekable() }
+    }
 }
 
 /// https://stackoverflow.com/questions/32702386/iterator-adapter-that-counts-repeated-characters
@@ -1106,7 +1179,9 @@ impl<Id> PagingOptionsEnum<Id> {
 }
 
 impl<Id> Default for PagingOptionsEnum<Id> {
-    fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
+    fn default() -> Self {
+        PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0"))
+    }
 }
 
 #[inline(always)]
@@ -1123,7 +1198,9 @@ pub fn get_utc_timestamp() -> i64 {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
+pub fn get_utc_timestamp_nanos() -> i64 {
+    Utc::now().timestamp_nanos()
+}
 
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
@@ -1162,11 +1239,15 @@ pub enum ParseRfc3339Err {
 }
 
 impl From<ParseError> for ParseRfc3339Err {
-    fn from(e: ParseError) -> Self { ParseRfc3339Err::ParseTimestampError(e.to_string()) }
+    fn from(e: ParseError) -> Self {
+        ParseRfc3339Err::ParseTimestampError(e.to_string())
+    }
 }
 
 impl From<TryFromIntError> for ParseRfc3339Err {
-    fn from(e: TryFromIntError) -> Self { ParseRfc3339Err::TryFromIntError(e.to_string()) }
+    fn from(e: TryFromIntError) -> Self {
+        ParseRfc3339Err::TryFromIntError(e.to_string())
+    }
 }
 
 pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseRfc3339Err> {
@@ -1177,7 +1258,9 @@ pub fn parse_rfc3339_to_timestamp(date_str: &str) -> Result<u64, ParseRfc3339Err
 /// `is_initial_upgrade` function checks if the database is being upgraded from version 0 to 1.
 /// This function returns a boolean indicating whether the database is being upgraded from version 0 to 1.
 #[cfg(target_arch = "wasm32")]
-pub fn is_initial_upgrade(old_version: u32, new_version: u32) -> bool { old_version == 0 && new_version == 1 }
+pub fn is_initial_upgrade(old_version: u32, new_version: u32) -> bool {
+    old_version == 0 && new_version == 1
+}
 
 /// Takes `http:Uri` and converts it into `String` of websocket address
 ///
@@ -1197,7 +1280,9 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 
 /// Converts a U256 value to a lowercase hexadecimal string with "0x" prefix
 #[inline]
-pub fn u256_to_hex(value: U256) -> String { format!("0x{:x}", value) }
+pub fn u256_to_hex(value: U256) -> String {
+    format!("0x{:x}", value)
+}
 
 /// If 0x prefix exists in an str strip it or return the str as-is
 #[macro_export]

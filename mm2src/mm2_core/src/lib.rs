@@ -1,5 +1,7 @@
-#[cfg(target_arch = "wasm32")] use derive_more::Display;
-#[cfg(target_arch = "wasm32")] use rand::{thread_rng, Rng};
+#[cfg(target_arch = "wasm32")]
+use derive_more::Display;
+#[cfg(target_arch = "wasm32")]
+use rand::{thread_rng, Rng};
 
 pub mod data_asker;
 pub mod event_dispatcher;
@@ -23,5 +25,7 @@ impl DbNamespaceId {
     }
 
     #[inline(always)]
-    pub fn for_test_with_id(id: u64) -> DbNamespaceId { DbNamespaceId::Test(id) }
+    pub fn for_test_with_id(id: u64) -> DbNamespaceId {
+        DbNamespaceId::Test(id)
+    }
 }

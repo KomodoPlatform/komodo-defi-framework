@@ -1,21 +1,22 @@
 use crate::context::CoinsActivationContext;
-use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitPlatformCoinWithTokensAwaitingStatus,
-                                       InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
-                                       InitPlatformCoinWithTokensTaskManagerShared,
-                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
-                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
-                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
+use crate::platform_coin_with_tokens::{
+    EnablePlatformCoinWithTokensError, GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
+    InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+    InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+    PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams, TokenActivationRequest,
+    TokenAsMmCoinInitializer, TokenInitializer, TokenOf,
+};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{cosmos_get_accounts_impl, tendermint_priv_key_policy, CosmosAccountAlgo, RpcNode,
-                        TendermintActivationPolicy, TendermintCoin, TendermintCommons, TendermintConf,
-                        TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo, TendermintPublicKey,
-                        TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
-                        TendermintTokenProtocolInfo, TendermintWalletConnectionType};
+use coins::tendermint::{
+    cosmos_get_accounts_impl, tendermint_priv_key_policy, CosmosAccountAlgo, RpcNode, TendermintActivationPolicy,
+    TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
+    TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
+    TendermintTokenInitError, TendermintTokenProtocolInfo, TendermintWalletConnectionType,
+};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
@@ -113,11 +114,15 @@ where
 }
 
 impl TxHistory for TendermintActivationParams {
-    fn tx_history(&self) -> bool { self.tx_history }
+    fn tx_history(&self) -> bool {
+        self.tx_history
+    }
 }
 
 impl ActivationRequestInfo for TendermintActivationParams {
-    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
+    fn is_hw_policy(&self) -> bool {
+        false
+    } // TODO: fix when device policy is added
 }
 
 struct TendermintTokenInitializer {
@@ -157,7 +162,9 @@ impl TokenInitializer for TendermintTokenInitializer {
             .collect()
     }
 
-    fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin { &self.platform_coin }
+    fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin {
+        &self.platform_coin
+    }
 }
 
 impl TryFromCoinProtocol for TendermintProtocolInfo {
@@ -205,11 +212,15 @@ pub struct TendermintActivationResult {
 }
 
 impl CurrentBlock for TendermintActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 impl GetPlatformBalance for TendermintActivationResult {
-    fn get_platform_balance(&self) -> Option<BigDecimal> { self.balance.as_ref().map(|b| b.spendable.clone()) }
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
+        self.balance.as_ref().map(|b| b.spendable.clone())
+    }
 }
 
 impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
@@ -403,10 +414,13 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
                     .tokens_balances
                     .into_iter()
                     .map(|(ticker, balance)| {
-                        (ticker, CoinBalance {
-                            spendable: balance,
-                            unspendable: BigDecimal::default(),
-                        })
+                        (
+                            ticker,
+                            CoinBalance {
+                                spendable: balance,
+                                unspendable: BigDecimal::default(),
+                            },
+                        )
                     })
                     .collect(),
             ),

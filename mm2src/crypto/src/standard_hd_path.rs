@@ -32,15 +32,25 @@ pub type HDPathToAccount =
     Bip44Tail>>>;
 
 impl StandardHDPath {
-    pub fn purpose(&self) -> Bip43Purpose { self.value() }
+    pub fn purpose(&self) -> Bip43Purpose {
+        self.value()
+    }
 
-    pub fn coin_type(&self) -> u32 { self.child().value() }
+    pub fn coin_type(&self) -> u32 {
+        self.child().value()
+    }
 
-    pub fn account_id(&self) -> u32 { self.child().child().value() }
+    pub fn account_id(&self) -> u32 {
+        self.child().child().value()
+    }
 
-    pub fn chain(&self) -> Bip44Chain { self.child().child().child().value() }
+    pub fn chain(&self) -> Bip44Chain {
+        self.child().child().child().value()
+    }
 
-    pub fn address_id(&self) -> u32 { self.child().child().child().child().value() }
+    pub fn address_id(&self) -> u32 {
+        self.child().child().child().child().value()
+    }
 
     /// Derive `HDPathToCoin` from `StandardHDPath`
     pub fn path_to_coin(&self) -> HDPathToCoin {
@@ -61,17 +71,27 @@ impl StandardHDPath {
 }
 
 impl HDPathToCoin {
-    pub fn purpose(&self) -> Bip43Purpose { self.value() }
+    pub fn purpose(&self) -> Bip43Purpose {
+        self.value()
+    }
 
-    pub fn coin_type(&self) -> u32 { self.child().value() }
+    pub fn coin_type(&self) -> u32 {
+        self.child().value()
+    }
 }
 
 impl HDPathToAccount {
-    pub fn purpose(&self) -> Bip43Purpose { self.value() }
+    pub fn purpose(&self) -> Bip43Purpose {
+        self.value()
+    }
 
-    pub fn coin_type(&self) -> u32 { self.child().value() }
+    pub fn coin_type(&self) -> u32 {
+        self.child().value()
+    }
 
-    pub fn account_id(&self) -> u32 { self.child().child().value() }
+    pub fn account_id(&self) -> u32 {
+        self.child().child().value()
+    }
 }
 
 #[derive(Debug)]
@@ -172,7 +192,9 @@ impl TryFrom<u32> for Bip44Chain {
 }
 
 impl Bip44Chain {
-    pub fn to_child_number(&self) -> ChildNumber { ChildNumber::from(*self as u32) }
+    pub fn to_child_number(&self) -> ChildNumber {
+        ChildNumber::from(*self as u32)
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -184,11 +206,17 @@ impl Bip32ChildValue for Bip44ChainValue {
     type Value = Bip44Chain;
 
     /// `chain` is a non-hardened child as it's described in the BIP44 standard.
-    fn hardened() -> bool { false }
+    fn hardened() -> bool {
+        false
+    }
 
-    fn number(&self) -> u32 { self.chain as u32 }
+    fn number(&self) -> u32 {
+        self.chain as u32
+    }
 
-    fn value(&self) -> Self::Value { self.chain }
+    fn value(&self) -> Self::Value {
+        self.chain
+    }
 
     fn from_bip32_number(child_number: ChildNumber, child_at: usize) -> Result<Self, Bip32DerPathError> {
         if child_number.is_hardened() {
@@ -218,11 +246,17 @@ impl Bip32ChildValue for Bip32PurposeValue {
     type Value = Bip43Purpose;
 
     /// `purpose` is always a hardened child as it's described in the BIP44/BIP49/BIP84 standards.
-    fn hardened() -> bool { true }
+    fn hardened() -> bool {
+        true
+    }
 
-    fn number(&self) -> u32 { self.purpose as u32 }
+    fn number(&self) -> u32 {
+        self.purpose as u32
+    }
 
-    fn value(&self) -> Bip43Purpose { self.purpose }
+    fn value(&self) -> Bip43Purpose {
+        self.purpose
+    }
 
     fn from_bip32_number(child_number: ChildNumber, child_at: usize) -> Result<Self, Bip32DerPathError> {
         if !child_number.is_hardened() {
@@ -284,17 +318,17 @@ mod tests {
     #[test]
     fn test_from_invalid_length() {
         let error = StandardHDPath::from_str("m/44'/141'/0'").expect_err("derivation path is too short");
-        assert_eq!(error, Bip32DerPathError::InvalidDerivationPathLength {
-            expected: 5,
-            found: 3
-        });
+        assert_eq!(
+            error,
+            Bip32DerPathError::InvalidDerivationPathLength { expected: 5, found: 3 }
+        );
 
         let error =
             StandardHDPath::from_str("m/44'/141'/0'/1/2/3").expect_err("max number of children is 5, but 6 passes");
-        assert_eq!(error, Bip32DerPathError::InvalidDerivationPathLength {
-            expected: 5,
-            found: 6
-        });
+        assert_eq!(
+            error,
+            Bip32DerPathError::InvalidDerivationPathLength { expected: 5, found: 6 }
+        );
     }
 
     #[test]
@@ -302,9 +336,12 @@ mod tests {
         let error = HDPathToAccount::from_str("m/44'/141'/0").expect_err("'account_id' is not hardened");
         assert_eq!(error, Bip32DerPathError::ChildIsNotHardened { child_at: 2 });
         let error = StandardHDPathError::from(error);
-        assert_eq!(error, StandardHDPathError::ChildIsNotHardened {
-            child: "AccountId".to_owned()
-        });
+        assert_eq!(
+            error,
+            StandardHDPathError::ChildIsNotHardened {
+                child: "AccountId".to_owned()
+            }
+        );
     }
 
     #[test]

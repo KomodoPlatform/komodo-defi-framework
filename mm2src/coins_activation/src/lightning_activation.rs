@@ -1,6 +1,8 @@
 use crate::context::CoinsActivationContext;
-use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandleShared,
-                InitL2TaskManagerShared, L2ProtocolParams};
+use crate::l2::{
+    InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandleShared, InitL2TaskManagerShared,
+    L2ProtocolParams,
+};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
@@ -10,8 +12,10 @@ use coins::lightning::ln_events::{init_abortable_events, LightningEventHandler};
 use coins::lightning::ln_p2p::{connect_to_ln_nodes_loop, init_peer_manager, ln_node_announcement_loop};
 use coins::lightning::ln_platform::Platform;
 use coins::lightning::ln_storage::LightningStorage;
-use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager,
-                                 init_persister, PAYMENT_RETRY_ATTEMPTS};
+use coins::lightning::ln_utils::{
+    get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager, init_persister,
+    PAYMENT_RETRY_ATTEMPTS,
+};
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
@@ -60,7 +64,9 @@ pub enum LightningInProgressStatus {
 }
 
 impl InitL2InitialStatus for LightningInProgressStatus {
-    fn initial_status() -> Self { LightningInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        LightningInProgressStatus::ActivatingCoin
+    }
 }
 
 impl TryPlatformCoinFromMmCoinEnum for UtxoStandardCoin {
@@ -96,7 +102,9 @@ impl TryFromCoinProtocol for LightningProtocolConf {
 }
 
 impl L2ProtocolParams for LightningProtocolConf {
-    fn platform_coin_ticker(&self) -> &str { &self.platform_coin_ticker }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform_coin_ticker
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -169,7 +177,9 @@ pub enum LightningInitError {
 }
 
 impl From<MyAddressError> for LightningInitError {
-    fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::MyAddressError(err.to_string())
+    }
 }
 
 impl From<LightningInitError> for InitL2Error {
@@ -200,11 +210,15 @@ impl From<LightningInitError> for InitL2Error {
 }
 
 impl From<EnableLightningError> for LightningInitError {
-    fn from(err: EnableLightningError) -> Self { LightningInitError::EnableLightningError(err) }
+    fn from(err: EnableLightningError) -> Self {
+        LightningInitError::EnableLightningError(err)
+    }
 }
 
 impl From<LightningValidationErr> for LightningInitError {
-    fn from(err: LightningValidationErr) -> Self { LightningInitError::LightningValidationErr(err) }
+    fn from(err: LightningValidationErr) -> Self {
+        LightningInitError::LightningValidationErr(err)
+    }
 }
 
 impl From<RegisterCoinError> for LightningInitError {

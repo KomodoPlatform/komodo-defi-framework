@@ -22,7 +22,9 @@ pub enum DecryptionError {
 }
 
 impl From<base64::DecodeError> for DecryptionError {
-    fn from(e: base64::DecodeError) -> Self { DecryptionError::DecodeError(e.to_string()) }
+    fn from(e: base64::DecodeError) -> Self {
+        DecryptionError::DecodeError(e.to_string())
+    }
 }
 
 /// Decrypts the provided encrypted data using AES-256-CBC decryption and HMAC for integrity check.

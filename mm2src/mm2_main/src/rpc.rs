@@ -41,7 +41,8 @@ cfg_native! {
     use mm2_net::event_streaming::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
-#[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
+#[path = "rpc/dispatcher/dispatcher.rs"]
+mod dispatcher;
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
 mod dispatcher_legacy;
 pub mod lp_commands;
@@ -108,7 +109,9 @@ impl HttpStatusCode for DispatcherError {
 }
 
 impl From<serde_json::Error> for DispatcherError {
-    fn from(e: serde_json::Error) -> Self { DispatcherError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        DispatcherError::InvalidRequest(e.to_string())
+    }
 }
 
 #[allow(unused_macros)]

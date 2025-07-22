@@ -6,8 +6,9 @@ use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
-            TxFeeDetails};
+use crate::{
+    HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType, TxFeeDetails,
+};
 use async_trait::async_trait;
 use base64::Engine;
 use bitcrypto::sha256;
@@ -127,7 +128,9 @@ impl CoinCapabilities for TendermintCoin {}
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintCoin {
-    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.ticker().into()) }
+    fn history_wallet_id(&self) -> WalletId {
+        WalletId::new(self.ticker().into())
+    }
 
     async fn get_tx_history_filters(
         &self,
@@ -139,7 +142,9 @@ impl CoinWithTxHistoryV2 for TendermintCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintToken {
-    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
+    fn history_wallet_id(&self) -> WalletId {
+        WalletId::new(self.platform_ticker().to_owned())
+    }
 
     async fn get_tx_history_filters(
         &self,

@@ -1,5 +1,7 @@
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use crate::account::{
+    AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+    EnabledAccountType, HwPubkey,
+};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -10,8 +12,10 @@ use std::error::Error as StdError;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod account_storage_tests;
-#[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
-#[cfg(target_arch = "wasm32")] mod wasm_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod sqlite_storage;
+#[cfg(target_arch = "wasm32")]
+mod wasm_storage;
 
 const DEFAULT_ACCOUNT_IDX: u32 = 0;
 const DEFAULT_DEVICE_PUB: HwPubkey = HwPubkey::const_default();
@@ -126,7 +130,9 @@ pub(crate) struct AccountStorageBuilder<'a> {
 }
 
 impl<'a> AccountStorageBuilder<'a> {
-    pub fn new(ctx: &'a MmArc) -> Self { AccountStorageBuilder { ctx } }
+    pub fn new(ctx: &'a MmArc) -> Self {
+        AccountStorageBuilder { ctx }
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {

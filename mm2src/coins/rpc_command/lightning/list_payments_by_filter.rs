@@ -41,7 +41,9 @@ impl From<CoinFindError> for ListPaymentsError {
 }
 
 impl From<SqlError> for ListPaymentsError {
-    fn from(err: SqlError) -> ListPaymentsError { ListPaymentsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> ListPaymentsError {
+        ListPaymentsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

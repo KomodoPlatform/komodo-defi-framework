@@ -11,8 +11,9 @@ use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, ChannelMonitorUpdateStatus, Watch};
-use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure,
-                                    SimpleArcChannelManager};
+use lightning::ln::channelmanager::{
+    ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure, SimpleArcChannelManager,
+};
 use lightning::routing::gossip::RoutingFees;
 use lightning::routing::router::{PaymentParameters, RouteHint, RouteHintHop, RouteParameters, Router as RouterTrait};
 use lightning::util::config::UserConfig;
@@ -359,11 +360,15 @@ pub enum PaymentError {
 }
 
 impl From<SqlError> for PaymentError {
-    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> PaymentError {
+        PaymentError::DbError(err.to_string())
+    }
 }
 
 impl From<InvoicePaymentError> for PaymentError {
-    fn from(err: InvoicePaymentError) -> PaymentError { PaymentError::Invoice(format!("{:?}", err)) }
+    fn from(err: InvoicePaymentError) -> PaymentError {
+        PaymentError::Invoice(format!("{:?}", err))
+    }
 }
 
 // Todo: This is imported from rust-lightning and modified by me, will need to open a PR there with this modification and update the dependency to remove this code and the code it depends on.

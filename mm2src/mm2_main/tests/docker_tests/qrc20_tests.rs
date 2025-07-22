@@ -6,10 +6,12 @@ use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
 use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
-use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, DexFeeBurnDestination, FeeApproxStage,
-            FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs,
-            ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+use coins::{
+    CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, DexFeeBurnDestination, FeeApproxStage, FoundSwapTxSpend,
+    MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
+    SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
+    WaitForHTLCTxSpendArgs,
+};
 use common::{block_on_f01, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use ethereum_types::H160;
@@ -43,7 +45,9 @@ pub struct QtumDockerOps {
 }
 
 impl CoinDockerOps for QtumDockerOps {
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 }
 
 impl QtumDockerOps {
@@ -1688,21 +1692,31 @@ fn segwit_address_in_the_orderbook() {
 }
 
 #[test]
-fn test_trade_qrc20() { trade_base_rel(("QICK", "QORTY")); }
+fn test_trade_qrc20() {
+    trade_base_rel(("QICK", "QORTY"));
+}
 
 #[test]
-fn trade_test_with_maker_segwit() { trade_base_rel(("QTUM", "MYCOIN")); }
+fn trade_test_with_maker_segwit() {
+    trade_base_rel(("QTUM", "MYCOIN"));
+}
 
 #[test]
-fn trade_test_with_taker_segwit() { trade_base_rel(("MYCOIN", "QTUM")); }
+fn trade_test_with_taker_segwit() {
+    trade_base_rel(("MYCOIN", "QTUM"));
+}
 
 #[test]
 #[ignore]
-fn test_trade_qrc20_utxo() { trade_base_rel(("QICK", "MYCOIN")); }
+fn test_trade_qrc20_utxo() {
+    trade_base_rel(("QICK", "MYCOIN"));
+}
 
 #[test]
 #[ignore]
-fn test_trade_utxo_qrc20() { trade_base_rel(("MYCOIN", "QICK")); }
+fn test_trade_utxo_qrc20() {
+    trade_base_rel(("MYCOIN", "QICK"));
+}
 
 #[test]
 fn test_send_standard_taker_fee_qtum() {

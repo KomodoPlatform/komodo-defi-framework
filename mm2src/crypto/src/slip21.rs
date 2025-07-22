@@ -22,7 +22,9 @@ pub enum SLIP21Error {
 }
 
 impl From<KeyDerivationError> for SLIP21Error {
-    fn from(e: KeyDerivationError) -> Self { SLIP21Error::KeyDerivationError(e.to_string()) }
+    fn from(e: KeyDerivationError) -> Self {
+        SLIP21Error::KeyDerivationError(e.to_string())
+    }
 }
 
 /// Encrypts data using SLIP-0021 derived keys.

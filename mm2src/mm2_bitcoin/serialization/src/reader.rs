@@ -39,7 +39,9 @@ pub enum Error {
 impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
-    fn from(_: io::Error) -> Self { Error::UnexpectedEnd }
+    fn from(_: io::Error) -> Self {
+        Error::UnexpectedEnd
+    }
 }
 
 pub trait Deserializable {
@@ -65,11 +67,21 @@ pub enum CoinVariant {
 }
 
 impl CoinVariant {
-    pub fn is_btc(&self) -> bool { matches!(self, CoinVariant::BTC) }
-    pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
-    pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
-    pub fn is_ppc(&self) -> bool { matches!(self, CoinVariant::PPC) }
-    pub fn is_kmd_assetchain(&self) -> bool { matches!(self, CoinVariant::RICK | CoinVariant::MORTY) }
+    pub fn is_btc(&self) -> bool {
+        matches!(self, CoinVariant::BTC)
+    }
+    pub fn is_qtum(&self) -> bool {
+        matches!(self, CoinVariant::Qtum)
+    }
+    pub fn is_lbc(&self) -> bool {
+        matches!(self, CoinVariant::LBC)
+    }
+    pub fn is_ppc(&self) -> bool {
+        matches!(self, CoinVariant::PPC)
+    }
+    pub fn is_kmd_assetchain(&self) -> bool {
+        matches!(self, CoinVariant::RICK | CoinVariant::MORTY)
+    }
 }
 
 fn ticker_matches(ticker: &str, with: &str) -> bool {
@@ -227,7 +239,9 @@ where
         }
     }
 
-    pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
+    pub fn coin_variant(&self) -> &CoinVariant {
+        &self.coin_variant
+    }
 }
 
 /// Should be used to iterate over structures of the same type
@@ -258,7 +272,9 @@ struct Proxy<F, T> {
 }
 
 impl<F, T> Proxy<F, T> {
-    fn new(from: F, to: T) -> Self { Proxy { from, to } }
+    fn new(from: F, to: T) -> Self {
+        Proxy { from, to }
+    }
 }
 
 impl<F, T> io::Read for Proxy<F, T>

@@ -1,6 +1,8 @@
 use crate::utxo::rpc_clients::EstimateFeeMode;
-use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
-                  MATURE_CONFIRMATIONS_DEFAULT};
+use crate::utxo::{
+    parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
+    MATURE_CONFIRMATIONS_DEFAULT,
+};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, HDPathToCoin};
@@ -36,7 +38,9 @@ pub enum UtxoConfError {
 }
 
 impl From<Bip32Error> for UtxoConfError {
-    fn from(e: Bip32Error) -> Self { UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        UtxoConfError::ErrorDeserializingDerivationPath(e.to_string())
+    }
 }
 
 pub struct UtxoConfBuilder<'a> {
@@ -168,9 +172,13 @@ impl<'a> UtxoConfBuilder<'a> {
             .unwrap_or(if self.ticker == "BTC" { 5 } else { 85 }) as u8
     }
 
-    fn pub_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
+    fn pub_t_address_prefix(&self) -> u8 {
+        self.conf["taddr"].as_u64().unwrap_or(0) as u8
+    }
 
-    fn p2sh_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
+    fn p2sh_t_address_prefix(&self) -> u8 {
+        self.conf["taddr"].as_u64().unwrap_or(0) as u8
+    }
 
     fn sign_message_prefix(&self) -> Option<String> {
         json::from_value(self.conf["sign_message_prefix"].clone()).unwrap_or(None)
@@ -183,7 +191,9 @@ impl<'a> UtxoConfBuilder<'a> {
         wiftype as u8
     }
 
-    fn bech32_hrp(&self) -> Option<String> { json::from_value(self.conf["bech32_hrp"].clone()).unwrap_or(None) }
+    fn bech32_hrp(&self) -> Option<String> {
+        json::from_value(self.conf["bech32_hrp"].clone()).unwrap_or(None)
+    }
 
     fn default_address_format(&self) -> UtxoAddressFormat {
         let mut address_format: UtxoAddressFormat =
@@ -202,11 +212,17 @@ impl<'a> UtxoConfBuilder<'a> {
         address_format
     }
 
-    fn asset_chain(&self) -> bool { self.conf["asset"].as_str().is_some() }
+    fn asset_chain(&self) -> bool {
+        self.conf["asset"].as_str().is_some()
+    }
 
-    fn tx_version(&self) -> i32 { self.conf["txversion"].as_i64().unwrap_or(1) as i32 }
+    fn tx_version(&self) -> i32 {
+        self.conf["txversion"].as_i64().unwrap_or(1) as i32
+    }
 
-    fn overwintered(&self) -> bool { self.conf["overwintered"].as_u64().unwrap_or(0) == 1 }
+    fn overwintered(&self) -> bool {
+        self.conf["overwintered"].as_u64().unwrap_or(0) == 1
+    }
 
     fn tx_fee_volatility_percent(&self) -> f64 {
         self.conf["txfee_volatility_percent"]
@@ -282,11 +298,17 @@ impl<'a> UtxoConfBuilder<'a> {
             .unwrap_or(MATURE_CONFIRMATIONS_DEFAULT)
     }
 
-    fn is_pos(&self) -> bool { self.conf["isPoS"].as_u64() == Some(1) }
+    fn is_pos(&self) -> bool {
+        self.conf["isPoS"].as_u64() == Some(1)
+    }
 
-    fn is_posv(&self) -> bool { self.conf["isPoSV"].as_u64() == Some(1) }
+    fn is_posv(&self) -> bool {
+        self.conf["isPoSV"].as_u64() == Some(1)
+    }
 
-    fn segwit(&self) -> bool { self.conf["segwit"].as_bool().unwrap_or(false) }
+    fn segwit(&self) -> bool {
+        self.conf["segwit"].as_bool().unwrap_or(false)
+    }
 
     fn mtp_block_count(&self) -> NonZeroU64 {
         json::from_value(self.conf["mtp_block_count"].clone()).unwrap_or(KMD_MTP_BLOCK_COUNT)
@@ -296,9 +318,13 @@ impl<'a> UtxoConfBuilder<'a> {
         json::from_value(self.conf["estimate_fee_mode"].clone()).unwrap_or(None)
     }
 
-    fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
+    fn estimate_fee_blocks(&self) -> u32 {
+        json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1)
+    }
 
-    fn trezor_coin(&self) -> Option<String> { self.conf["trezor_coin"].as_str().map(|coin| coin.to_string()) }
+    fn trezor_coin(&self) -> Option<String> {
+        self.conf["trezor_coin"].as_str().map(|coin| coin.to_string())
+    }
 
     fn spv_conf(&self) -> UtxoConfResult<Option<SPVConf>> {
         json::from_value(self.conf["spv_conf"].clone())
@@ -310,5 +336,7 @@ impl<'a> UtxoConfBuilder<'a> {
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
 
-    fn avg_blocktime(&self) -> Option<u64> { self.conf["avg_blocktime"].as_u64() }
+    fn avg_blocktime(&self) -> Option<u64> {
+        self.conf["avg_blocktime"].as_u64()
+    }
 }

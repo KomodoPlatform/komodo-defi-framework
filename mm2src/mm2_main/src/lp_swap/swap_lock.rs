@@ -4,10 +4,12 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
-#[cfg(target_arch = "wasm32")] use common::now_sec;
+#[cfg(target_arch = "wasm32")]
+use common::now_sec;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_lock::SwapLock;
-#[cfg(target_arch = "wasm32")] pub use wasm_lock::SwapLock;
+#[cfg(target_arch = "wasm32")]
+pub use wasm_lock::SwapLock;
 
 pub type SwapLockResult<T> = Result<T, MmError<SwapLockError>>;
 
@@ -69,7 +71,9 @@ mod native_lock {
             Ok(Some(SwapLock { file_lock }))
         }
 
-        async fn touch(&self) -> SwapLockResult<()> { Ok(self.file_lock.touch().map_mm_err()?) }
+        async fn touch(&self) -> SwapLockResult<()> {
+            Ok(self.file_lock.touch().map_mm_err()?)
+        }
     }
 }
 
@@ -106,7 +110,9 @@ mod wasm_lock {
     }
 
     impl From<InitDbError> for SwapLockError {
-        fn from(e: InitDbError) -> Self { SwapLockError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            SwapLockError::InternalError(e.to_string())
+        }
     }
 
     pub struct SwapLock {

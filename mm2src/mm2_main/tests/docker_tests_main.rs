@@ -16,8 +16,10 @@ extern crate lazy_static;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate test;
 
 use common::custom_futures::timeout::FutureTimerExt;
 use std::env;
@@ -32,7 +34,8 @@ mod docker_tests;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 
-#[allow(dead_code)] mod integration_tests_common;
+#[allow(dead_code)]
+mod integration_tests_common;
 
 // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
 // and then gracefully clear it by dropping the RAII docker container handlers

@@ -1,16 +1,20 @@
 use super::errors::ApiClientError;
 use crate::one_inch_api::errors::NativeError;
 use common::{log, StatusCode};
-#[cfg(feature = "test-ext-api")] use lazy_static::lazy_static;
+#[cfg(feature = "test-ext-api")]
+use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{map_mm_error::MapMmError,
-                     map_to_mm::MapToMmResult,
-                     mm_error::{MmError, MmResult}};
+use mm2_err_handle::{
+    map_mm_error::MapMmError,
+    map_to_mm::MapToMmResult,
+    mm_error::{MmError, MmResult},
+};
 use mm2_net::transport::slurp_url_with_headers;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-#[cfg(feature = "test-ext-api")] use common::executor::Timer;
+#[cfg(feature = "test-ext-api")]
+use common::executor::Timer;
 
 #[cfg(feature = "test-ext-api")]
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -187,9 +191,13 @@ impl ApiClient {
         Ok(Url::parse(url_cfg)?)
     }
 
-    pub const fn eth_special_contract() -> &'static str { ONE_INCH_ETH_SPECIAL_CONTRACT }
+    pub const fn eth_special_contract() -> &'static str {
+        ONE_INCH_ETH_SPECIAL_CONTRACT
+    }
 
-    pub const fn classic_swap_contract() -> &'static str { ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0 }
+    pub const fn classic_swap_contract() -> &'static str {
+        ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0
+    }
 
     pub fn is_chain_supported(chain_id: u64) -> bool {
         ONE_INCH_V6_0_SUPPORTED_CHAINS.iter().any(|(_name, id)| *id == chain_id)

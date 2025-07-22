@@ -7,19 +7,27 @@ use std::fmt;
 pub struct BigIntStr(BigInt);
 
 impl fmt::Debug for BigIntStr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0.to_string()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string())
+    }
 }
 
 impl BigIntStr {
-    pub fn inner(&self) -> &BigInt { &self.0 }
+    pub fn inner(&self) -> &BigInt {
+        &self.0
+    }
 }
 
 impl From<BigInt> for BigIntStr {
-    fn from(num: BigInt) -> BigIntStr { BigIntStr(num) }
+    fn from(num: BigInt) -> BigIntStr {
+        BigIntStr(num)
+    }
 }
 
 impl From<BigIntStr> for BigInt {
-    fn from(other: BigIntStr) -> Self { other.0 }
+    fn from(other: BigIntStr) -> Self {
+        other.0
+    }
 }
 
 impl Serialize for BigIntStr {
