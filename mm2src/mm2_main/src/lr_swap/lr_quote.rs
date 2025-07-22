@@ -522,11 +522,19 @@ impl LrSwapCandidates {
                 continue;
             };
             let Some(dst_amount) = lr_data_0.dst_amount else {
-                log::debug!("estimate_lr_0_source_amounts no lr_data_0.dst_amount skipping candidate");
+                log::debug!(
+                    "estimate_lr_0_source_amounts no lr_data_0.dst_amount for {}/{} skipping candidate",
+                    lr_data_0._src_token,
+                    lr_data_0._dst_token
+                );
                 continue; // We may not calculate dst_amount if no cross prices were received at LR_1
             };
             let Some(ref lr_price) = lr_data_0.lr_price else {
-                log::debug!("estimate_lr_0_source_amounts no lr_data_0.lr_price skipping candidate");
+                log::debug!(
+                    "estimate_lr_0_source_amounts no lr_data_0.lr_price for {}/{} skipping candidate",
+                    lr_data_0._src_token,
+                    lr_data_0._dst_token
+                );
                 continue;
             };
             let dst_amount = mm_number_from_u256(dst_amount);
@@ -597,13 +605,17 @@ impl LrSwapCandidates {
         for candidate in self.inner.iter_mut() {
             let taker_amount = if let Some(ref lr_data_0) = candidate.lr_data_0 {
                 let Some(ref lr_swap_data) = lr_data_0.lr_swap_data else {
-                    log::debug!("estimate_lr_1_source_amounts_from_lr_0 lr_data_0 src_token {} dst_token={} no swap_data skipping", 
-                        lr_data_0._src_token, lr_data_0._dst_token);
+                    log::debug!(
+                        "estimate_lr_1_source_amounts_from_lr_0 lr_data_0 {}/{} no swap_data skipping",
+                        lr_data_0._src_token,
+                        lr_data_0._dst_token
+                    );
                     continue; // No LR provider quote - skip this candidate
                 };
                 let quote_dst_amount = U256::from_dec_str(&lr_swap_data.dst_amount)?; // Get the 'real' destination amount from the LR quote (not estimated)
                 let est_dst_amount = candidate.lr_data_0.as_ref().and_then(|lr_data_0| lr_data_0.dst_amount);
-                log::debug!("estimate_lr_1_source_amounts_from_lr_0 quote_dst_amount={quote_dst_amount} est_dst_amount={est_dst_amount:?}");
+                log::debug!("estimate_lr_1_source_amounts_from_lr_0 lr_data_0 {}/{} quote_dst_amount={quote_dst_amount} est_dst_amount={est_dst_amount:?}", 
+                    lr_data_0._src_token, lr_data_0._dst_token);
                 let volume_with_fees =
                     wei_to_coins_mm_number(quote_dst_amount, lr_data_0.dst_decimals()?).map_mm_err()?;
                 let maker_ticker = candidate.maker_order.maker_ticker();
