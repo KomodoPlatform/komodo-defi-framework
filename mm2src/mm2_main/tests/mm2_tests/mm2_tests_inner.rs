@@ -2005,9 +2005,9 @@ fn test_derive_priv_key() {
         json! ({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP").unwrap(),
+            "rpcip": env::var("BOB_TRADE_IP").unwrap(),
+            "canbind": env::var("BOB_TRADE_PORT").unwrap().parse::<i64>().unwrap(),
             "passphrase": "february soldier message acid member jump shadow walk novel impose puppy tornado",
             "coins": coins,
             "rpc_password": "pass",
