@@ -20,7 +20,7 @@ use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contrac
                                               one_inch_v6_0_classic_swap_liquidity_sources_rpc,
                                               one_inch_v6_0_classic_swap_quote_rpc,
                                               one_inch_v6_0_classic_swap_tokens_rpc};
-use crate::rpc::lp_commands::priv_key::derive_priv_key;
+use crate::rpc::lp_commands::priv_key::derive_priv_key_rpc;
 use crate::rpc::lp_commands::pubkey::*;
 use crate::rpc::lp_commands::tokens::get_token_info;
 use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
@@ -221,7 +221,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
-        "derive_priv_key" => handle_mmrpc(ctx, request, derive_priv_key).await,
+        "derive_priv_key" => handle_mmrpc(ctx, request, derive_priv_key_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,

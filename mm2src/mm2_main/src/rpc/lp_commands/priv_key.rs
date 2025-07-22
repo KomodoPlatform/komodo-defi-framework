@@ -1,6 +1,5 @@
 use coins::lp_coinfind_any;
-use coins::priv_key::{DerivePrivKeyError, DerivePrivKeyReq, DerivePrivKeyV2, DerivedPrivKey};
-use coins::MmCoinEnum;
+use coins::priv_key::{derive_priv_key, DerivePrivKeyError, DerivePrivKeyReq, DerivedPrivKey};
 use crypto::Bip44Chain;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -15,8 +14,7 @@ pub struct DerivePrivKeyRequest {
     pub chain: Option<Bip44Chain>,
 }
 
-pub async fn derive_priv_key(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<DerivedPrivKey, DerivePrivKeyError> {
-    let coin_ticker = req.coin.clone();
+pub async fn derive_priv_key_rpc(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<DerivedPrivKey, DerivePrivKeyError> {
     let coin = lp_coinfind_any(&ctx, &req.coin)
         .await
         .map_err(|e| DerivePrivKeyError::Internal {
@@ -33,13 +31,5 @@ pub async fn derive_priv_key(ctx: MmArc, req: DerivePrivKeyRequest) -> MmResult<
         address_id: req.address_id,
     };
 
-    match coin {
-        MmCoinEnum::UtxoCoin(c) => c.derive_priv_key(&req).await,
-        MmCoinEnum::Bch(c) => c.derive_priv_key(&req).await,
-        MmCoinEnum::QtumCoin(c) => c.derive_priv_key(&req).await,
-        MmCoinEnum::EthCoin(c) => c.derive_priv_key(&req).await,
-        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
-            ticker: coin_ticker,
-        }),
-    }
+    derive_priv_key(coin, &req).await
 }

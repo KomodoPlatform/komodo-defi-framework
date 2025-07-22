@@ -1,6 +1,5 @@
 use crate::hd_wallet::{HDAccountOps, HDWalletOps};
-use crate::{BchCoin, QtumCoin, Qrc20Coin, UtxoStandardCoin, ZCoin, SlpToken, EthCoin, TendermintCoin, CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MmCoin, PrivKeyPolicy};
-use async_trait::async_trait;
+use crate::{CoinWithDerivationMethod, CoinWithPrivKeyPolicy, DerivationMethod, MmCoin, MmCoinEnum, PrivKeyPolicy};
 use bip32::ChildNumber;
 use common::HttpStatusCode;
 use crypto::Bip44Chain;
@@ -57,133 +56,178 @@ impl HttpStatusCode for DerivePrivKeyError {
     }
 }
 
-trait CoinKeyInfo {
-    fn wif_prefix(&self) -> u8;
-    fn uses_utxo_format(&self) -> bool;
+pub async fn derive_priv_key(coin: MmCoinEnum, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
+    match coin {
+        MmCoinEnum::UtxoCoin(c) => derive_priv_key_for_utxo_coin(c, req).await,
+        MmCoinEnum::Bch(c) => derive_priv_key_for_utxo_coin(c, req).await,
+        MmCoinEnum::QtumCoin(c) => derive_priv_key_for_utxo_coin(c, req).await,
+        MmCoinEnum::EthCoin(c) => derive_priv_key_for_eth_coin(c, req).await,
+        _ => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+            ticker: coin.ticker().to_string(),
+        }),
+    }
 }
 
-macro_rules! impl_utxo_key_info {
-    ($coin_type:ty) => {
-        impl CoinKeyInfo for $coin_type {
-            fn wif_prefix(&self) -> u8 { self.as_ref().conf.wif_prefix }
-            fn uses_utxo_format(&self) -> bool { true }
-        }
-    };
+async fn derive_priv_key_for_utxo_coin(
+    coin: impl MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + AsRef<crate::utxo::UtxoCoinFields>,
+    req: &DerivePrivKeyReq,
+) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
+    let coin_fields = coin.as_ref();
+    
+    match coin.priv_key_policy() {
+        PrivKeyPolicy::Iguana(_) => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+            ticker: coin.ticker().to_string(),
+        }),
+        PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => {
+            MmError::err(DerivePrivKeyError::HwWalletNotAllowed)
+        },
+        PrivKeyPolicy::HDWallet { .. } => {
+            let hd_wallet = match coin.derivation_method() {
+                DerivationMethod::HDWallet(hd_wallet) => hd_wallet,
+                _ => {
+                    return MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+                        ticker: coin.ticker().to_string(),
+                    })
+                },
+            };
+
+            let account = hd_wallet
+                .get_account(req.account_id)
+                .await
+                .ok_or_else(|| DerivePrivKeyError::Internal {
+                    reason: format!("Account {} not found", req.account_id),
+                })?;
+
+            let mut path_to_address = account.account_derivation_path();
+            path_to_address.push(req.chain.unwrap_or(Bip44Chain::External).to_child_number());
+            path_to_address.push(ChildNumber::new(req.address_id, false).expect("non-hardened"));
+
+            let secret_key = coin
+                .priv_key_policy()
+                .hd_wallet_derived_priv_key_or_err(&path_to_address)
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error deriving secret key: {}", e),
+                })?;
+
+            let private = Private {
+                prefix: coin_fields.conf.wif_prefix,
+                secret: secret_key.into(),
+                compressed: true,
+                checksum_type: coin_fields.conf.checksum_type,
+            };
+
+            let key_pair = KeyPair::from_private(private)
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error creating key pair from secret: {}", e),
+                })?;
+
+            let pubkey_slice = key_pair.public_slice();
+            let pubkey: [u8; 33] = pubkey_slice
+                .try_into()
+                .map_err(|_| DerivePrivKeyError::Internal {
+                    reason: "Error converting pubkey slice to array".to_string(),
+                })?;
+
+            let address = coin
+                .address_from_pubkey(&pubkey.into())
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error getting address from pubkey: {}", e),
+                })?;
+
+            let priv_key_wif = key_pair.private().to_string();
+            let pub_key_hex = hex::encode(pubkey);
+
+            let response = DerivedPrivKey {
+                coin: coin.ticker().to_string(),
+                address: address.to_string(),
+                derivation_path: path_to_address.to_string(),
+                priv_key: priv_key_wif,
+                pub_key: pub_key_hex,
+            };
+            Ok(response)
+        },
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => MmError::err(DerivePrivKeyError::HwWalletNotAllowed),
+    }
 }
 
-macro_rules! impl_non_utxo_key_info {
-    ($coin_type:ty) => {
-        impl CoinKeyInfo for $coin_type {
-            fn wif_prefix(&self) -> u8 { 0 }
-            fn uses_utxo_format(&self) -> bool { false }
-        }
-    };
-}
+async fn derive_priv_key_for_eth_coin(
+    coin: impl MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod,
+    req: &DerivePrivKeyReq,
+) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
+    match coin.priv_key_policy() {
+        PrivKeyPolicy::Iguana(_) => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+            ticker: coin.ticker().to_string(),
+        }),
+        PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => {
+            MmError::err(DerivePrivKeyError::HwWalletNotAllowed)
+        },
+        PrivKeyPolicy::HDWallet { .. } => {
+            let hd_wallet = match coin.derivation_method() {
+                DerivationMethod::HDWallet(hd_wallet) => hd_wallet,
+                _ => {
+                    return MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
+                        ticker: coin.ticker().to_string(),
+                    })
+                },
+            };
 
-// UTXO coins
-impl_utxo_key_info!(UtxoStandardCoin);
-impl_utxo_key_info!(QtumCoin);
-impl_utxo_key_info!(BchCoin);
-impl_utxo_key_info!(Qrc20Coin);
-impl_utxo_key_info!(SlpToken);
-#[cfg(not(target_arch = "wasm32"))]
-impl_utxo_key_info!(ZCoin);
+            let account = hd_wallet
+                .get_account(req.account_id)
+                .await
+                .ok_or_else(|| DerivePrivKeyError::Internal {
+                    reason: format!("Account {} not found", req.account_id),
+                })?;
 
-// Non-UTXO coins
-impl_non_utxo_key_info!(EthCoin);
-impl_non_utxo_key_info!(TendermintCoin);
+            let mut path_to_address = account.account_derivation_path();
+            path_to_address.push(req.chain.unwrap_or(Bip44Chain::External).to_child_number());
+            path_to_address.push(ChildNumber::new(req.address_id, false).expect("non-hardened"));
 
-#[async_trait]
-pub trait DerivePrivKeyV2: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + Sized {
-    async fn derive_priv_key(&self, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>>;
-}
+            let secret_key = coin
+                .priv_key_policy()
+                .hd_wallet_derived_priv_key_or_err(&path_to_address)
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error deriving secret key: {}", e),
+                })?;
 
-#[async_trait]
-impl<Coin> DerivePrivKeyV2 for Coin
-where
-    Coin: MmCoin + CoinWithPrivKeyPolicy + CoinWithDerivationMethod + CoinKeyInfo + Sync,
-{
-    async fn derive_priv_key(&self, req: &DerivePrivKeyReq) -> Result<DerivedPrivKey, MmError<DerivePrivKeyError>> {
-        match self.priv_key_policy() {
-            PrivKeyPolicy::Iguana(_) => MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
-                ticker: self.ticker().to_string(),
-            }),
-            PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => {
-                MmError::err(DerivePrivKeyError::HwWalletNotAllowed)
-            },
-            PrivKeyPolicy::HDWallet { .. } => {
-                let hd_wallet = match self.derivation_method() {
-                    DerivationMethod::HDWallet(hd_wallet) => hd_wallet,
-                    _ => {
-                        return MmError::err(DerivePrivKeyError::CoinDoesntSupportDerivation {
-                            ticker: self.ticker().to_string(),
-                        })
-                    },
-                };
+            let private = Private {
+                prefix: 0, // ETH doesn't use WIF format
+                secret: secret_key.into(),
+                compressed: true,
+                checksum_type: Default::default(),
+            };
 
-                let account = hd_wallet
-                    .get_account(req.account_id)
-                    .await
-                    .ok_or_else(|| DerivePrivKeyError::Internal {
-                        reason: format!("Account {} not found", req.account_id),
-                    })?;
+            let key_pair = KeyPair::from_private(private)
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error creating key pair from secret: {}", e),
+                })?;
 
-                let mut path_to_address = account.account_derivation_path();
-                path_to_address.push(req.chain.unwrap_or(Bip44Chain::External).to_child_number());
-                path_to_address.push(ChildNumber::new(req.address_id, false).expect("non-hardened"));
+            let pubkey_slice = key_pair.public_slice();
+            let pubkey: [u8; 33] = pubkey_slice
+                .try_into()
+                .map_err(|_| DerivePrivKeyError::Internal {
+                    reason: "Error converting pubkey slice to array".to_string(),
+                })?;
 
-                let secret_key = self
-                    .priv_key_policy()
-                    .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| DerivePrivKeyError::Internal {
-                        reason: format!("Error deriving secret key: {}", e),
-                    })?;
+            let address = coin
+                .address_from_pubkey(&pubkey.into())
+                .map_err(|e| DerivePrivKeyError::Internal {
+                    reason: format!("Error getting address from pubkey: {}", e),
+                })?;
 
-                let private = Private {
-                    prefix: self.wif_prefix(),
-                    secret: secret_key.into(),
-                    compressed: true,
-                    checksum_type: Default::default(),
-                };
+            let priv_key_hex = format!("0x{}", hex::encode(key_pair.private_bytes()));
+            let pub_key_hex = format!("0x{}", hex::encode(pubkey));
 
-                let key_pair = KeyPair::from_private(private)
-                    .map_err(|e| DerivePrivKeyError::Internal {
-                        reason: format!("Error creating key pair from secret: {}", e),
-                    })?;
-
-                let pubkey_slice = key_pair.public_slice();
-                let pubkey: [u8; 33] = pubkey_slice
-                    .try_into()
-                    .map_err(|_| DerivePrivKeyError::Internal {
-                        reason: "Error converting pubkey slice to array".to_string(),
-                    })?;
-
-                let address = self
-                    .address_from_pubkey(&pubkey.into())
-                    .map_err(|e| DerivePrivKeyError::Internal {
-                        reason: format!("Error getting address from pubkey: {}", e),
-                    })?;
-
-                let priv_key_wif = key_pair.private().to_string();
-                let priv_key_hex = format!("0x{}", hex::encode(key_pair.private_bytes()));
-
-                let priv_key = if self.uses_utxo_format() { priv_key_wif } else { priv_key_hex };
-
-                let pub_key = if self.uses_utxo_format() {
-                    hex::encode(pubkey)
-                } else {
-                    format!("0x{}", hex::encode(pubkey))
-                };
-
-                let response = DerivedPrivKey {
-                    coin: self.ticker().to_string(),
-                    address: address.to_string(),
-                    derivation_path: path_to_address.to_string(),
-                    priv_key,
-                    pub_key,
-                };
-                Ok(response)
-            },
-        }
+            let response = DerivedPrivKey {
+                coin: coin.ticker().to_string(),
+                address: address.to_string(),
+                derivation_path: path_to_address.to_string(),
+                priv_key: priv_key_hex,
+                pub_key: pub_key_hex,
+            };
+            Ok(response)
+        },
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => MmError::err(DerivePrivKeyError::HwWalletNotAllowed),
     }
 }
