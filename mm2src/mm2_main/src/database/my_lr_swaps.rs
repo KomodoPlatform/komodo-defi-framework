@@ -12,8 +12,6 @@ pub const LR_SWAP_MIGRATION: &[&str] = &[
     "ALTER TABLE my_swaps ADD COLUMN lr_swap_1 TEXT;",
 ];
 
-// NOTE: 'maker_volume' unused for now
-// NOTE: 'taker_volume' used as source_volume
 const INSERT_LR_SWAP: &str = r#"INSERT INTO my_swaps (
     my_coin,
     other_coin,
@@ -46,8 +44,7 @@ pub(crate) fn insert_new_lr_swap(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> 
 }
 
 /// The SQL query selecting swap with LR required to re-initialize the swap e.g., on restart.
-/// TODO: 'maker_volume' is not set for now, add estimation for it
-/// NOTE: 'taker_volume' used as source_volume
+/// NOTE: the 'taker_volume' db field is used as source_volume and the 'maker_volume' db field is used as destination_volume
 pub(crate) const SELECT_LR_SWAP_BY_UUID: &str = r#"SELECT
     my_coin,
     other_coin,
