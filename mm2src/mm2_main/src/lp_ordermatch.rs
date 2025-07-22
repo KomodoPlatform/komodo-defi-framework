@@ -40,7 +40,7 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::StreamingManager;
+use mm2_event_stream::{DeriveStreamerId, StreamingManager};
 use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
@@ -1753,6 +1753,7 @@ pub struct MakerOrder {
     pub swap_version: SwapVersion,
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
+    timeout_in_minutes: Option<u16>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1768,6 +1769,7 @@ pub struct MakerOrderBuilder<'a> {
     swap_version: u8,
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
+    timeout_in_minutes: Option<u16>,
 }
 
 /// Contains extra and/or optional metadata (e.g., protocol-specific information) that can
@@ -1930,6 +1932,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SWAP_VERSION_DEFAULT,
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
+            timeout_in_minutes: None,
         }
     }
 
@@ -1967,6 +1970,8 @@ impl<'a> MakerOrderBuilder<'a> {
         self.rel_orderbook_ticker = rel_orderbook_ticker;
         self
     }
+
+    pub fn set_timeout(&mut self, timeout_in_minutes: u16) { self.timeout_in_minutes = Some(timeout_in_minutes); }
 
     /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
     /// However, if user has not specified in the config to use TPU V2,
@@ -2033,6 +2038,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
+            timeout_in_minutes: self.timeout_in_minutes,
         })
     }
 
@@ -2060,6 +2066,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
+            timeout_in_minutes: self.timeout_in_minutes,
         }
     }
 }
@@ -2194,6 +2201,7 @@ impl From<TakerOrder> for MakerOrder {
                 // TODO: Add test coverage for this once we have an integration test for this feature.
                 #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: taker_order.request.order_metadata,
+                timeout_in_minutes: None,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2220,6 +2228,7 @@ impl From<TakerOrder> for MakerOrder {
                     // TODO: Add test coverage for this once we have an integration test for this feature.
                     #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: taker_order.request.order_metadata,
+                    timeout_in_minutes: None,
                 }
             },
         }
@@ -2731,9 +2740,10 @@ impl Orderbook {
         self.unordered.entry(base_rel).or_default().insert(order.uuid);
 
         self.streaming_manager
-            .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {
-                OrderbookItemChangeEvent::NewOrUpdatedItem(Box::new(order.clone().into()))
-            })
+            .send_fn(
+                &OrderbookStreamer::derive_streamer_id((&order.base, &order.rel)),
+                || OrderbookItemChangeEvent::NewOrUpdatedItem(Box::new(order.clone().into())),
+            )
             .ok();
         self.order_set.insert(order.uuid, order);
     }
@@ -2797,9 +2807,10 @@ impl Orderbook {
         }
 
         self.streaming_manager
-            .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {
-                OrderbookItemChangeEvent::RemovedItem(order.uuid)
-            })
+            .send_fn(
+                &OrderbookStreamer::derive_streamer_id((&order.base, &order.rel)),
+                || OrderbookItemChangeEvent::RemovedItem(order.uuid),
+            )
             .ok();
         Some(order)
     }
@@ -2962,7 +2973,7 @@ impl OrdermatchContext {
 }
 
 pub struct MakerOrdersContext {
-    orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
+    orders: TimedMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
     /// The `check_balance_update_loop` future abort handles associated stored by corresponding tickers.
@@ -2976,7 +2987,7 @@ impl MakerOrdersContext {
         let balance_loops = ctx.abortable_system.create_subsystem()?;
 
         Ok(MakerOrdersContext {
-            orders: HashMap::new(),
+            orders: TimedMap::new_with_map_kind(timed_map::MapKind::FxHashMap),
             order_tickers: HashMap::new(),
             count_by_tickers: HashMap::new(),
             balance_loops,
@@ -2988,7 +2999,21 @@ impl MakerOrdersContext {
 
         self.order_tickers.insert(order.uuid, order.base.clone());
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
-        self.orders.insert(order.uuid, Arc::new(AsyncMutex::new(order)));
+
+        if let Some(t) = order.timeout_in_minutes {
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
+            self.orders.insert_expirable_unchecked(
+                order.uuid,
+                Arc::new(AsyncMutex::new(order)),
+                Duration::from_secs(t as u64 * 60),
+            );
+        } else {
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
+            self.orders
+                .insert_constant_unchecked(order.uuid, Arc::new(AsyncMutex::new(order)));
+        }
     }
 
     fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> { self.orders.get(uuid) }
@@ -3562,6 +3587,19 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         handle_timed_out_maker_matches(ctx.clone(), &ordermatch_ctx).await;
         check_balance_for_maker_orders(ctx.clone(), &ordermatch_ctx).await;
 
+        let expired_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.drop_expired_entries();
+
+        for (uuid, order_mutex) in expired_orders {
+            log::info!("Order '{uuid}' is expired, cancelling");
+
+            let order = order_mutex.lock().await;
+            maker_order_cancelled_p2p_notify(&ctx, &order);
+            delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Expired)
+                .compat()
+                .await
+                .ok();
+        }
+
         {
             // remove "timed out" pubkeys states with their orders from orderbook
             let mut orderbook = ordermatch_ctx.orderbook.lock();
@@ -3592,9 +3630,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut to_cancel = Vec::new();
             {
                 let orderbook = ordermatch_ctx.orderbook.lock();
-                for (uuid, _) in ordermatch_ctx.maker_orders_ctx.lock().orders.iter() {
-                    if !orderbook.order_set.contains_key(uuid) {
-                        missing_uuids.push(*uuid);
+                for uuid in ordermatch_ctx.maker_orders_ctx.lock().orders.keys() {
+                    if !orderbook.order_set.contains_key(&uuid) {
+                        missing_uuids.push(uuid);
                     }
                 }
             }
@@ -3902,7 +3940,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                 };
 
                 ctx.event_stream_manager
-                    .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
                         OrderStatusEvent::TakerMatch(taker_match.clone())
                     })
                     .ok();
@@ -3957,7 +3995,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     }
 
     ctx.event_stream_manager
-        .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
+        .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
             OrderStatusEvent::TakerConnected(order_match.clone())
         })
         .ok();
@@ -4073,7 +4111,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 };
 
                 ctx.event_stream_manager
-                    .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
                         OrderStatusEvent::MakerMatch(maker_match.clone())
                     })
                     .ok();
@@ -4144,7 +4182,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
         let order_match = order_match.clone();
 
         ctx.event_stream_manager
-            .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
+            .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
                 OrderStatusEvent::MakerConnected(order_match.clone())
             })
             .ok();
@@ -4795,6 +4833,7 @@ pub struct SetPriceReq {
     rel_nota: Option<bool>,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    timeout_in_minutes: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -5059,6 +5098,11 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+
+    if let Some(t) = req.timeout_in_minutes {
+        builder.set_timeout(t);
+    }
+
     if !ctx.use_trading_proto_v2() {
         builder.set_legacy_swap_v();
     }
@@ -5349,6 +5393,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
+    Expired,
 }
 
 #[derive(Display)]

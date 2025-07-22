@@ -3105,6 +3105,12 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid fee parameters: {}", reason)]
+    InvalidFee {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<Json>,
+    },
     #[display(fmt = "Invalid memo field: {}", _0)]
     InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
@@ -3198,6 +3204,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidFee { .. }
             | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
@@ -3292,6 +3299,25 @@ impl From<EthGasDetailsErr> for WithdrawError {
     fn from(e: EthGasDetailsErr) -> Self {
         match e {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthGasDetailsErr::AmountTooLow { amount, threshold } => WithdrawError::AmountTooLow { amount, threshold },
+            EthGasDetailsErr::GasFeeCapTooLow {
+                provided_fee_cap,
+                required_base_fee,
+            } => {
+                let reason = "Provided gas fee cap is less than the required network base fee.".to_string();
+                let details = json!({
+                    "provided_fee_cap_gwei": provided_fee_cap.to_string(),
+                    "required_base_fee_gwei": required_base_fee.to_string()
+                });
+                WithdrawError::InvalidFee {
+                    reason,
+                    details: Some(details),
+                }
+            },
+            EthGasDetailsErr::GasFeeCapBelowBaseFee => {
+                let reason = "The provided 'max fee per gas' is too low for current network conditions.".to_string();
+                WithdrawError::InvalidFee { reason, details: None }
+            },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
             EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,

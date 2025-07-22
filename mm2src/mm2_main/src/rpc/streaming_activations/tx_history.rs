@@ -9,6 +9,7 @@ use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
+use mm2_event_stream::DeriveStreamerId;
 
 #[derive(Deserialize)]
 pub struct EnableTxHistoryStreamingRequest {

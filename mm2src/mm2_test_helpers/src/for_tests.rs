@@ -3617,6 +3617,7 @@ pub async fn set_price(
     price: &str,
     vol: &str,
     max: bool,
+    timeout_in_minutes: Option<u16>,
 ) -> SetPriceResponse {
     let request = mm
         .rpc(&json!({
@@ -3627,6 +3628,7 @@ pub async fn set_price(
             "price": price,
             "volume": vol,
             "max": max,
+            "timeout_in_minutes": timeout_in_minutes,
         }))
         .await
         .unwrap();

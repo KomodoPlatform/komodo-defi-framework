@@ -24,6 +24,7 @@ use derive_more::Display;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use mm2_libp2p::Secp256k1PubkeySerialize;
 use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
@@ -793,9 +794,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         // Send a notification to the swap status streamer about a new event.
         self.ctx
             .event_stream_manager
-            .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV2 {
-                uuid: self.uuid,
-                event: event.clone(),
+            .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                SwapStatusEvent::MakerV2 {
+                    uuid: self.uuid,
+                    event: event.clone(),
+                }
             })
             .ok();
     }
