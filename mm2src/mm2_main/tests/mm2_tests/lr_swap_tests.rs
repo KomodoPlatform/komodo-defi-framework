@@ -224,7 +224,7 @@ fn test_aggregated_swap_mainnet_polygon_utxo() {
         alice_bal_diff
     );
     assert!(
-        alice_bal_diff < &swap_amount * &"1.20".parse::<BigDecimal>().unwrap(),
+        alice_bal_diff < &swap_amount * "1.20".parse::<BigDecimal>().unwrap(),
         "too low received {}",
         alice_bal_diff
     );
@@ -412,7 +412,7 @@ fn test_aggregated_swap_mainnet_polygon_arbitrum_impl(
             .flatten()
             .cloned()
             .collect::<Vec<_>>();
-        json_asks.push(json!({ "base": &grt_ticker, "orders": &best_asks_1 }));
+        json_asks.push(json!({ "base": &arb_ticker, "orders": &best_asks_1 }));
     } else {
         // using "sell" we get all aave orders as bids:
         let best_orders_res = block_on(best_orders_v2_by_number(&mm_alice, &aave_ticker, "sell", 10, true));

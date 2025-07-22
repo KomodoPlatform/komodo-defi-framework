@@ -65,6 +65,7 @@ impl AskOrBidOrder {
         }
     }
     /// Convert to maker buy price
+    #[allow(unused)]
     pub fn buy_price(&self) -> MmNumber {
         match self {
             AskOrBidOrder::Ask { order, .. } => &MmNumber::from(1) / &order.price.rational.clone().into(),

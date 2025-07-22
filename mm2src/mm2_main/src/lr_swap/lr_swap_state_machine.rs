@@ -1024,7 +1024,11 @@ impl AggTakerSwapStateMachine {
     }
 
     /// Start nested atomic swap by calling lp_auto_buy. The actual volume is determined on previous states
+    /// The volume is always in the taker sell coins.
+    /// TODO: add slippage support
     async fn start_lp_auto_buy(&self, volume: MmNumber, _slippage: f32) -> MmResult<SellBuyResponse, LrSwapError> {
+        const TAKER_ACTION: TakerAction = TakerAction::Sell;
+
         let base_coin = lp_coinfind_or_err(&self.ctx, &self.atomic_swap.base)
             .await
             .map_mm_err()?;
@@ -1047,11 +1051,11 @@ impl AggTakerSwapStateMachine {
             "{LOG_PREFIX} volume={} self.atomic_swap.price={} action={:?} base={} rel={}",
             volume.to_decimal(),
             self.atomic_swap.price.to_decimal(),
-            self.atomic_swap.action,
+            TAKER_ACTION,
             self.atomic_swap.base,
             self.atomic_swap.rel
         );
-        let (taker_amount, sell_base, sell_rel) = match self.atomic_swap.action {
+        let (taker_amount, sell_base, sell_rel) = match TAKER_ACTION {
             TakerAction::Buy => (&volume * &self.atomic_swap.price, rel_coin.clone(), base_coin.clone()),
             TakerAction::Sell => (volume.clone(), base_coin.clone(), rel_coin.clone()),
         };
@@ -1077,7 +1081,7 @@ impl AggTakerSwapStateMachine {
             "{LOG_PREFIX} starting atomic swap for {}/{}, action {:?}, amount {}",
             self.atomic_swap.base,
             self.atomic_swap.rel,
-            self.atomic_swap.action,
+            TAKER_ACTION,
             volume.to_decimal()
         );
         let sell_buy_req = lr_helpers::make_atomic_swap_request(
@@ -1085,7 +1089,7 @@ impl AggTakerSwapStateMachine {
             self.atomic_swap.rel.clone(),
             self.atomic_swap.price.clone(),
             volume,
-            self.atomic_swap.action.clone(),
+            TAKER_ACTION,
             self.atomic_swap.match_by.clone(),
             self.atomic_swap.order_type.clone(),
         );
@@ -1196,8 +1200,8 @@ impl AggTakerSwapStateMachine {
         let dex_fee_rate = DexFee::dex_fee_rate(&taker_ticker, &maker_ticker);
         // Recalculate swap_volume with the tarde fees removed:
         let taker_volume = volume_with_fees.clone() / (MmNumber::from("1") + dex_fee_rate);
-        println!(
-            "deduct_fees volume_with_fees={volume_with_fees} taker_volume={taker_volume} dex_fee_diff={}",
+        debug!(
+            "{maker_ticker}/{taker_ticker} deduct_fees volume_with_fees={volume_with_fees} taker_volume={taker_volume} dex_fee_diff={}",
             &volume_with_fees - &taker_volume
         );
 
