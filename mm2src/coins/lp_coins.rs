@@ -3737,8 +3737,6 @@ impl MmCoinEnum {
 
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
 
-
-
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 
     /// Determines the secret hash algorithm for a coin, prioritizing specific algorithms for certain protocols.
