@@ -104,6 +104,8 @@ pub enum OfflineKeysError {
     MetamaskNotSupported,
     #[display(fmt = "Missing prefix value for {}: {}", ticker, prefix_type)]
     MissingPrefixValue { ticker: String, prefix_type: String },
+    #[display(fmt = "Invalid parameters: start_index and end_index are only valid for HD mode")]
+    InvalidParametersForMode,
 }
 
 #[derive(Debug, Clone)]
@@ -517,6 +519,9 @@ pub async fn get_private_keys(
 ) -> Result<GetPrivateKeysResponse, MmError<OfflineKeysError>> {
     match req.mode {
         KeyExportMode::Standard => {
+            if req.start_index.is_some() || req.end_index.is_some() || req.account_index.is_some() {
+                return MmError::err(OfflineKeysError::InvalidParametersForMode);
+            }
             let offline_req = OfflineKeysRequest {
                 coins: req.coins,
             };
@@ -540,6 +545,9 @@ pub async fn get_private_keys(
             Ok(GetPrivateKeysResponse::Hd(response))
         },
         KeyExportMode::Iguana => {
+            if req.start_index.is_some() || req.end_index.is_some() || req.account_index.is_some() {
+                return MmError::err(OfflineKeysError::InvalidParametersForMode);
+            }
             let offline_req = OfflineKeysRequest {
                 coins: req.coins,
             };
