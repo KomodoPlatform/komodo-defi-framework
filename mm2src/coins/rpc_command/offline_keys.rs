@@ -541,9 +541,7 @@ pub async fn get_private_keys(
         },
         KeyExportMode::Hd => {
             let start_index = req.start_index.unwrap_or(0);
-            let end_index = req.end_index.unwrap_or_else(|| {
-                start_index.saturating_add(10)
-            });
+            let end_index = req.end_index.unwrap_or_else(|| start_index.saturating_add(10));
             let account_index = req.account_index.unwrap_or(0);
 
             if start_index > end_index {
