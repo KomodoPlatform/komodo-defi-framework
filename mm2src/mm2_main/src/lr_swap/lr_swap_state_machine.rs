@@ -896,7 +896,6 @@ impl AggTakerSwapStateMachine {
     }
 
     /// Source coin or token ticker in aggregated swap (before the first liquidity routing)
-    #[allow(unused)]
     fn source_coin(&self) -> Ticker {
         if let Some(ref lr_swap_0) = self.lr_swap_0 {
             lr_swap_0.src.clone()
@@ -906,7 +905,6 @@ impl AggTakerSwapStateMachine {
     }
 
     /// Destination coin or token ticker in aggregated swap (after the final liquidity routing)
-    #[allow(unused)]
     fn destination_coin(&self) -> Ticker {
         if let Some(ref lr_swap_1) = self.lr_swap_1 {
             lr_swap_1.dst.clone()
