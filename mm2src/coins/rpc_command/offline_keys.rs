@@ -1,10 +1,11 @@
+use crate::tendermint;
 use crate::CoinProtocol;
 use crate::CoinsContext;
-use crate::tendermint;
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
-use crypto::privkey::{key_pair_from_seed, key_pair_from_secret, bip39_seed_from_passphrase};
+use crypto::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, key_pair_from_seed};
+use crypto::{Bip32DerPathOps, GlobalHDAccountCtx, StandardHDPath};
 use derive_more::Display;
 use http::StatusCode;
 use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes, Private};
@@ -12,7 +13,6 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use crypto::{GlobalHDAccountCtx, StandardHDPath, Bip32DerPathOps};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -123,7 +123,11 @@ impl HttpStatusCode for OfflineKeysError {
     }
 }
 
-fn extract_prefix_values(ctx: &MmArc, ticker: &str, coin_conf: &Json) -> Result<Option<PrefixValues>, OfflineKeysError> {
+fn extract_prefix_values(
+    ctx: &MmArc,
+    ticker: &str,
+    coin_conf: &Json,
+) -> Result<Option<PrefixValues>, OfflineKeysError> {
     let protocol: CoinProtocol = match serde_json::from_value(coin_conf["protocol"].clone()) {
         Ok(protocol) => protocol,
         Err(e) => {
@@ -164,11 +168,9 @@ fn extract_prefix_values(ctx: &MmArc, ticker: &str, coin_conf: &Json) -> Result<
                 p2sh_type,
             }))
         },
-        CoinProtocol::TENDERMINT(protocol_info) => {
-            Ok(Some(PrefixValues::Tendermint {
-                account_prefix: protocol_info.account_prefix.clone(),
-            }))
-        },
+        CoinProtocol::TENDERMINT(protocol_info) => Ok(Some(PrefixValues::Tendermint {
+            account_prefix: protocol_info.account_prefix.clone(),
+        })),
         CoinProtocol::TENDERMINTTOKEN(token_info) => {
             let platform_conf = crate::coin_conf(ctx, &token_info.platform);
             if platform_conf.is_null() {
@@ -177,17 +179,17 @@ fn extract_prefix_values(ctx: &MmArc, ticker: &str, coin_conf: &Json) -> Result<
                     token_info.platform, ticker
                 )));
             }
-            let platform_protocol: CoinProtocol = serde_json::from_value(platform_conf["protocol"].clone())
-                .map_err(|e| OfflineKeysError::ProtocolParseError {
-                    ticker: ticker.to_string(),
-                    error: format!("Failed to parse platform protocol: {}", e),
+            let platform_protocol: CoinProtocol =
+                serde_json::from_value(platform_conf["protocol"].clone()).map_err(|e| {
+                    OfflineKeysError::ProtocolParseError {
+                        ticker: ticker.to_string(),
+                        error: format!("Failed to parse platform protocol: {}", e),
+                    }
                 })?;
             match platform_protocol {
-                CoinProtocol::TENDERMINT(platform_info) => {
-                    Ok(Some(PrefixValues::Tendermint {
-                        account_prefix: platform_info.account_prefix.clone(),
-                    }))
-                },
+                CoinProtocol::TENDERMINT(platform_info) => Ok(Some(PrefixValues::Tendermint {
+                    account_prefix: platform_info.account_prefix.clone(),
+                })),
                 _ => Err(OfflineKeysError::Internal(format!(
                     "Platform protocol for {} is not TENDERMINT: {:?}",
                     ticker, platform_protocol
@@ -257,32 +259,32 @@ async fn offline_hd_keys_export_internal(
 
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
 
-        let (_, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase)
-            .map_err(|e| OfflineKeysError::KeyDerivationFailed {
+        let (_, global_hd_ctx) =
+            GlobalHDAccountCtx::new(passphrase).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                 ticker: ticker.clone(),
                 error: format!("Failed to create HD context: {}", e),
             })?;
 
         for index in start_index..=end_index {
             let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
-            let hd_path = StandardHDPath::from_str(&derivation_path)
-                .map_err(|e| OfflineKeysError::KeyDerivationFailed {
+            let hd_path =
+                StandardHDPath::from_str(&derivation_path).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                     ticker: ticker.clone(),
                     error: format!("Invalid derivation path {}: {}", derivation_path, e),
                 })?;
-            
+
             let key_pair = {
-                let secret = global_hd_ctx.derive_secp256k1_secret(&hd_path.to_derivation_path())
+                let secret = global_hd_ctx
+                    .derive_secp256k1_secret(&hd_path.to_derivation_path())
                     .map_err(|e| OfflineKeysError::KeyDerivationFailed {
                         ticker: ticker.clone(),
                         error: format!("Failed to derive key at path {}: {}", derivation_path, e),
                     })?;
-                
-                key_pair_from_secret(&secret.take())
-                    .map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                        ticker: ticker.clone(),
-                        error: format!("Failed to create key pair: {}", e),
-                    })?
+
+                key_pair_from_secret(&secret.take()).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                    ticker: ticker.clone(),
+                    error: format!("Failed to create key pair: {}", e),
+                })?
             };
 
             let pubkey = key_pair.public().to_vec().to_hex().to_string();
@@ -314,10 +316,12 @@ async fn offline_hd_keys_export_internal(
                     (address.to_string(), private.to_string())
                 },
                 None => {
-                    let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone())
-                        .map_err(|e| OfflineKeysError::ProtocolParseError {
-                            ticker: ticker.to_string(),
-                            error: e.to_string(),
+                    let protocol: CoinProtocol =
+                        serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
+                            OfflineKeysError::ProtocolParseError {
+                                ticker: ticker.to_string(),
+                                error: e.to_string(),
+                            }
                         })?;
 
                     let address = match protocol {
@@ -341,9 +345,9 @@ async fn offline_hd_keys_export_internal(
                     let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
                         .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                         .to_string();
-                    
+
                     let priv_key = key_pair.private().secret.to_hex();
-                    
+
                     (address, priv_key)
                 },
             };
@@ -422,11 +426,12 @@ async fn offline_iguana_keys_export_internal(
                 (address.to_string(), private.to_string())
             },
             None => {
-                let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone())
-                    .map_err(|e| OfflineKeysError::ProtocolParseError {
+                let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
+                    OfflineKeysError::ProtocolParseError {
                         ticker: ticker.to_string(),
                         error: e.to_string(),
-                    })?;
+                    }
+                })?;
 
                 let address = match protocol {
                     CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
@@ -449,9 +454,9 @@ async fn offline_iguana_keys_export_internal(
                 let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
                     .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                     .to_string();
-                
+
                 let priv_key = key_pair.private().secret.to_hex();
-                
+
                 (address, priv_key)
             },
         };
@@ -478,7 +483,7 @@ pub async fn get_private_keys(
             KeyExportMode::Iguana
         }
     });
-    
+
     match mode {
         KeyExportMode::Hd => {
             let start_index = req.start_index.unwrap_or(0);
@@ -514,13 +519,17 @@ mod tests {
     use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json::json;
 
-    const TEST_MNEMONIC: &str = "prosper boss develop coconut warrior silly cabin trial person glass toilet mixed push spirit love";
+    const TEST_MNEMONIC: &str =
+        "prosper boss develop coconut warrior silly cabin trial person glass toilet mixed push spirit love";
 
     #[tokio::test]
     async fn test_btc_hd_key_derivation() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
@@ -557,13 +566,7 @@ mod tests {
             "p2shtype": 5
         });
 
-        let response = offline_hd_keys_export_internal(
-            ctx.clone(),
-            vec!["BTC".to_string()],
-            0,
-            2,
-            0
-        ).await;
+        let response = offline_hd_keys_export_internal(ctx.clone(), vec!["BTC".to_string()], 0, 2, 0).await;
 
         match response {
             Ok(hd_response) => {
@@ -585,9 +588,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_btc_segwit_hd_key_derivation() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["BTC-segwit".to_string()],
@@ -613,13 +619,7 @@ mod tests {
             "Kz937rcd2Hack7TUgkcg3YAiSbTGGJciMCzFbu76FkJgZkwb5zES",
         ];
 
-        let response = offline_hd_keys_export_internal(
-            ctx.clone(),
-            vec!["BTC-segwit".to_string()],
-            0,
-            2,
-            0
-        ).await;
+        let response = offline_hd_keys_export_internal(ctx.clone(), vec!["BTC-segwit".to_string()], 0, 2, 0).await;
 
         match response {
             Ok(hd_response) => {
@@ -641,9 +641,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_eth_hd_key_derivation() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["ETH".to_string()],
@@ -669,13 +672,7 @@ mod tests {
             "0xddb38472a7d7095ad466b4a4e19f85f612f87e04a23c75eac8e7957d31ee22f0",
         ];
 
-        let response = offline_hd_keys_export_internal(
-            ctx.clone(),
-            vec!["ETH".to_string()],
-            0,
-            2,
-            0
-        ).await;
+        let response = offline_hd_keys_export_internal(ctx.clone(), vec!["ETH".to_string()], 0, 2, 0).await;
 
         match response {
             Ok(hd_response) => {
@@ -697,9 +694,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_atom_hd_key_derivation() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["ATOM".to_string()],
@@ -729,8 +729,9 @@ mod tests {
             vec!["ATOM".to_string()],
             0,
             1, // Only test first 2 since third vector is incomplete
-            0
-        ).await;
+            0,
+        )
+        .await;
 
         match response {
             Ok(hd_response) => {
@@ -750,9 +751,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_iguana_key_derivation() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let req = OfflineKeysRequest {
             coins: vec!["BTC".to_string()],
@@ -775,9 +779,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_cases() {
-        let ctx = MmCtxBuilder::new().with_conf(json!({
-            "passphrase": TEST_MNEMONIC,
-        })).build().unwrap();
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "passphrase": TEST_MNEMONIC,
+            }))
+            .build()
+            .unwrap();
 
         let invalid_range_req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
