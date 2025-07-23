@@ -23,7 +23,8 @@ pub enum KeyExportMode {
 #[derive(Debug, Deserialize)]
 pub struct GetPrivateKeysRequest {
     pub coins: Vec<String>,
-    pub mode: KeyExportMode,
+    #[serde(default)]
+    pub mode: Option<KeyExportMode>,
     #[serde(default)]
     pub start_index: Option<u32>,
     #[serde(default)]
@@ -428,7 +429,15 @@ pub async fn get_private_keys(
     ctx: MmArc,
     req: GetPrivateKeysRequest,
 ) -> Result<GetPrivateKeysResponse, MmError<OfflineKeysError>> {
-    match req.mode {
+    let mode = req.mode.unwrap_or_else(|| {
+        if ctx.enable_hd() {
+            KeyExportMode::Hd
+        } else {
+            KeyExportMode::Iguana
+        }
+    });
+    
+    match mode {
         KeyExportMode::Hd => {
             let start_index = req.start_index.unwrap_or(0);
             let end_index = req.end_index.unwrap_or_else(|| start_index.saturating_add(10));
