@@ -541,14 +541,16 @@ pub async fn get_private_keys(
         },
         KeyExportMode::Hd => {
             let start_index = req.start_index.unwrap_or(0);
-            let end_index = req.end_index.unwrap_or(start_index + 10);
+            let end_index = req.end_index.unwrap_or_else(|| {
+                start_index.saturating_add(10)
+            });
             let account_index = req.account_index.unwrap_or(0);
 
             if start_index > end_index {
                 return MmError::err(OfflineKeysError::InvalidHdRange { start_index, end_index });
             }
 
-            if end_index - start_index > 100 {
+            if end_index.saturating_sub(start_index) > 100 {
                 return MmError::err(OfflineKeysError::HdRangeTooLarge);
             }
 
