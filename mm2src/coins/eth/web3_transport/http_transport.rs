@@ -1,5 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+use crate::eth::WEB3_REQUEST_TIMEOUT_S;
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
-#[cfg(not(target_arch = "wasm32"))] use crate::eth::WEB3_REQUEST_TIMEOUT_S;
 use common::APPLICATION_JSON;
 use common::X_AUTH_PAYLOAD;
 use http::header::CONTENT_TYPE;
