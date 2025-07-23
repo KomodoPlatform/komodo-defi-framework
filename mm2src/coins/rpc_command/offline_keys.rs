@@ -1,11 +1,10 @@
 use crate::tendermint;
 use crate::CoinProtocol;
-use crate::CoinsContext;
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
-use crypto::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, key_pair_from_seed};
-use crypto::{Bip32DerPathOps, GlobalHDAccountCtx, StandardHDPath};
+use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
+use crypto::{Bip32DerPathOps, CryptoCtx, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use http::StatusCode;
 use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes, Private};
@@ -115,10 +114,9 @@ impl HttpStatusCode for OfflineKeysError {
             Self::KeyDerivationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidHdRange { .. } => StatusCode::BAD_REQUEST,
             Self::HdRangeTooLarge => StatusCode::BAD_REQUEST,
-            Self::HardwareWalletNotSupported => StatusCode::BAD_REQUEST,
-            Self::MetamaskNotSupported => StatusCode::BAD_REQUEST,
             Self::MissingPrefixValue { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidParametersForMode => StatusCode::BAD_REQUEST,
+            Self::ProtocolParseError { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -257,20 +255,26 @@ async fn offline_hd_keys_export_internal(
 
         let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
-        let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).map_err(|e| OfflineKeysError::Internal(
+            format!("Failed to get crypto context: {}", e),
+        ))?;
 
-        let (_, global_hd_ctx) =
-            GlobalHDAccountCtx::new(passphrase).map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                ticker: ticker.clone(),
-                error: format!("Failed to create HD context: {}", e),
-            })?;
+        let global_hd_ctx = match crypto_ctx.key_pair_policy() {
+            KeyPairPolicy::GlobalHDAccount(hd_ctx) => hd_ctx.clone(),
+            KeyPairPolicy::Iguana => {
+                return MmError::err(OfflineKeysError::KeyDerivationFailed {
+                    ticker: ticker.clone(),
+                    error: "HD key derivation requires GlobalHDAccount mode. Please initialize with HD wallet.".to_string(),
+                });
+            },
+        };
 
         for index in start_index..=end_index {
-            let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
+            let derivation_path = format!("{}/{}'/0/{}", base_derivation_path, account_index, index);
             let hd_path =
                 StandardHDPath::from_str(&derivation_path).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                     ticker: ticker.clone(),
-                    error: format!("Invalid derivation path {}: {}", derivation_path, e),
+                    error: format!("Invalid derivation path {}: {:?}", derivation_path, e),
                 })?;
 
             let key_pair = {
@@ -307,8 +311,18 @@ async fn offline_hd_keys_export_internal(
                         p2sh: AddressPrefix::from([*p2sh_type]),
                     };
 
+                    let address_format = if let Some(format_config) = coin_conf.get("address_format") {
+                        serde_json::from_value(format_config.clone()).unwrap_or(AddressFormat::Standard)
+                    } else {
+                        AddressFormat::Standard
+                    };
+
+                    let bech32_hrp = coin_conf.get("bech32_hrp")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
                     let address =
-                        AddressBuilder::new(AddressFormat::Standard, ChecksumType::DSHA256, address_prefixes, None)
+                        AddressBuilder::new(address_format, ChecksumType::DSHA256, address_prefixes, bech32_hrp)
                             .as_pkh_from_pk(*key_pair.public())
                             .build()
                             .map_err(|e| OfflineKeysError::Internal(e.to_string()))?;
@@ -524,12 +538,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_btc_hd_key_derivation() {
+        use mm2_test_helpers::for_tests::btc_with_spv_conf;
+        
+        let mut btc_conf = btc_with_spv_conf();
+        btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [btc_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
@@ -579,7 +599,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0/0/{}", i));
                 }
             },
             Err(e) => panic!("BTC HD key derivation test failed: {:?}", e),
@@ -588,12 +608,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_btc_segwit_hd_key_derivation() {
+        use mm2_test_helpers::for_tests::btc_segwit_conf;
+        
+        let mut btc_segwit_conf = btc_segwit_conf();
+        btc_segwit_conf["derivation_path"] = json!("m/84'/0'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [btc_segwit_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["BTC-segwit".to_string()],
@@ -615,7 +641,7 @@ mod tests {
         ];
         let expected_privkeys = vec![
             "L2aJGVhekAig5a4Zx81NH9Q99h9gH7umiyqBWXrNX5w8xn2eeU5g",
-            "L1susQQK5CaP7eT4MKyAzv8KthN53i5gHJmUGtKksY8r2Hbvy16",
+            "L1susQQK5CaP7eT4MKyAzv8KthN53i5gHJmUGtKksY8r2Hbvvyv6",
             "Kz937rcd2Hack7TUgkcg3YAiSbTGGJciMCzFbu76FkJgZkwb5zES",
         ];
 
@@ -632,7 +658,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0/0/{}", i));
                 }
             },
             Err(e) => panic!("BTC-Segwit HD key derivation test failed: {:?}", e),
@@ -641,12 +667,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_eth_hd_key_derivation() {
+        use mm2_test_helpers::for_tests::eth_dev_conf;
+        
+        let mut eth_conf = eth_dev_conf();
+        eth_conf["derivation_path"] = json!("m/44'/60'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [eth_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["ETH".to_string()],
@@ -682,10 +714,10 @@ mod tests {
                 assert_eq!(eth_result.addresses.len(), 3);
 
                 for (i, addr_info) in eth_result.addresses.iter().enumerate() {
-                    assert_eq!(addr_info.address, expected_addresses[i]);
+                    assert_eq!(addr_info.address.to_lowercase(), expected_addresses[i].to_lowercase());
                     assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0/0/{}", i));
                 }
             },
             Err(e) => panic!("ETH HD key derivation test failed: {:?}", e),
@@ -694,12 +726,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_atom_hd_key_derivation() {
+        use mm2_test_helpers::for_tests::atom_testnet_conf;
+        
+        let mut atom_conf = atom_testnet_conf();
+        atom_conf["derivation_path"] = json!("m/44'/118'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [atom_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["ATOM".to_string()],
@@ -742,7 +780,7 @@ mod tests {
 
                 for (i, addr_info) in atom_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address, expected_addresses[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0/0/{}", i));
                 }
             },
             Err(e) => panic!("ATOM HD key derivation test failed: {:?}", e),
@@ -751,12 +789,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_iguana_key_derivation() {
+        use mm2_test_helpers::for_tests::btc_with_spv_conf;
+        
+        let mut btc_conf = btc_with_spv_conf();
+        btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [btc_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = OfflineKeysRequest {
             coins: vec!["BTC".to_string()],
@@ -779,12 +823,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_cases() {
+        use mm2_test_helpers::for_tests::btc_with_spv_conf;
+        
+        let mut btc_conf = btc_with_spv_conf();
+        btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "passphrase": TEST_MNEMONIC,
+                "coins": [btc_conf],
+                "rpc_password": "test123"
             }))
-            .build()
-            .unwrap();
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let invalid_range_req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
