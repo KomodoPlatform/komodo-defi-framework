@@ -10,7 +10,7 @@ use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes,
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as Json};
+use serde_json::Value as Json;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum KeyExportMode {
@@ -238,7 +238,7 @@ pub async fn offline_keys_export_internal(
             } => {
                 let private = Private {
                     prefix: wif_type,
-                    secret: key_pair.private().secret.clone(),
+                    secret: key_pair.private().secret,
                     compressed: true,
                     checksum_type: ChecksumType::DSHA256,
                 };
@@ -369,7 +369,7 @@ async fn offline_hd_keys_export_internal(
                 } => {
                     let private = Private {
                         prefix: *wif_type,
-                        secret: key_pair.private().secret.clone(),
+                        secret: key_pair.private().secret,
                         compressed: true,
                         checksum_type: ChecksumType::DSHA256,
                     };
@@ -474,7 +474,7 @@ async fn offline_iguana_keys_export_internal(
             } => {
                 let private = Private {
                     prefix: wif_type,
-                    secret: key_pair.private().secret.clone(),
+                    secret: key_pair.private().secret,
                     compressed: true,
                     checksum_type: ChecksumType::DSHA256,
                 };
