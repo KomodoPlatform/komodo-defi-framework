@@ -31,6 +31,8 @@ pub struct GetPrivateKeysRequest {
     pub start_index: Option<u32>,
     #[serde(default)]
     pub end_index: Option<u32>,
+    #[serde(default)]
+    pub account_index: Option<u32>,
 }
 
 fn default_mode() -> KeyExportMode { KeyExportMode::Standard }
@@ -298,6 +300,7 @@ async fn offline_hd_keys_export_internal(
     coins: Vec<String>,
     start_index: u32,
     end_index: u32,
+    account_index: u32,
 ) -> Result<HdKeysResponse, MmError<OfflineKeysError>> {
     if start_index > end_index {
         return MmError::err(OfflineKeysError::InvalidHdRange { start_index, end_index });
@@ -329,7 +332,7 @@ async fn offline_hd_keys_export_internal(
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
 
         for index in start_index..=end_index {
-            let seed = format!("{}{}/{}_{}_{}", passphrase, ticker, index, ticker, index);
+            let seed = format!("{}{}/{}_{}_{}_{}", passphrase, ticker, account_index, index, ticker, index);
 
             let key_pair = {
                 match key_pair_from_seed(&seed) {
@@ -523,6 +526,7 @@ pub async fn get_private_keys(
         KeyExportMode::Hd => {
             let start_index = req.start_index.unwrap_or(0);
             let end_index = req.end_index.unwrap_or(start_index + 10);
+            let account_index = req.account_index.unwrap_or(0);
 
             if start_index > end_index {
                 return MmError::err(OfflineKeysError::InvalidHdRange { start_index, end_index });
@@ -532,7 +536,7 @@ pub async fn get_private_keys(
                 return MmError::err(OfflineKeysError::HdRangeTooLarge);
             }
 
-            let response = offline_hd_keys_export_internal(ctx, req.coins, start_index, end_index).await?;
+            let response = offline_hd_keys_export_internal(ctx, req.coins, start_index, end_index, account_index).await?;
             Ok(GetPrivateKeysResponse::Hd(response))
         },
         KeyExportMode::Iguana => {
