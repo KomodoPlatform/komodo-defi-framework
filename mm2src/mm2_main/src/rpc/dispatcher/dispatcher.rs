@@ -224,6 +224,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
+        "get_private_keys" => handle_mmrpc(ctx, request, coins::rpc_command::offline_keys::get_private_keys).await,
         "get_nft_list" => handle_mmrpc(ctx, request, get_nft_list).await,
         "get_nft_metadata" => handle_mmrpc(ctx, request, get_nft_metadata).await,
         "get_nft_transfers" => handle_mmrpc(ctx, request, get_nft_transfers).await,
