@@ -28,6 +28,7 @@ use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::rpc::wc_commands::{new_connection, ping_session};
 
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
+use coins::rpc_command::offline_keys::get_private_keys;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{account_balance::account_balance,
@@ -224,7 +225,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
-        "get_private_keys" => handle_mmrpc(ctx, request, coins::rpc_command::offline_keys::get_private_keys).await,
+        "get_private_keys" => handle_mmrpc(ctx, request, get_private_keys).await,
         "get_nft_list" => handle_mmrpc(ctx, request, get_nft_list).await,
         "get_nft_metadata" => handle_mmrpc(ctx, request, get_nft_metadata).await,
         "get_nft_transfers" => handle_mmrpc(ctx, request, get_nft_transfers).await,
