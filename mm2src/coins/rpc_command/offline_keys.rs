@@ -337,11 +337,13 @@ async fn offline_hd_keys_export_internal(
             });
         }
 
-        let base_derivation_path = coin_conf["derivation_path"].as_str()
-            .ok_or_else(|| OfflineKeysError::KeyDerivationFailed {
-                ticker: ticker.clone(),
-                error: "Invalid derivation_path format in coin configuration".to_string(),
-            })?;
+        let base_derivation_path =
+            coin_conf["derivation_path"]
+                .as_str()
+                .ok_or_else(|| OfflineKeysError::KeyDerivationFailed {
+                    ticker: ticker.clone(),
+                    error: "Invalid derivation_path format in coin configuration".to_string(),
+                })?;
 
         let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
@@ -417,7 +419,7 @@ async fn offline_hd_keys_export_internal(
             };
 
             let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
-            
+
             addresses.push(HdAddressInfo {
                 derivation_path,
                 pubkey,
