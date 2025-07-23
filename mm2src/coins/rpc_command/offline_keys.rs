@@ -1,5 +1,6 @@
 use crate::CoinProtocol;
 use crate::CoinsContext;
+use crate::tendermint;
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
@@ -24,11 +25,8 @@ pub enum KeyExportMode {
 pub struct GetPrivateKeysRequest {
     pub coins: Vec<String>,
     pub mode: Option<KeyExportMode>,
-    #[serde(default)]
     pub start_index: Option<u32>,
-    #[serde(default)]
     pub end_index: Option<u32>,
-    #[serde(default)]
     pub account_index: Option<u32>,
 }
 
@@ -107,6 +105,7 @@ pub enum OfflineKeysError {
 enum PrefixValues {
     Utxo { wif_type: u8, pub_type: u8, p2sh_type: u8 },
     NonUtxo,
+    Tendermint { account_prefix: String },
 }
 
 impl HttpStatusCode for OfflineKeysError {
@@ -125,7 +124,7 @@ impl HttpStatusCode for OfflineKeysError {
     }
 }
 
-fn extract_prefix_values(ticker: &str, coin_conf: &Json) -> Result<PrefixValues, OfflineKeysError> {
+fn extract_prefix_values(ctx: &MmArc, ticker: &str, coin_conf: &Json) -> Result<PrefixValues, OfflineKeysError> {
     let protocol: CoinProtocol = match serde_json::from_value(coin_conf["protocol"].clone()) {
         Ok(protocol) => protocol,
         Err(_) => {
@@ -165,6 +164,36 @@ fn extract_prefix_values(ticker: &str, coin_conf: &Json) -> Result<PrefixValues,
                 pub_type,
                 p2sh_type,
             })
+        },
+        CoinProtocol::TENDERMINT(protocol_info) => {
+            Ok(PrefixValues::Tendermint {
+                account_prefix: protocol_info.account_prefix.clone(),
+            })
+        },
+        CoinProtocol::TENDERMINTTOKEN(token_info) => {
+            let platform_conf = crate::coin_conf(ctx, &token_info.platform);
+            if platform_conf.is_null() {
+                return Err(OfflineKeysError::Internal(format!(
+                    "Platform {} configuration not found for {}",
+                    token_info.platform, ticker
+                )));
+            }
+            let platform_protocol: CoinProtocol = serde_json::from_value(platform_conf["protocol"].clone())
+                .map_err(|_| OfflineKeysError::Internal(format!(
+                    "Failed to parse platform protocol for {}",
+                    ticker
+                )))?;
+            match platform_protocol {
+                CoinProtocol::TENDERMINT(platform_info) => {
+                    Ok(PrefixValues::Tendermint {
+                        account_prefix: platform_info.account_prefix.clone(),
+                    })
+                },
+                _ => Err(OfflineKeysError::Internal(format!(
+                    "Platform protocol for {} is not TENDERMINT: {:?}",
+                    ticker, platform_protocol
+                ))),
+            }
         },
         _ => Err(OfflineKeysError::Internal(format!(
             "Unsupported protocol for {}: {:?}",
@@ -209,7 +238,7 @@ async fn offline_hd_keys_export_internal(
         let (coin_conf, _) = coin_conf_with_protocol(&ctx, ticker, None)
             .map_err(|_| OfflineKeysError::CoinConfigNotFound(ticker.clone()))?;
 
-        let prefix_values = extract_prefix_values(ticker, &coin_conf)?;
+        let prefix_values = extract_prefix_values(&ctx, ticker, &coin_conf)?;
 
         if coin_conf["derivation_path"].is_null() {
             return MmError::err(OfflineKeysError::KeyDerivationFailed {
@@ -297,6 +326,15 @@ async fn offline_hd_keys_export_internal(
 
                     (address, priv_key)
                 },
+                PrefixValues::Tendermint { account_prefix } => {
+                    let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
+                        .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
+                        .to_string();
+                    
+                    let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                    
+                    (address, priv_key)
+                },
             };
 
             let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
@@ -328,7 +366,7 @@ async fn offline_iguana_keys_export_internal(
         let (coin_conf, _) = coin_conf_with_protocol(&ctx, ticker, None)
             .map_err(|_| OfflineKeysError::CoinConfigNotFound(ticker.clone()))?;
 
-        let prefix_values = extract_prefix_values(ticker, &coin_conf)?;
+        let prefix_values = extract_prefix_values(&ctx, ticker, &coin_conf)?;
 
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
 
@@ -391,6 +429,15 @@ async fn offline_iguana_keys_export_internal(
 
                 let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
 
+                (address, priv_key)
+            },
+            PrefixValues::Tendermint { account_prefix } => {
+                let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
+                    .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
+                    .to_string();
+                
+                let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                
                 (address, priv_key)
             },
         };
