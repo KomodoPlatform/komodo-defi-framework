@@ -5542,7 +5542,7 @@ pub async fn set_requires_notarization(ctx: MmArc, req: Json) -> Result<Response
 
 pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    
+
     // Try to get activated coin first (existing behavior for backwards compatibility)
     match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(coin)) => {
@@ -5556,7 +5556,7 @@ pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         },
         Ok(None) | Err(_) => {
             use crate::rpc_command::offline_keys::{offline_keys_export_internal, OfflineKeysRequest};
-            
+
             let offline_req = OfflineKeysRequest {
                 coins: vec![ticker.clone()],
             };
@@ -5576,7 +5576,7 @@ pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                 },
                 Err(err) => ERR!("Failed to derive offline key for {}: {}", ticker, err),
             }
-        }
+        },
     }
 }
 

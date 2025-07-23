@@ -125,6 +125,7 @@ impl HttpStatusCode for OfflineKeysError {
             Self::HardwareWalletNotSupported => StatusCode::BAD_REQUEST,
             Self::MetamaskNotSupported => StatusCode::BAD_REQUEST,
             Self::MissingPrefixValue { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidParametersForMode => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -334,7 +335,10 @@ async fn offline_hd_keys_export_internal(
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
 
         for index in start_index..=end_index {
-            let seed = format!("{}{}/{}_{}_{}_{}", passphrase, ticker, account_index, index, ticker, index);
+            let seed = format!(
+                "{}{}/{}_{}_{}_{}",
+                passphrase, ticker, account_index, index, ticker, index
+            );
 
             let key_pair = {
                 match key_pair_from_seed(&seed) {
@@ -522,9 +526,7 @@ pub async fn get_private_keys(
             if req.start_index.is_some() || req.end_index.is_some() || req.account_index.is_some() {
                 return MmError::err(OfflineKeysError::InvalidParametersForMode);
             }
-            let offline_req = OfflineKeysRequest {
-                coins: req.coins,
-            };
+            let offline_req = OfflineKeysRequest { coins: req.coins };
             let response = offline_keys_export_internal(ctx, offline_req).await?;
             Ok(GetPrivateKeysResponse::Standard(response))
         },
@@ -541,16 +543,15 @@ pub async fn get_private_keys(
                 return MmError::err(OfflineKeysError::HdRangeTooLarge);
             }
 
-            let response = offline_hd_keys_export_internal(ctx, req.coins, start_index, end_index, account_index).await?;
+            let response =
+                offline_hd_keys_export_internal(ctx, req.coins, start_index, end_index, account_index).await?;
             Ok(GetPrivateKeysResponse::Hd(response))
         },
         KeyExportMode::Iguana => {
             if req.start_index.is_some() || req.end_index.is_some() || req.account_index.is_some() {
                 return MmError::err(OfflineKeysError::InvalidParametersForMode);
             }
-            let offline_req = OfflineKeysRequest {
-                coins: req.coins,
-            };
+            let offline_req = OfflineKeysRequest { coins: req.coins };
             let response = offline_iguana_keys_export_internal(ctx, offline_req).await?;
             Ok(GetPrivateKeysResponse::Standard(response))
         },
