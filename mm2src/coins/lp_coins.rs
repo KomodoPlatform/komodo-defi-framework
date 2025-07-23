@@ -5542,42 +5542,18 @@ pub async fn set_requires_notarization(ctx: MmArc, req: Json) -> Result<Response
 
 pub async fn show_priv_key(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-
-    // Try to get activated coin first (existing behavior for backwards compatibility)
-    match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(coin)) => {
-            let res = try_s!(json::to_vec(&json!({
-                "result": {
-                    "coin": ticker,
-                    "priv_key": try_s!(coin.display_priv_key()),
-                }
-            })));
-            Ok(try_s!(Response::builder().body(res)))
-        },
-        Ok(None) | Err(_) => {
-            use crate::rpc_command::offline_keys::{offline_keys_export_internal, OfflineKeysRequest};
-
-            let offline_req = OfflineKeysRequest {
-                coins: vec![ticker.clone()],
-            };
-            match offline_keys_export_internal(ctx, offline_req).await {
-                Ok(response) => {
-                    if let Some(coin_info) = response.result.first() {
-                        let res = try_s!(json::to_vec(&json!({
-                            "result": {
-                                "coin": ticker,
-                                "priv_key": coin_info.priv_key,
-                            }
-                        })));
-                        Ok(try_s!(Response::builder().body(res)))
-                    } else {
-                        ERR!("No key info found for coin: {}", ticker)
-                    }
-                },
-                Err(err) => ERR!("Failed to derive offline key for {}: {}", ticker, err),
-            }
-        },
-    }
+    let coin = match lp_coinfind(&ctx, &ticker).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
+    };
+    let res = try_s!(json::to_vec(&json!({
+        "result": {
+            "coin": ticker,
+            "priv_key": try_s!(coin.display_priv_key()),
+        }
+    })));
+    Ok(try_s!(Response::builder().body(res)))
 }
 
 pub async fn register_balance_update_handler(
