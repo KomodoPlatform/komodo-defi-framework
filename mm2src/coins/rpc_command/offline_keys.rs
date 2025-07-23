@@ -58,7 +58,7 @@ pub struct HdCoinKeyInfo {
 
 #[derive(Debug, Serialize)]
 pub struct HdAddressInfo {
-    pub index: u32,
+    pub derivation_path: String,
     pub pubkey: String,
     pub address: String,
     pub priv_key: String,
@@ -337,6 +337,12 @@ async fn offline_hd_keys_export_internal(
             });
         }
 
+        let base_derivation_path = coin_conf["derivation_path"].as_str()
+            .ok_or_else(|| OfflineKeysError::KeyDerivationFailed {
+                ticker: ticker.clone(),
+                error: "Invalid derivation_path format in coin configuration".to_string(),
+            })?;
+
         let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
@@ -410,8 +416,10 @@ async fn offline_hd_keys_export_internal(
                 },
             };
 
+            let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
+            
             addresses.push(HdAddressInfo {
-                index,
+                derivation_path,
                 pubkey,
                 address,
                 priv_key,
