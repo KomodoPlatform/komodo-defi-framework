@@ -330,6 +330,13 @@ async fn offline_hd_keys_export_internal(
 
         let prefix_values = extract_prefix_values(ticker, &coin_conf)?;
 
+        if coin_conf["derivation_path"].is_null() {
+            return MmError::err(OfflineKeysError::KeyDerivationFailed {
+                ticker: ticker.clone(),
+                error: "Derivation path not defined for this coin. HD mode requires a valid derivation_path in the coin configuration.".to_string(),
+            });
+        }
+
         let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
         let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
