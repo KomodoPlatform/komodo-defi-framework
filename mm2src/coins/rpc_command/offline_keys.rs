@@ -184,15 +184,7 @@ fn coin_conf_with_protocol(ctx: &MmArc, ticker: &str, conf_override: Option<Json
         Some(override_conf) => override_conf,
         None => match crate::coin_conf(ctx, ticker) {
             Json::Null => {
-                json!({
-                    "coin": ticker,
-                    "name": ticker,
-                    "protocol": "UTXO",
-                    "pubtype": 60,
-                    "p2shtype": 85,
-                    "wiftype": 188,
-                    "txfee": 1000
-                })
+                return Err(format!("Coin '{}' not found in configuration", ticker));
             },
             conf => conf,
         },
