@@ -331,7 +331,7 @@ async fn offline_hd_keys_export_internal(
                         .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                         .to_string();
                     
-                    let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                    let priv_key = key_pair.private().secret.to_hex();
                     
                     (address, priv_key)
                 },
@@ -436,7 +436,7 @@ async fn offline_iguana_keys_export_internal(
                     .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                     .to_string();
                 
-                let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                let priv_key = key_pair.private().secret.to_hex();
                 
                 (address, priv_key)
             },
