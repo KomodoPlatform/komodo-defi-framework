@@ -244,6 +244,9 @@ pub fn sat_to_f(sat: u64) -> f64 {
 }
 
 /// Marker type to indicate that a type is `!Send` in a stable way.
+///
+/// Raw pointers are not `Send` by default, so this makes `NotSend`
+/// not `Send` either.
 pub struct NotSend(std::marker::PhantomData<*const ()>);
 
 impl Default for NotSend {
