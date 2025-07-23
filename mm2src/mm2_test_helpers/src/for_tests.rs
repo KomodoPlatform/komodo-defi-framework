@@ -3000,8 +3000,8 @@ pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str
             "password": password,
         }
     }))
-        .await
-        .unwrap()
+    .await
+    .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
