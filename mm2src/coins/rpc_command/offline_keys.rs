@@ -23,7 +23,6 @@ pub enum KeyExportMode {
 #[derive(Debug, Deserialize)]
 pub struct GetPrivateKeysRequest {
     pub coins: Vec<String>,
-    #[serde(default)]
     pub mode: Option<KeyExportMode>,
     #[serde(default)]
     pub start_index: Option<u32>,
@@ -210,15 +209,6 @@ async fn offline_hd_keys_export_internal(
         let (coin_conf, _) = coin_conf_with_protocol(&ctx, ticker, None)
             .map_err(|_| OfflineKeysError::CoinConfigNotFound(ticker.clone()))?;
 
-        if let Some(wallet_type) = coin_conf["wallet_type"].as_str() {
-            if wallet_type == "trezor" {
-                return MmError::err(OfflineKeysError::HardwareWalletNotSupported);
-            }
-            if wallet_type == "metamask" {
-                return MmError::err(OfflineKeysError::MetamaskNotSupported);
-            }
-        }
-
         let prefix_values = extract_prefix_values(ticker, &coin_conf)?;
 
         if coin_conf["derivation_path"].is_null() {
@@ -337,15 +327,6 @@ async fn offline_iguana_keys_export_internal(
     for ticker in &req.coins {
         let (coin_conf, _) = coin_conf_with_protocol(&ctx, ticker, None)
             .map_err(|_| OfflineKeysError::CoinConfigNotFound(ticker.clone()))?;
-
-        if let Some(wallet_type) = coin_conf["wallet_type"].as_str() {
-            if wallet_type == "trezor" {
-                return MmError::err(OfflineKeysError::HardwareWalletNotSupported);
-            }
-            if wallet_type == "metamask" {
-                return MmError::err(OfflineKeysError::MetamaskNotSupported);
-            }
-        }
 
         let prefix_values = extract_prefix_values(ticker, &coin_conf)?;
 
