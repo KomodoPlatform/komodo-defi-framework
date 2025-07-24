@@ -606,6 +606,7 @@ async fn create_single_order(
         rel_nota: cfg.rel_nota,
         save_in_history: true,
         timeout_in_minutes: None,
+        premium: None,
     };
 
     let resp = create_maker_order(&ctx, req)

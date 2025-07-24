@@ -23,7 +23,7 @@ use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, di
                                   enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
                                   kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
+                                  MarketMakerIt, Mm2TestConf, TakerMethod, DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -3586,6 +3586,8 @@ fn test_locked_amount() {
         1.,
         1.,
         777.,
+        None,
+        TakerMethod::Buy,
     ));
 
     let locked_bob = block_on(get_locked_amount(&mm_bob, "MYCOIN"));
@@ -3816,6 +3818,8 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         1.,
         1.,
         0.0001,
+        None,
+        TakerMethod::Buy,
     ));
 
     // give few seconds for swap statuses to be saved
@@ -3909,6 +3913,8 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         1.,
         1.,
         0.0001,
+        None,
+        TakerMethod::Buy,
     ));
 
     // give few seconds for swap statuses to be saved

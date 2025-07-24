@@ -1666,7 +1666,22 @@ impl TakerOrder {
                     || self.base_orderbook_ticker.as_ref() == Some(&reserved.rel))
                     && (self.request.rel == reserved.base
                         || self.rel_orderbook_ticker.as_ref() == Some(&reserved.base));
-                if match_ticker && my_base_amount == other_rel_amount && my_rel_amount <= other_base_amount {
+
+                // Reject if any common conditions are unmet
+                if !match_ticker || my_base_amount != other_rel_amount {
+                    return MatchReservedResult::NotMatched;
+                }
+
+                let other_base_amount = if self.request.swap_version.is_legacy() || reserved.swap_version.is_legacy() {
+                    other_base_amount.clone()
+                } else {
+                    let premium = &reserved.premium.clone().unwrap_or_default();
+                    let other_price = &(my_base_amount - premium) / other_base_amount;
+                    // In match_with_request function, we allowed maker to send fewer coins for taker sell action
+                    other_base_amount + &(premium / &other_price)
+                };
+
+                if my_rel_amount <= &other_base_amount {
                     MatchReservedResult::Matched
                 } else {
                     MatchReservedResult::NotMatched
@@ -1754,6 +1769,9 @@ pub struct MakerOrder {
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
     timeout_in_minutes: Option<u16>,
+    /// Fixed extra amount of maker rel coin, requested by the maker and paid by the taker
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    premium: Option<MmNumber>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1770,6 +1788,7 @@ pub struct MakerOrderBuilder<'a> {
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
     timeout_in_minutes: Option<u16>,
+    premium: Option<MmNumber>,
 }
 
 /// Contains extra and/or optional metadata (e.g., protocol-specific information) that can
@@ -1933,6 +1952,7 @@ impl<'a> MakerOrderBuilder<'a> {
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
             timeout_in_minutes: None,
+            premium: Default::default(),
         }
     }
 
@@ -1978,6 +1998,11 @@ impl<'a> MakerOrderBuilder<'a> {
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
     pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
+
+    pub fn with_premium(mut self, premium: Option<MmNumber>) -> Self {
+        self.premium = premium;
+        self
+    }
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
@@ -2039,6 +2064,7 @@ impl<'a> MakerOrderBuilder<'a> {
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
             timeout_in_minutes: self.timeout_in_minutes,
+            premium: self.premium,
         })
     }
 
@@ -2067,6 +2093,7 @@ impl<'a> MakerOrderBuilder<'a> {
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
             timeout_in_minutes: self.timeout_in_minutes,
+            premium: Default::default(),
         }
     }
 }
@@ -2105,20 +2132,42 @@ impl MakerOrder {
             return OrderMatchResult::NotMatched;
         }
 
+        let is_legacy = self.swap_version.is_legacy() || taker.swap_version.is_legacy();
+        let premium = self.premium.clone().unwrap_or_default();
+
         match taker.action {
             TakerAction::Buy => {
                 let ticker_match = (self.base == taker.base
                     || self.base_orderbook_ticker.as_ref() == Some(&taker.base))
                     && (self.rel == taker.rel || self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
+                // taker_base_amount: the amount taker desires to buy (input.volume from SellBuyRequest)
+                // taker_rel_amount: the amount  taker is willing to pay (input.volume * input.price, where input is SellBuyRequest)
+                // taker_price: the effective price offered by the taker
                 let taker_price = taker_rel_amount / taker_base_amount;
-                if ticker_match
-                    && taker_base_amount <= &self.available_amount()
-                    && taker_base_amount >= &self.min_base_vol
-                    && taker_price >= self.price
-                {
-                    OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
+
+                // Reject if any basic conditions are not satisfied
+                let base_amount_exceeds = taker_base_amount > &self.available_amount();
+                let below_min_volume = taker_base_amount < &self.min_base_vol;
+                let price_too_low = taker_price < self.price;
+
+                if !ticker_match || base_amount_exceeds || below_min_volume || price_too_low {
+                    return OrderMatchResult::NotMatched;
+                }
+
+                let result_rel_amount = taker_base_amount * &self.price;
+
+                if is_legacy {
+                    // Legacy mode: use maker's price to calculate rel amount
+                    OrderMatchResult::Matched((taker_base_amount.clone(), result_rel_amount))
                 } else {
-                    OrderMatchResult::NotMatched
+                    // taker_rel_amount must cover the premium requested by maker
+                    let required_rel_amount = result_rel_amount + premium;
+                    if taker_rel_amount >= &required_rel_amount {
+                        // TPU mode: treat buy as a limit order using taker's base amount and required_rel_amount
+                        OrderMatchResult::Matched((taker_base_amount.clone(), required_rel_amount))
+                    } else {
+                        OrderMatchResult::NotMatched
+                    }
                 }
             },
             TakerAction::Sell => {
@@ -2126,10 +2175,28 @@ impl MakerOrder {
                     && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
 
-                // Calculate the resulting base amount using the Maker's price instead of the Taker's.
-                let matched_base_amount = taker_base_amount / &self.price;
-                let matched_rel_amount = taker_base_amount.clone();
+                // Determine the matched amounts depending on version
+                let (matched_base_amount, matched_rel_amount) = if is_legacy {
+                    // Legacy: calculate the resulting base amount using the Maker's price instead of the Taker's.
+                    (taker_base_amount / &self.price, taker_base_amount.clone())
+                } else {
+                    // this check prevents division by zero
+                    if taker_base_amount <= &premium {
+                        return OrderMatchResult::NotMatched;
+                    }
+                    // Calculate the resulting base amount using the maker's price instead of the taker's.
+                    // For TPU, in the taker sell action the maker wants to "take" an additional portion of rel as a premium,
+                    // so we reduce the base amount the maker gives by (premium / price).
+                    let result_base_amount = &(taker_base_amount - &premium) / &self.price;
+                    let real_price_for_taker = taker_base_amount / &result_base_amount;
+                    // Ensure the taker doesn't end up paying a higher price (including premium)
+                    if real_price_for_taker > taker_price {
+                        return OrderMatchResult::NotMatched;
+                    }
+                    (result_base_amount, taker_base_amount.clone())
+                };
 
+                // Match if all common conditions are met
                 if ticker_match
                     && matched_base_amount <= self.available_amount()
                     && matched_base_amount >= self.min_base_vol
@@ -2202,6 +2269,7 @@ impl From<TakerOrder> for MakerOrder {
                 #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: taker_order.request.order_metadata,
                 timeout_in_minutes: None,
+                premium: Default::default(),
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2229,6 +2297,7 @@ impl From<TakerOrder> for MakerOrder {
                     #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: taker_order.request.order_metadata,
                     timeout_in_minutes: None,
+                    premium: Default::default(),
                 }
             },
         }
@@ -2283,6 +2352,11 @@ pub struct MakerReserved {
     pub swap_version: SwapVersion,
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
+    /// Note: `std::default::Default` is not implemented for `num_rational::Ratio<mm2_number::BigInt>`
+    /// in the [new_protocol::MakerReserved] structure. As a result, we use `Option<BigRational>` there.
+    /// It is preferable to follow this same approach in the current structure for consistency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    premium: Option<MmNumber>,
 }
 
 impl MakerReserved {
@@ -2314,6 +2388,7 @@ impl MakerReserved {
             // TODO: Support the new protocol types.
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
+            premium: message.premium.map(MmNumber::from),
         }
     }
 }
@@ -2331,6 +2406,7 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             base_protocol_info: maker_reserved.base_protocol_info,
             rel_protocol_info: maker_reserved.rel_protocol_info,
             swap_version: maker_reserved.swap_version,
+            premium: maker_reserved.premium.map(|p| p.to_ratio()),
         })
     }
 }
@@ -3071,6 +3147,7 @@ struct StateMachineParams<'a> {
     locktime: &'a u64,
     maker_amount: &'a MmNumber,
     taker_amount: &'a MmNumber,
+    taker_premium: &'a MmNumber,
 }
 
 #[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
@@ -3196,6 +3273,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             locktime: &lock_time,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
+            taker_premium: &maker_order.premium.clone().unwrap_or_default(),
         };
         let taker_p2p_pubkey = match taker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -3298,7 +3376,7 @@ async fn start_maker_swap_state_machine<
         secret: *secret,
         taker_coin: taker_coin.clone(),
         taker_volume: params.taker_amount.clone(),
-        taker_premium: Default::default(),
+        taker_premium: params.taker_premium.clone(),
         conf_settings: *params.my_conf_settings,
         p2p_topic: swap_v2_topic(params.uuid),
         uuid: *params.uuid,
@@ -3442,6 +3520,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             locktime: &locktime,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
+            taker_premium: &taker_match.reserved.premium.unwrap_or_default(),
         };
         let maker_p2p_pubkey = match maker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -3551,7 +3630,7 @@ async fn start_taker_swap_state_machine<
         maker_volume: params.maker_amount.clone(),
         taker_coin: taker_coin.clone(),
         taker_volume: params.taker_amount.clone(),
-        taker_premium: Default::default(),
+        taker_premium: params.taker_premium.clone(),
         secret_hash_algo: *params.secret_hash_algo,
         conf_settings: *params.my_conf_settings,
         p2p_topic: swap_v2_topic(params.uuid),
@@ -4098,6 +4177,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     swap_version: order.swap_version,
                     #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: order.order_metadata.clone(),
+                    premium: order.premium.clone(),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4834,6 +4914,8 @@ pub struct SetPriceReq {
     #[serde(default = "get_true")]
     save_in_history: bool,
     timeout_in_minutes: Option<u16>,
+    #[serde(default)]
+    premium: Option<MmNumber>,
 }
 
 #[derive(Deserialize)]
@@ -5097,7 +5179,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
+        .with_premium(req.premium);
 
     if let Some(t) = req.timeout_in_minutes {
         builder.set_timeout(t);
@@ -5329,7 +5412,7 @@ pub async fn update_maker_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Ve
 /// Result of match_order_and_request function
 #[derive(Debug, PartialEq)]
 enum OrderMatchResult {
-    /// Order and request matched, contains base and rel resulting amounts
+    /// Order and request matched, contains base and rel resulting amounts (represent maker and taker payment amounts for swap)
     Matched((MmNumber, MmNumber)),
     /// Orders didn't match
     NotMatched,

@@ -733,6 +733,7 @@ mod tests {
     use itertools::Itertools;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_db::indexed_db::TableSignature;
+    use mm2_number::MmNumber;
     use mm2_rpc::data::legacy::{MatchBy, OrderType, TakerAction};
     use std::collections::HashMap;
     use wasm_bindgen_test::*;
@@ -761,6 +762,7 @@ mod tests {
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
             timeout_in_minutes: None,
+            premium: Default::default(),
         }
     }
 

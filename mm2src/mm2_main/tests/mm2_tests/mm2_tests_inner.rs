@@ -20,9 +20,9 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  TakerMethod, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT,
+                                  ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY,
+                                  QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -767,7 +767,17 @@ async fn trade_base_rel_electrum(
     let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 600, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
-    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
+    let uuids = start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        pairs,
+        maker_price,
+        taker_price,
+        volume,
+        None,
+        TakerMethod::Buy,
+    )
+    .await;
 
     #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {

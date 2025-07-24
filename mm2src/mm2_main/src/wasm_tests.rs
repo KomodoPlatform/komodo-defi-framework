@@ -10,8 +10,8 @@ use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{check_recent_swaps, delete_wallet, enable_electrum_json, enable_utxo_v2_electrum,
                                   enable_z_coin_light, get_wallet_names, morty_conf, pirate_conf, rick_conf,
                                   start_swaps, test_qrc20_history_impl, wait_for_swaps_finish_and_check_status,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
-                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, TakerMethod,
+                                  ARRR, MORTY, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalance, HDAccountAddressId};
 use serde_json::{json, Value as Json};
@@ -64,7 +64,17 @@ async fn test_mm2_stops_impl(pairs: &[(&'static str, &'static str)], maker_price
     let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
-    start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
+    start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        pairs,
+        maker_price,
+        taker_price,
+        volume,
+        None,
+        TakerMethod::Buy,
+    )
+    .await;
 
     mm_alice
         .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
@@ -111,7 +121,17 @@ async fn trade_base_rel_electrum(
     let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
-    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
+    let uuids = start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        pairs,
+        maker_price,
+        taker_price,
+        volume,
+        None,
+        TakerMethod::Buy,
+    )
+    .await;
 
     wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume, maker_price).await;
 
