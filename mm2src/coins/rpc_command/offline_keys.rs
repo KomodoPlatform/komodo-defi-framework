@@ -166,6 +166,50 @@ fn extract_prefix_values(
                 p2sh_type,
             }))
         },
+        CoinProtocol::ZHTLC(_protocol_info) => {
+            let wif_type = coin_conf["wiftype"]
+                .as_u64()
+                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
+                    ticker: ticker.to_string(),
+                    prefix_type: "wiftype".to_string(),
+                })? as u8;
+
+            let consensus_params = &coin_conf["protocol"]["protocol_data"]["consensus_params"];
+            
+            let pub_prefix = consensus_params["b58_pubkey_address_prefix"]
+                .as_array()
+                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
+                    ticker: ticker.to_string(),
+                    prefix_type: "b58_pubkey_address_prefix".to_string(),
+                })?;
+            
+            let script_prefix = consensus_params["b58_script_address_prefix"]
+                .as_array()
+                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
+                    ticker: ticker.to_string(),
+                    prefix_type: "b58_script_address_prefix".to_string(),
+                })?;
+
+            let pub_type = pub_prefix[0]
+                .as_u64()
+                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
+                    ticker: ticker.to_string(),
+                    prefix_type: "b58_pubkey_address_prefix[0]".to_string(),
+                })? as u8;
+
+            let p2sh_type = script_prefix[0]
+                .as_u64()
+                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
+                    ticker: ticker.to_string(),
+                    prefix_type: "b58_script_address_prefix[0]".to_string(),
+                })? as u8;
+
+            Ok(Some(PrefixValues::Utxo {
+                wif_type,
+                pub_type,
+                p2sh_type,
+            }))
+        },
         CoinProtocol::TENDERMINT(protocol_info) => Ok(Some(PrefixValues::Tendermint {
             account_prefix: protocol_info.account_prefix.clone(),
         })),
@@ -882,6 +926,75 @@ mod tests {
         match response.unwrap_err().into_inner() {
             OfflineKeysError::InvalidParametersForMode => {},
             _ => panic!("Expected InvalidParametersForMode error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_arrr_hd_key_derivation() {
+        use mm2_test_helpers::for_tests::pirate_conf;
+        
+        let mut arrr_conf = pirate_conf();
+        arrr_conf["wiftype"] = json!(128);
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "coins": [arrr_conf],
+                "rpc_password": "test123"
+            }))
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
+
+        let response = offline_hd_keys_export_internal(ctx.clone(), vec!["ARRR".to_string()], 0, 2, 0).await;
+
+        match response {
+            Ok(hd_response) => {
+                assert_eq!(hd_response.result.len(), 1);
+                let arrr_result = &hd_response.result[0];
+                assert_eq!(arrr_result.coin, "ARRR");
+                assert_eq!(arrr_result.addresses.len(), 3);
+
+                for (i, addr_info) in arrr_result.addresses.iter().enumerate() {
+                    assert!(!addr_info.address.is_empty());
+                    assert!(!addr_info.pubkey.is_empty());
+                    assert!(!addr_info.priv_key.is_empty());
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/133'/0/0/{}", i));
+                }
+            },
+            Err(e) => panic!("ARRR HD key derivation test failed: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_arrr_iguana_key_derivation() {
+        use mm2_test_helpers::for_tests::pirate_conf;
+        
+        let mut arrr_conf = pirate_conf();
+        arrr_conf["wiftype"] = json!(128);
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "coins": [arrr_conf],
+                "rpc_password": "test123"
+            }))
+            .into_mm_arc();
+        
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), TEST_MNEMONIC).unwrap();
+
+        let req = OfflineKeysRequest {
+            coins: vec!["ARRR".to_string()],
+        };
+
+        let response = offline_iguana_keys_export_internal(ctx.clone(), req).await;
+
+        match response {
+            Ok(iguana_response) => {
+                assert_eq!(iguana_response.result.len(), 1);
+                let arrr_result = &iguana_response.result[0];
+                assert_eq!(arrr_result.coin, "ARRR");
+                assert!(!arrr_result.pubkey.is_empty());
+                assert!(!arrr_result.address.is_empty());
+                assert!(!arrr_result.priv_key.is_empty());
+            },
+            Err(e) => panic!("ARRR Iguana key derivation test failed: {:?}", e),
         }
     }
 }
