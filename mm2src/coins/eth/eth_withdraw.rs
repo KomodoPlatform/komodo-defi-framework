@@ -248,7 +248,12 @@ where
                 let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
                 (0.into(), data, *token_addr, platform.as_str())
             },
-            EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
+            EthCoinType::Nft { .. } => {
+                return MmError::err(WithdrawError::ProtocolNotSupported(format!(
+                    "{} protocol is not supported",
+                    coin.coin_type
+                )))
+            },
         };
         let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals).map_mm_err()?;
 

@@ -4,6 +4,8 @@
 
 use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin};
+use crate::eth::tron::TronAddress;
+use common::log::warn;
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use compatible_time::Duration;
 use serde_json::Value;
@@ -155,6 +157,15 @@ impl EthCoin {
 
     /// Get balance of given address
     pub(crate) async fn balance(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
+        if self.is_tron() {
+            // TODO use Tron client
+            let sun = U256::zero();
+            warn!(
+                "Using stub implementation for Tron address_balance for {}, returning {sun} SUN",
+                format!("{:?}", TronAddress::from(&address)),
+            );
+            return Ok(sun);
+        }
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 

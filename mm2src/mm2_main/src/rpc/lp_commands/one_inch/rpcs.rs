@@ -162,7 +162,12 @@ pub(crate) async fn get_coin_for_one_inch(
         EthCoinType::Eth => Address::from_str(ApiClient::eth_special_contract())
             .map_to_mm(|_| ApiIntegrationRpcError::InternalError("invalid address".to_owned()))?,
         EthCoinType::Erc20 { token_addr, .. } => token_addr,
-        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftProtocolNotSupported)),
+        EthCoinType::Nft { .. } => {
+            return Err(MmError::new(ApiIntegrationRpcError::ProtocolNotSupported(format!(
+                "{} protocol is not supported by get_coin_for_one_inch",
+                coin.coin_type
+            ))))
+        },
     };
     Ok((coin, contract))
 }

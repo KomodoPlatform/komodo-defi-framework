@@ -102,7 +102,8 @@ impl EthCoin {
                 .await
             },
             EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "NFT protocol is not supported for ETH and ERC20 Swaps"
+                "{} protocol is not supported for ETH and ERC20 Swaps",
+                self.coin_type
             ))),
         }
     }
@@ -162,9 +163,10 @@ impl EthCoin {
                 validate_erc20_maker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
             EthCoinType::Nft { .. } => {
-                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                    "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
-                ));
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                    "{} protocol is not supported for ETH and ERC20 Swaps",
+                    self.coin_type
+                )));
             },
         }
         Ok(())
