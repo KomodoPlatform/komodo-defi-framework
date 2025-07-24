@@ -132,6 +132,12 @@ pub struct MmCtx {
     /// The DB connection to the global DB hosting common data (e.g. stats) and other data needed for correctly bootstrapping on restarts.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub global_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the global DB hosting common data (e.g. stats) and other data needed for correctly bootstrapping on restarts.
+    ///
+    /// This is the same DB as `self.global_db_conn` but made available via an asynchronous interface.
+    /// Use this if favor of `self.global_db_conn` for new implementations.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async_global_db_conn: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// The DB connection to the wallet DB the KDF instance will use for current execution.
     ///
     /// The wallet DB path is based on the seed that KDF is initialized with. An initialization with different seed will use a different wallet DB.
@@ -204,6 +210,8 @@ impl MmCtx {
             shared_sqlite_conn: OnceLock::default(),
             #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
             global_db_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            async_global_db_conn: OnceLock::default(),
             #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
             wallet_db_conn: OnceLock::default(),
             #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
@@ -386,12 +394,22 @@ impl MmCtx {
         if cfg!(not(feature = "new-db-arch")) {
             return self.dbdir();
         }
+        // Colon can't be used in file names on Windows so it should be escaped.
+        let address = address.replace(':', "_");
         self.db_root().join("addresses").join(address)
     }
 
     /// Returns a SQL connection to the global database.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub fn global_db(&self) -> MutexGuard<Connection> { self.global_db_conn.get().unwrap().lock().unwrap() }
+
+    /// Returns an AsyncSQL connection to the global database.
+    ///
+    /// This replaces `self.global_db()` and should be used for new implementations.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async fn async_global_db(&self) -> Arc<AsyncMutex<AsyncConnection>> {
+        self.async_global_db_conn.get().unwrap().clone()
+    }
 
     /// Returns a SQL connection to the shared wallet database.
     ///
@@ -478,6 +496,9 @@ impl MmCtx {
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub async fn init_global_and_wallet_db(&self) -> Result<(), String> {
         let global_db = Connection::open(self.global_dir().join("global.db")).map_err(|e| e.to_string())?;
+        let async_global_db = AsyncConnection::open(self.global_dir().join("global.db"))
+            .await
+            .map_err(|e| e.to_string())?;
         let wallet_db = Connection::open(self.wallet_dir().join("wallet.db")).map_err(|e| e.to_string())?;
         let async_wallet_db = AsyncConnection::open(self.wallet_dir().join("wallet.db"))
             .await
@@ -485,6 +506,9 @@ impl MmCtx {
         self.global_db_conn
             .set(Arc::new(Mutex::new(global_db)))
             .map_err(|_| "Global DB already set".to_string())?;
+        self.async_global_db_conn
+            .set(Arc::new(AsyncMutex::new(async_global_db)))
+            .map_err(|_| "Async Global DB already set".to_string())?;
         self.wallet_db_conn
             .set(Arc::new(Mutex::new(wallet_db)))
             .map_err(|_| "Wallet DB already set".to_string())?;
@@ -531,11 +555,6 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
-        self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
         self.sqlite_connection
             .get()
@@ -574,6 +593,16 @@ impl Drop for MmCtx {
 pub enum AddressDataError {
     CreateAddressDirFailure(std::io::Error),
     SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<AddressDataError> for String {
+    fn from(err: AddressDataError) -> Self {
+        match err {
+            AddressDataError::CreateAddressDirFailure(e) => format!("Failed to create address directory: {}", e),
+            AddressDataError::SqliteConnectionFailure(e) => format!("Failed to open SQLite connection: {}", e),
+        }
+    }
 }
 
 /// Returns the path to the MM database root.

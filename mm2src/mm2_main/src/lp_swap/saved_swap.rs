@@ -198,6 +198,8 @@ pub trait SavedSwapIo {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
+    #[cfg(feature = "new-db-arch")]
+    use crate::database::global::get_maker_address_for_swap_uuid;
     use crate::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
     use crate::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
     use crate::lp_swap::{my_swap_file_path, my_swaps_dir};
@@ -225,12 +227,17 @@ mod native_impl {
             address_dir: Option<&str>,
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
-            // TODO(new-db-arch): Set the correct address directory for the new db arch branch (via a query to the global DB).
-            #[cfg(feature = "new-db-arch")]
-            let address_dir = address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");
-            #[cfg(not(feature = "new-db-arch"))]
-            let address_dir = address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
-            let path = my_swap_file_path(ctx, address_dir, &uuid);
+            let path = match address_dir {
+                Some(addr) => my_swap_file_path(ctx, addr, &uuid),
+                #[cfg(feature = "new-db-arch")]
+                None => match get_maker_address_for_swap_uuid(ctx, &uuid).await {
+                    Ok(Some(maker_address)) => my_swap_file_path(ctx, &maker_address, &uuid),
+                    Ok(None) => return Ok(None),
+                    Err(e) => return MmError::err(SavedSwapError::InternalError(e.to_string())),
+                },
+                #[cfg(not(feature = "new-db-arch"))]
+                None => my_swap_file_path(ctx, "address directory has no effect in old DB arch anyway", &uuid),
+            };
             Ok(read_json(&path).await.map_mm_err()?)
         }
 
@@ -238,13 +245,23 @@ mod native_impl {
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
             #[cfg(feature = "new-db-arch")]
             {
-                // This method is solely used for migrations. Which we should ditch or refactor with the new DB architecture.
+                // TODO: This method is solely used for migrations. Which we should ditch or refactor with the new DB architecture.
                 // If we ditch the old migrations, this method should never be called (and should be deleted when we are
                 // done with the incremental architecture change).
                 todo!("Fix the dummy address directory in `my_swaps_dir` below or remove this method all together");
             }
             let path = my_swaps_dir(ctx, "has no effect in not(feature = 'new-db-arch')");
             Ok(read_dir_json(&path).await.map_mm_err()?)
+        }
+
+        async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
+            #[cfg(feature = "new-db-arch")]
+            let address_dir = self.maker_address();
+            #[cfg(not(feature = "new-db-arch"))]
+            let address_dir = "no address directory for old DB architecture (has no effect)";
+            let path = my_swap_file_path(ctx, address_dir, self.uuid());
+            write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
+            Ok(())
         }
 
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
@@ -265,16 +282,6 @@ mod native_impl {
         async fn load_all_from_taker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<TakerSavedSwap>> {
             let path = stats_taker_swap_dir(ctx);
             Ok(read_dir_json(&path).await.map_mm_err()?)
-        }
-
-        async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
-            #[cfg(feature = "new-db-arch")]
-            let address_dir = self.maker_address();
-            #[cfg(not(feature = "new-db-arch"))]
-            let address_dir = "no address directory for old DB architecture (has no effect)";
-            let path = my_swap_file_path(ctx, address_dir, self.uuid());
-            write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
-            Ok(())
         }
 
         /// Save the inner maker/taker swap to the corresponding stats db.

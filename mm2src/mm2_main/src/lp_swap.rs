@@ -970,6 +970,7 @@ pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
 
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
+    maker_address: &str,
     my_coin: &str,
     other_coin: &str,
     uuid: Uuid,
@@ -977,16 +978,18 @@ pub async fn insert_new_swap_to_db(
     swap_type: u8,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
+        .save_new_swap(my_coin, other_coin, maker_address, uuid, started_at, swap_type)
         .await
         .map_err(|e| ERRL!("{}", e))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    if let Some(conn) = ctx.sqlite_conn_opt() {
-        crate::database::stats_swaps::add_swap_to_index(&conn, swap)
-    }
+    #[cfg(not(feature = "new-db-arch"))]
+    let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
+    crate::database::stats_swaps::add_swap_to_index(&conn, swap)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1504,8 +1507,13 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         match swap.save_to_db(&ctx).await {
             Ok(_) => {
                 if let Some(info) = swap.get_my_info() {
+                    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+                    let maker_address = swap.maker_address();
+                    #[cfg(not(feature = "new-db-arch"))]
+                    let maker_address = "no maker-address/address-dir in old DB arch";
                     if let Err(e) = insert_new_swap_to_db(
                         ctx.clone(),
+                        maker_address,
                         &info.my_coin,
                         &info.other_coin,
                         *swap.uuid(),
