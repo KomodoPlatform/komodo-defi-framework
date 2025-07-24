@@ -1,7 +1,7 @@
 use common::password_policy::{password_policy, PasswordPolicyError};
 use common::HttpStatusCode;
-use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
-             MnemonicError};
+use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoCtxError, CryptoInitError,
+             EncryptedData, MnemonicError};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use http::StatusCode;
@@ -10,6 +10,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
+
+use crate::lp_native_dex::{init_crypto_keypair_ctx_services, MmInitError};
 
 cfg_wasm32! {
     use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
@@ -169,12 +171,12 @@ async fn try_load_wallet_passphrase(
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-enum Passphrase {
+pub(crate) enum Passphrase {
     Encrypted(EncryptedData),
     Decrypted(String),
 }
 
-fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, Option<Passphrase>)> {
+pub(crate) fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, Option<Passphrase>)> {
     let passphrase = deserialize_config_field::<Option<Passphrase>>(ctx, "passphrase")?;
     // New approach for passphrase, `wallet_name` is needed in the config to enable multi-wallet support.
     // In this case the passphrase will be generated if not provided.
@@ -304,10 +306,10 @@ async fn process_wallet_with_name(
     }
 }
 
-async fn process_passphrase_logic(
+pub(crate) async fn process_passphrase_logic(
     ctx: &MmArc,
-    wallet_name: Option<&str>,
     passphrase: Option<Passphrase>,
+    wallet_name: Option<&str>,
 ) -> WalletInitResult<Option<String>> {
     match (wallet_name, passphrase) {
         (None, None) => Ok(None),
@@ -326,12 +328,13 @@ async fn process_passphrase_logic(
     }
 }
 
-fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
+pub(crate) fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
     // This defaults to false to maintain backward compatibility.
     match ctx.enable_hd() {
         true => CryptoCtx::init_with_global_hd_account(ctx.clone(), passphrase).map_mm_err()?,
         false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase).map_mm_err()?,
     };
+
     Ok(())
 }
 
@@ -356,18 +359,27 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
-    let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
+    let (wallet_name, maybe_passphrase) = deserialize_wallet_config(ctx)?;
+
     ctx.wallet_name
         .set(wallet_name.clone())
-        .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))
+        .map_to_mm(|_| WalletInitError::InternalError("Wallet already initialized".to_string()))
         .map_mm_err()?;
 
-    let passphrase = process_passphrase_logic(ctx, wallet_name.as_deref(), passphrase)
+    if ctx.no_login_mode() {
+        CryptoCtx::new_uninitialized(ctx);
+        return Ok(());
+    }
+
+    let processed_passphrase = process_passphrase_logic(ctx, maybe_passphrase, wallet_name.as_deref())
         .await
         .map_mm_err()?;
-    if let Some(passphrase) = passphrase {
-        initialize_crypto_context(ctx, &passphrase).map_mm_err()?;
+    if let Some(passphrase) = processed_passphrase {
+        return initialize_crypto_context(ctx, &passphrase);
     }
+
+    // If we reach this point, the wallet remains uninitialized.
+    CryptoCtx::new_uninitialized(ctx);
 
     Ok(())
 }
@@ -699,4 +711,91 @@ pub async fn delete_wallet_rpc(ctx: MmArc, req: DeleteWalletRequest) -> MmResult
             )))
         },
     }
+}
+
+#[derive(Serialize, Display, SerializeErrorType, EnumFromStringify)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CryptoCtxRpcError {
+    #[display(fmt = "Unable to initialized crypto ctx")]
+    InitializationFailed,
+    #[display(fmt = "crypto ctx is already initialized")]
+    AlreadyInitialized,
+    #[from_stringify("serde_json::error::Error")]
+    InternalError(String),
+    #[from_stringify("MmInitError")]
+    MmInitError(String),
+    #[from_stringify("WalletInitError")]
+    WalletInitError(String),
+}
+
+impl From<CryptoCtxError> for CryptoCtxRpcError {
+    fn from(e: CryptoCtxError) -> Self {
+        match e {
+            CryptoCtxError::NotInitialized => Self::InitializationFailed,
+            CryptoCtxError::Internal(_) => Self::InternalError(e.to_string()),
+        }
+    }
+}
+
+impl HttpStatusCode for CryptoCtxRpcError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::InitializationFailed | Self::AlreadyInitialized | Self::WalletInitError(_) | Self::MmInitError(_) => {
+                StatusCode::BAD_REQUEST
+            },
+            Self::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CryptoCtxInitRequest {}
+
+/// Initializes CryptoCtxc with the provided passphrase and optional wallet data.
+pub async fn init_crypto_ctx(ctx: MmArc, _req: CryptoCtxInitRequest) -> MmResult<(), CryptoCtxRpcError> {
+    common::log::info!("Initializing KDF with passphrase");
+    if let Some(true) = ctx.initialized.get() {
+        return MmError::err(CryptoCtxRpcError::AlreadyInitialized);
+    };
+
+    let (wallet_name, maybe_passphrase) = deserialize_wallet_config(&ctx).map_mm_err()?;
+    let passphrase = process_passphrase_logic(&ctx, maybe_passphrase, wallet_name.as_deref())
+        .await
+        .map_mm_err()?
+        .ok_or(MmError::new(CryptoCtxRpcError::InternalError(
+            "No passphrase was processed".to_owned(),
+        )))?;
+
+    initialize_crypto_context(&ctx, &passphrase).map_mm_err()?;
+    init_crypto_keypair_ctx_services(ctx).await.map_mm_err()?;
+
+    common::log::info!("Initialized KDF with passphrase");
+
+    Ok(())
+}
+
+/// Get all initialiazed CryptoCtx contexts'
+#[derive(Serialize)]
+pub struct GetInitializedCryptoCtxRes {
+    pub keypair_ctx: bool,
+    pub hw_ctx: bool,
+    #[cfg(target_arch = "wasm32")]
+    pub metamask_ctx: bool,
+}
+
+#[derive(Deserialize)]
+pub struct GetInitializedCryptoCtxReq {}
+
+pub async fn get_crypto_ctxs_init_state(
+    ctx: MmArc,
+    _req: GetInitializedCryptoCtxReq,
+) -> MmResult<GetInitializedCryptoCtxRes, MnemonicRpcError> {
+    let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|err| MnemonicRpcError::Internal(err.to_string()))?;
+
+    Ok(GetInitializedCryptoCtxRes {
+        #[cfg(target_arch = "wasm32")]
+        metamask_ctx: crypto_ctx.metamask_ctx().is_some(),
+        hw_ctx: crypto_ctx.hw_ctx().is_some(),
+        keypair_ctx: crypto_ctx.keypair_ctx().is_some(),
+    })
 }

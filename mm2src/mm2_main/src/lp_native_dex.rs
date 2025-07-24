@@ -365,10 +365,14 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     init_ordermatch_context(&ctx).map_mm_err()?;
     init_p2p(ctx.clone()).await.map_mm_err()?;
 
-    if !CryptoCtx::is_init(&ctx).map_mm_err()? {
+    if !CryptoCtx::is_crypto_keypair_ctx_init(&ctx).map_mm_err()? {
         return Ok(());
     }
 
+    init_crypto_keypair_ctx_services(ctx).await
+}
+
+pub async fn init_crypto_keypair_ctx_services(ctx: MmArc) -> MmInitResult<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         fix_directories(&ctx)?;
@@ -474,10 +478,12 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
 
 fn get_p2p_key(ctx: &MmArc, is_seed_node: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
+    let crypto_ctx =
+        CryptoCtx::from_ctx(ctx).map(|c| c.keypair_ctx().map(|v| sha256(v.mm2_internal_privkey_slice()).take()));
+
     if is_seed_node {
-        if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
-            let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
-            return Ok(key.take());
+        if let Ok(Some(key)) = crypto_ctx {
+            return Ok(key);
         }
     }
 
@@ -533,7 +539,7 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
         }
     }
 
-    if is_seed_node && !CryptoCtx::is_init(ctx).unwrap_or(false) {
+    if is_seed_node && !CryptoCtx::is_crypto_keypair_ctx_init(ctx).unwrap_or(false) {
         return precheck_err("Seed node requires a persistent identity to generate its P2P key.");
     }
 

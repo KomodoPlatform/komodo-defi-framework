@@ -1078,7 +1078,10 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     let (tx, rx) = mpsc::channel(10);
 
     let p2p_key = {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let crypto_ctx = CryptoCtx::from_ctx(ctx)
+            .unwrap()
+            .keypair_ctx()
+            .expect("`CryptoCtx::keypair_ctx` must be initialized with a passphrase");
         let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
         key.take()
     };
@@ -1802,7 +1805,11 @@ fn test_choose_taker_confs_settings_sell_action() {
 fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     let ctx = MmArc::new(MmCtx::default());
     ctx.init_metrics().unwrap();
+
     let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "passphrase").unwrap();
+    let crypto_ctx = crypto_ctx
+        .keypair_ctx()
+        .expect("CryptoCtx::keypair_ctx' not initialized with passphrase");
 
     let secret = crypto_ctx.mm2_internal_privkey_secret().take();
     let pubkey = crypto_ctx.mm2_internal_pubkey_hex();
@@ -1852,7 +1859,10 @@ fn init_p2p_context(ctx: &MmArc) -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Recei
     let (cmd_tx, cmd_rx) = mpsc::channel(10);
 
     let p2p_key = {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let crypto_ctx = CryptoCtx::from_ctx(ctx)
+            .unwrap()
+            .keypair_ctx()
+            .expect("`CryptoCtx::keypair_ctx` should be initialized with a passphrase");
         let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
         key.take()
     };

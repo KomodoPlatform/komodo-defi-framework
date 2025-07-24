@@ -5733,6 +5733,56 @@ fn test_no_login() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_no_login_mode_with_passphrase() {
+    use mm2_test_helpers::for_tests::{no_login_mode_test_impl, DEFAULT_RPC_PASSWORD};
+
+    let coins = json!([morty_conf()]);
+    // test kdf no_login_mode with passphrase
+    let no_login_conf = Mm2TestConf {
+        conf: json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "coins": coins,
+            "i_am_seed": true,
+            "is_bootstrap_node": true,
+            "rpc_password": DEFAULT_RPC_PASSWORD,
+            "no_login_mode": true,
+            "passphrase": "password",
+        }),
+        rpc_password: DEFAULT_RPC_PASSWORD.into(),
+    };
+
+    no_login_mode_test_impl(no_login_conf);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_no_login_mode_with_wallet_creds() {
+    use mm2_test_helpers::for_tests::{no_login_mode_test_impl, DEFAULT_RPC_PASSWORD};
+
+    let coins = json!([morty_conf()]);
+
+    // test kdf no_login_mode with wallet_name/wallet_password
+    let no_login_conf = Mm2TestConf {
+        conf: json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "coins": coins,
+            "i_am_seed": true,
+            "is_bootstrap_node": true,
+            "rpc_password": DEFAULT_RPC_PASSWORD,
+            "no_login_mode": true,
+            "wallet_name": "sami",
+            "wallet_password": "password",
+        }),
+        rpc_password: DEFAULT_RPC_PASSWORD.into(),
+    };
+
+    no_login_mode_test_impl(no_login_conf);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_gui_storage_accounts_functionality() {
     let passphrase = "test_gui_storage passphrase";
 
@@ -6691,7 +6741,7 @@ mod trezor_tests {
     pub async fn mm_ctx_with_trezor(conf: Json) -> MmArc {
         let ctx = mm_ctx_with_custom_db_with_conf(Some(conf));
 
-        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
+        let _ = CryptoCtx::new_uninitialized(&ctx);
         let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
         let res = match init_trezor(ctx.clone(), req).await {
             Ok(res) => res,

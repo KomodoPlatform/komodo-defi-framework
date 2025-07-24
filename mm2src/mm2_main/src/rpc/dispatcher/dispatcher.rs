@@ -11,7 +11,8 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
                       stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
-use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_crypto_ctxs_init_state, get_mnemonic_rpc,
+                       get_wallet_names_rpc, init_crypto_ctx};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::lr_swap::{lr_execute_routed_trade_rpc, lr_find_best_quote_rpc,
                                        lr_get_quotes_for_tokens_rpc};
@@ -219,6 +220,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
+        "get_crypto_ctxs_state" => handle_mmrpc(ctx, request, get_crypto_ctxs_init_state).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
@@ -233,6 +235,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
+        "init_crypto_keypair_ctx" => handle_mmrpc(ctx, request, init_crypto_ctx).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,

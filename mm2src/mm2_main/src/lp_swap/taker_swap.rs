@@ -25,6 +25,7 @@ use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPayment
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, wait_until_sec};
+use crypto::CryptoCtxError;
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
@@ -2129,7 +2130,9 @@ impl TakerSwap {
             data.taker_coin_swap_contract_address = taker_coin.swap_contract_address();
         }
 
-        let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
+        let crypto_ctx = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
+            .keypair_ctx()
+            .ok_or(CryptoCtxError::NotInitialized));
         let my_persistent_pub = {
             let my_persistent_pub: [u8; 33] = try_s!(crypto_ctx.mm2_internal_key_pair().public_slice().try_into());
             my_persistent_pub.into()
@@ -2661,7 +2664,11 @@ pub async fn taker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
-    let our_public_id = CryptoCtx::from_ctx(ctx).map_mm_err()?.mm2_internal_public_id();
+    let our_public_id = CryptoCtx::from_ctx(ctx)
+        .map_mm_err()?
+        .keypair_ctx()
+        .ok_or(CryptoCtxError::NotInitialized)?
+        .mm2_internal_public_id();
     let order_builder = TakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_base_amount(base_amount)
         .with_rel_amount(rel_amount)
@@ -2755,23 +2762,23 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 /// Let `real_max_vol` be the actual desired volume. Performing the following steps yields
 /// an approximate maximum volume:
 ///
-/// - `max_possible = balance - locked_amount`  
+/// - `max_possible = balance - locked_amount`
 ///   The largest possible max volume, replacing unknown fees with zero.
-/// - `max_trade_fee = trade_fee(max_possible)`  
+/// - `max_trade_fee = trade_fee(max_possible)`
 ///   The largest possible `trade_fee`.
-/// - `max_possible_2 = balance - locked_amount - max_trade_fee`  
+/// - `max_possible_2 = balance - locked_amount - max_trade_fee`
 ///   A more accurate upper bound (`real_max_vol <= max_possible_2 <= max_possible`).
-/// - `max_dex_fee = dex_fee(max_possible_2)`  
+/// - `max_dex_fee = dex_fee(max_possible_2)`
 ///   Passed into `fee_to_send_taker_fee`.
 /// - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
 ///
-/// After that,  
+/// After that,
 /// ```rust
 /// min_max_vol = balance - locked_amount
 ///             - max_trade_fee
 ///             - max_fee_to_send_taker_fee
 ///             - dex_fee(max_vol)
-/// ```  
+/// ```
 /// can be solved as in the first case.
 ///
 pub async fn calc_max_taker_vol(

@@ -1200,6 +1200,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": false,
+        "is_bootstrap_node": true,
         "seednodes": [mm_seed.ip],
     });
 
