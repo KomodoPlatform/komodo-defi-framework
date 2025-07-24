@@ -3823,6 +3823,8 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             removed_arc
         };
 
+        // Todo: recheck this and how it was before this PR and how it should work with cancellation, also what if a user looks for an order and it's locked?
+        // Todo: I am considering moving to only 1 place for an order with a flag, or maybe and arc that keeps it in 2 places at the same time?
         // If an order was moved or removed...
         if order_to_move.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order).await;
