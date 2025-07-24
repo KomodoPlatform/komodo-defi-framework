@@ -9,7 +9,7 @@ pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionRe
 pub use tables::{MySwapsFiltersTable, SavedSwapTable, SwapLockTable, SwapsMigrationTable};
 
 const DB_NAME: &str = "swap";
-const DB_VERSION: u32 = 2;
+const DB_VERSION: u32 = 3;
 
 pub const IS_FINISHED_SWAP_TYPE_INDEX: &str = "is_finished_swap_type";
 
@@ -87,6 +87,7 @@ pub mod tables {
         pub is_finished: BoolAsInt,
         #[serde(default)]
         pub swap_type: u8,
+        pub order_uuid: Uuid,
     }
 
     impl TableSignature for MySwapsFiltersTable {
@@ -110,6 +111,10 @@ pub mod tables {
                     1 => {
                         let table = upgrader.open_table(Self::TABLE_NAME)?;
                         table.create_multi_index(IS_FINISHED_SWAP_TYPE_INDEX, &["is_finished", "swap_type"], false)?;
+                    },
+                    2 => {
+                        let table = upgrader.open_table(Self::TABLE_NAME)?;
+                        table.create_index("order_uuid", false)?;
                     },
                     unsupported_version => {
                         return MmError::err(OnUpgradeError::UnsupportedVersion {
@@ -139,7 +144,7 @@ pub mod tables {
                     let table = upgrader.create_table(table_name)?;
                     table.create_index("uuid", true)?;
                 },
-                1 => {
+                1 | 2 => {
                     // do nothing explicitly because no action is required for SwapLockTable and SavedSwapTable
                 },
                 unsupported_version => {
@@ -174,6 +179,9 @@ pub mod tables {
                     1 => {
                         let table = upgrader.create_table(Self::TABLE_NAME)?;
                         table.create_index("migration", true)?;
+                    },
+                    2 => {
+                        // nothing needed here
                     },
                     unsupported_version => {
                         return MmError::err(OnUpgradeError::UnsupportedVersion {

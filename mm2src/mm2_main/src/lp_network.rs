@@ -121,7 +121,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                 request,
                 response_channel,
             })) => {
-                if let Err(e) = process_p2p_request(ctx, peer_id, request.req, response_channel.into()) {
+                if let Err(e) = process_p2p_request(ctx, peer_id, request.req, response_channel.into()).await {
                     log::error!("Error on process P2P request: {:?}", e);
                 }
             },
@@ -230,7 +230,7 @@ async fn process_p2p_message(
     }
 }
 
-fn process_p2p_request(
+async fn process_p2p_request(
     ctx: MmArc,
     _peer_id: PeerId,
     request: Vec<u8>,

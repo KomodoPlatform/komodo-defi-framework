@@ -431,6 +431,8 @@ async fn recv_swap_msg<T>(
 
 /// Includes the grace time we add to the "normal" timeouts
 /// in order to give different and/or heavy communication channels a chance.
+///
+/// TODO: It doesn't seem right to need such thing.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
 #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
@@ -975,9 +977,10 @@ pub async fn insert_new_swap_to_db(
     uuid: Uuid,
     started_at: u64,
     swap_type: u8,
+    order_uuid: Uuid,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
+        .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type, order_uuid)
         .await
         .map_err(|e| ERRL!("{}", e))
 }
@@ -1511,6 +1514,7 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                         *swap.uuid(),
                         info.started_at,
                         LEGACY_SWAP_TYPE,
+                        swap.my_order_uuid().unwrap_or_default(),
                     )
                     .await
                     {
