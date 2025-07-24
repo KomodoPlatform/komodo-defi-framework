@@ -11,6 +11,7 @@ pub mod ln_storage;
 pub mod ln_utils;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::HDAddressSelector;
 use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
@@ -37,6 +38,7 @@ use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, Future01CompatExt, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
@@ -486,7 +488,7 @@ impl LightningCoin {
         min_final_cltv_expiry: u64,
     ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(&amount, self.decimals())?;
+        let amt_msat = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
         // note: No description is provided in the invoice to reduce the payload
@@ -562,7 +564,7 @@ impl LightningCoin {
             .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
         let payment_hex = hex::encode(payment_hash.0);
 
-        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()));
+        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()).map_mm_err());
 
         let coin = self.clone();
         let fut = async move {
@@ -956,7 +958,12 @@ impl MarketCoinOps for LightningCoin {
         Some(dhash256(prefixed_message.as_bytes()).take())
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        if address.is_some() {
+            return MmError::err(SignatureError::InvalidRequest(
+                "functionality not supported for Lightning yet.".into(),
+            ));
+        }
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let secret_key = self
             .keys_manager

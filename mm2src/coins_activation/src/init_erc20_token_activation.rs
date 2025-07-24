@@ -138,7 +138,8 @@ impl InitTokenActivationOps for EthCoin {
                 protocol_conf,
                 is_custom,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(token)
     }
@@ -156,7 +157,8 @@ impl InitTokenActivationOps for EthCoin {
             .current_block()
             .compat()
             .await
-            .map_to_mm(EthTokenActivationError::Transport)?;
+            .map_to_mm(EthTokenActivationError::Transport)
+            .map_mm_err()?;
 
         let xpub_extractor = if self.is_trezor() {
             Some(
@@ -172,15 +174,20 @@ impl InitTokenActivationOps for EthCoin {
             None
         };
 
-        task_handle.update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)?;
+        task_handle
+            .update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)
+            .map_mm_err()?;
         let wallet_balance = self
             .enable_coin_balance(
                 xpub_extractor,
                 activation_request.enable_params.clone(),
                 &activation_request.path_to_address,
             )
-            .await?;
-        task_handle.update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)?;
+            .await
+            .map_mm_err()?;
+        task_handle
+            .update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)
+            .map_mm_err()?;
 
         let token_contract_address = self
             .erc20_token_address()

@@ -3,6 +3,7 @@ use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, utxo, CoinProtocol};
 use common::HttpStatusCode;
 use crypto::{privkey::{key_pair_from_secret, key_pair_from_seed},
              CryptoCtx, DerivationPath, KeyPairPolicy};
+use derive_more::Display;
 use keys::Private;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -515,7 +516,7 @@ mod tests {
         assert_eq!(response.keys.len(), 1);
         let key = &response.keys[0];
         assert_eq!(key.account_id, 5);
-        assert_eq!(key.is_change, false);
+        assert!(!key.is_change);
         assert!(key.derivation_path.contains("/5'/0/0"));
     }
 
@@ -552,34 +553,33 @@ mod tests {
 
         assert_eq!(response.keys.len(), 3);
         for key in &response.keys {
-            assert_eq!(key.is_change, true);
+            assert!(key.is_change);
             assert!(key.derivation_path.contains("/0'/1/")); // Change addresses use chain 1
         }
     }
 
     #[test]
     fn test_legacy_iguana_mode() {
-        let ctx = mm_ctx_with_custom_db();
+        // Add BTC coin configuration
+        let conf = json!({
+            "coins": [{
+                "coin": "BTC",
+                "protocol": {
+                    "type": "UTXO"
+                },
+                "address_prefixes": {
+                    "p2pkh": 0,
+                    "p2sh": 5
+                },
+                "wif_prefix": 128,
+                "checksum_type": "DSHA256"
+            }]
+        });
+        let ctx = mm_ctx_with_custom_db_with_conf(Some(conf));
 
         // Initialize crypto context in iguana mode
         let _ = CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "test passphrase")
             .expect("Failed to init crypto context");
-
-        // Add BTC coin configuration
-        let btc_conf = json!({
-            "coin": "BTC",
-            "protocol": {
-                "type": "UTXO"
-            },
-            "address_prefixes": {
-                "p2pkh": 0,
-                "p2sh": 5
-            },
-            "wif_prefix": 128,
-            "checksum_type": "DSHA256"
-        });
-
-        ctx.conf["coins"].as_array_mut().unwrap().push(btc_conf);
 
         let request = OfflineExportPrivkeyRequest {
             coin: "BTC".to_string(),

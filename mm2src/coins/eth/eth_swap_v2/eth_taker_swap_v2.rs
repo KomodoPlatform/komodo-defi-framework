@@ -6,13 +6,14 @@ use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_dec
                  ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
 use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             SearchForFundingSpendErr};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
 use ethcore_transaction::Action;
 use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
-use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use std::convert::TryInto;
 use web3::types::{BlockNumber, TransactionId};
 
@@ -166,11 +167,12 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
+        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals)?;
-            let payment_amount = wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals)?;
+            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
+            let payment_amount =
+                wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
             TakerValidationArgs {
                 swap_id,
                 amount: payment_amount,

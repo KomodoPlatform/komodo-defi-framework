@@ -620,7 +620,8 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, ExtTransaction, OutPoint, Transaction, TransactionInput, TransactionOutput};
+    #[cfg(not(target_arch = "wasm32"))] use super::ExtTransaction;
+    use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;
     use ser::{deserialize, serialize, serialize_with_flags, Serializable, SERIALIZE_TRANSACTION_WITNESS};
@@ -1103,6 +1104,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_tx_to_ext_tx() {
         // https://live.blockcypher.com/btc-testnet/tx/2be90e03abb4d5328bf7e9467ca9c571aef575837b55f1253119b87e85ccb94f/
