@@ -9,6 +9,7 @@ use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, 
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
+use coins::utxo::sat_from_big_decimal;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerPaymentPreimageArgs,
             GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs,
             RefundTakerPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash,
@@ -49,7 +50,6 @@ cfg_wasm32!(
 );
 
 // This is needed to have Debug on messages
-use coins::utxo::sat_from_big_decimal;
 #[allow(unused_imports)] use prost::Message;
 
 /// Negotiation data representation to be stored in DB.

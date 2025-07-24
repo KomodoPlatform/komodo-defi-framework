@@ -4,11 +4,14 @@ use super::{swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsC
             NEGOTIATION_TIMEOUT_SEC};
 use crate::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::lp_swap::swap_lock::SwapLock;
+use crate::lp_swap::swap_v2_pb::{swap_message, taker_negotiation, MakerNegotiated, MakerNegotiation, MakerPaymentInfo,
+                                 SwapMessage};
 use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg,
                      SwapConfirmationsSettings, TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
+use coins::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerPaymentPreimageArgs,
             GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs,
             RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
@@ -49,9 +52,6 @@ cfg_wasm32!(
 );
 
 // This is needed to have Debug on messages
-use crate::lp_swap::swap_v2_pb::{swap_message, taker_negotiation, MakerNegotiated, MakerNegotiation, MakerPaymentInfo,
-                                 SwapMessage};
-use coins::utxo::utxo_common::big_decimal_from_sat_unsigned;
 #[allow(unused_imports)] use prost::Message;
 
 /// Negotiation data representation to be stored in DB.
