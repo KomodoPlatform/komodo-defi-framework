@@ -10,7 +10,7 @@ use super::rpc_responses::*;
 
 use crate::utxo::rpc_clients::ConcurrentRequestMap;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::{output_script, output_script_p2pk, GetBlockHeaderError, GetConfirmedTxError, GetTxHeightError,
+use crate::utxo::{output_script, output_scripts_p2pk, GetBlockHeaderError, GetConfirmedTxError, GetTxHeightError,
                   ScripthashNotification};
 use crate::RpcTransportEventHandler;
 use crate::SharableRpcTransportEventHandler;
@@ -816,8 +816,9 @@ impl UtxoRpcClientOps for ElectrumClient {
             // We don't want to show P2PK outputs along with segwit ones (P2WPKH).
             // Allow listing the P2PK outputs only if the address is not segwit (i.e. show P2PK outputs along with P2PKH).
             if !address.addr_format().is_segwit() {
-                let p2pk_output_script = output_script_p2pk(pubkey);
-                output_scripts.push(p2pk_output_script);
+                let p2pk_scripts = try_f!(output_scripts_p2pk(pubkey)
+                    .map_err(|e| UtxoRpcError::Internal(format!("Couldn't get p2pk output scripts: {}", e))));
+                output_scripts.extend(p2pk_scripts);
             }
         }
 
@@ -950,8 +951,15 @@ impl UtxoRpcClientOps for ElectrumClient {
         if let Some(pubkey) = address.pubkey() {
             // Show the balance in P2PK outputs only for the non-segwit legacy addresses (P2PKH).
             if !address.addr_format().is_segwit() {
-                let p2pk_output_script = output_script_p2pk(pubkey);
-                hashes.push(hex::encode(electrum_script_hash(&p2pk_output_script)));
+                let p2pk_scripts = try_f!(output_scripts_p2pk(pubkey).map_err(|err| {
+                    JsonRpcError::new(
+                        UtxoJsonRpcClientInfo::client_info(self),
+                        rpc_req!(self, "blockchain.scripthash.get_balance").into(),
+                        JsonRpcErrorType::Internal(err.to_string()),
+                    )
+                }));
+                let p2pk_hashes = p2pk_scripts.iter().map(|s| hex::encode(electrum_script_hash(s)));
+                hashes.extend(p2pk_hashes);
             }
         }
 

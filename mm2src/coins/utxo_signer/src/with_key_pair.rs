@@ -35,6 +35,8 @@ pub enum UtxoSignWithKeyPairError {
         script
     )]
     UnspendableUTXO { script: Script },
+    #[display(fmt = "Couldn't get secp256k1 pubkey from keypair: {}", error)]
+    BadPublicKey { error: String },
     #[display(fmt = "Error signing using a private key")]
     ErrorSigning(keys::Error),
 }
@@ -77,12 +79,23 @@ pub fn p2pk_spend(
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
-
-    let script = Builder::build_p2pk(key_pair.public());
-    if script != unsigned_input.prev_script {
+    // P2PK UTXOs can have either compressed or uncompressed public keys in the scriptPubkey.
+    // We need to check that one of them matches the prev_script of the input being spent.
+    let pubkey = key_pair
+        .public()
+        .to_secp256k1_pubkey()
+        .map_err(|e| UtxoSignWithKeyPairError::BadPublicKey { error: e.to_string() })?;
+    // Build the scriptPubKey for both compressed and uncompressed public keys.
+    let possible_script_pubkeys = [
+        Builder::build_p2pk(&keys::Public::Compressed(pubkey.serialize().into())),
+        Builder::build_p2pk(&keys::Public::Normal(pubkey.serialize_uncompressed().into())),
+    ];
+    // Check that one of the scriptPubkeys matches the prev_script of the input being spent.
+    if !possible_script_pubkeys.contains(&unsigned_input.prev_script) {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PK".to_owned(),
-            script,
+            // Safe indexing since the array has exactly 2 elements.
+            script: possible_script_pubkeys[0].clone(),
             prev_script: unsigned_input.prev_script.clone(),
         });
     }
@@ -90,7 +103,7 @@ pub fn p2pk_spend(
     let signature = calc_and_sign_sighash(
         signer,
         input_index,
-        &script,
+        &unsigned_input.prev_script,
         key_pair,
         signature_version,
         SIGHASH_ALL,

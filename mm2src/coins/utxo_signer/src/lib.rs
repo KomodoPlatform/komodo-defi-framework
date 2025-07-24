@@ -60,6 +60,8 @@ pub enum UtxoSignTxError {
         script
     )]
     UnspendableUTXO { script: Script },
+    #[display(fmt = "Couldn't get secp256k1 pubkey from keypair: {}", error)]
+    BadPublicKey { error: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -87,8 +89,9 @@ impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
             // that are expected to be checked by [`sign_common::UtxoSignTxParamsBuilder::build`] already.
             // So if this error happens, it's our internal error.
             UtxoSignWithKeyPairError::InputIndexOutOfBound { .. } => UtxoSignTxError::Internal(error),
-            UtxoSignWithKeyPairError::UnspendableUTXO { script } => UtxoSignTxError::UnspendableUTXO { script },
             UtxoSignWithKeyPairError::ErrorSigning(sign) => UtxoSignTxError::ErrorSigning(sign),
+            UtxoSignWithKeyPairError::UnspendableUTXO { script } => UtxoSignTxError::UnspendableUTXO { script },
+            UtxoSignWithKeyPairError::BadPublicKey { error } => UtxoSignTxError::BadPublicKey { error },
         }
     }
 }
