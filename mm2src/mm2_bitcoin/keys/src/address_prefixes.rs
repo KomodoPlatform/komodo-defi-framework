@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, fmt, u8};
+use std::{convert::TryFrom, fmt};
 
 /// Prefix for a legacy address (p2pkh or p2sh)
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Default)]

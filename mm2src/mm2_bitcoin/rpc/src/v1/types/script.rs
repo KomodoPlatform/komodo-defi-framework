@@ -84,7 +84,7 @@ impl<'a> Deserialize<'a> for ScriptType {
 
         struct ScriptTypeVisitor;
 
-        impl<'b> Visitor<'b> for ScriptTypeVisitor {
+        impl Visitor<'_> for ScriptTypeVisitor {
             type Value = ScriptType;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("script type") }

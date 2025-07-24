@@ -8,7 +8,6 @@ use ethereum_types::U256;
 
 #[expect(dead_code)]
 const TRX_DECIMALS: u32 = 6;
-#[expect(dead_code)]
 const ONE_TRX: u64 = 1_000_000; // 1 TRX = 1,000,000 SUN
 
 /// Represents TRON chain/network.

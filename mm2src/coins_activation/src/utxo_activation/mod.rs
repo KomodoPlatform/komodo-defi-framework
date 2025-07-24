@@ -15,7 +15,7 @@ pub use init_utxo_standard_activation::UtxoStandardTaskManagerShared;
 pub mod for_tests {
     use common::{executor::Timer, now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
-    use mm2_err_handle::prelude::{MmResult, NotEqual};
+    use mm2_err_handle::prelude::MmResult;
     use rpc_task::{RpcInitReq, RpcTaskStatus};
 
     use crate::{init_standalone_coin, init_standalone_coin_status,
@@ -32,7 +32,6 @@ pub mod for_tests {
         Standalone: InitStandaloneCoinActivationOps + Send + Sync + 'static,
         Standalone::InProgressStatus: InitStandaloneCoinInitialStatus,
         InitStandaloneCoinError: From<Standalone::ActivationError>,
-        (Standalone::ActivationError, InitStandaloneCoinError): NotEqual,
     {
         let request = RpcInitReq {
             client_id: 0,

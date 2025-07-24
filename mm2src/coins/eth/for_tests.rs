@@ -37,7 +37,7 @@ pub(crate) fn eth_coin_from_keypair(
         };
         let transport = Web3Transport::new_http(node);
         let web3 = Web3::new(transport);
-        web3_instances.push(Web3Instance { web3, is_parity: false });
+        web3_instances.push(Web3Instance(web3));
     }
     drop_mutability!(web3_instances);
 

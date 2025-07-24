@@ -5,9 +5,8 @@ use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, HDPathToCoin};
 use derive_more::Display;
+pub use keys::AddressFormat as UtxoAddressFormat;
 use keys::NetworkAddressPrefixes;
-pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType, KeyPair, Private,
-               Public, Secret};
 use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
