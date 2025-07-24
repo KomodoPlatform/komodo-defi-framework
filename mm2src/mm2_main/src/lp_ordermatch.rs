@@ -3599,10 +3599,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
             let order = order_mutex.lock().await;
             maker_order_cancelled_p2p_notify(&ctx, &order);
-            delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Expired)
-                .compat()
-                .await
-                .ok();
+            delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Expired).await;
         }
 
         {
