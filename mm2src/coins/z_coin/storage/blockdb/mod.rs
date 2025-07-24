@@ -25,7 +25,6 @@ pub struct BlockDbImpl {
 mod block_db_storage_tests {
     use crate::z_coin::storage::BlockDbImpl;
     use common::log::info;
-    use std::path::PathBuf;
 
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
@@ -37,9 +36,7 @@ mod block_db_storage_tests {
 
     pub(crate) async fn test_insert_block_and_get_latest_block_impl() {
         let ctx = mm_ctx_with_custom_db();
-        let db = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let db = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
         // insert block
         for header in HEADERS.iter() {
             db.insert_block(header.0, hex::decode(header.1).unwrap()).await.unwrap();
@@ -52,9 +49,7 @@ mod block_db_storage_tests {
 
     pub(crate) async fn test_rewind_to_height_impl() {
         let ctx = mm_ctx_with_custom_db();
-        let db = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let db = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
         // insert block
         for header in HEADERS.iter() {
             db.insert_block(header.0, hex::decode(header.1).unwrap()).await.unwrap();
@@ -77,9 +72,7 @@ mod block_db_storage_tests {
     #[allow(unused)]
     pub(crate) async fn test_process_blocks_with_mode_impl() {
         let ctx = mm_ctx_with_custom_db();
-        let db = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let db = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
         // insert block
         for header in HEADERS.iter() {
             let inserted_id = db.insert_block(header.0, hex::decode(header.1).unwrap()).await.unwrap();

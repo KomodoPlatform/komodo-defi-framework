@@ -12,6 +12,7 @@ use crate::{coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, Can
 use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
 use common::executor::AbortedError;
+use derive_more::Display;
 pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -158,7 +159,7 @@ pub enum SiaCoinBuildError {
     EllipticCurveError(ed25519_dalek::ed25519::Error),
 }
 
-impl<'a> SiaCoinBuilder<'a> {
+impl SiaCoinBuilder<'_> {
     #[allow(dead_code)]
     fn ctx(&self) -> &MmArc { self.ctx }
 
@@ -168,7 +169,7 @@ impl<'a> SiaCoinBuilder<'a> {
     fn ticker(&self) -> &str { self.ticker }
 
     async fn build(self) -> MmResult<SiaCoin, SiaCoinBuildError> {
-        let conf = SiaConfBuilder::new(self.conf, self.ticker()).build()?;
+        let conf = SiaConfBuilder::new(self.conf, self.ticker()).build().map_mm_err()?;
         let sia_fields = SiaCoinFields {
             conf,
             http_client: SiaApiClient::new(self.params.http_conf.clone())
@@ -315,6 +316,12 @@ impl MarketCoinOps for SiaCoin {
                     "Metamask not supported. Must use iguana seed.".to_string(),
                 )
                 .into());
+            },
+            PrivKeyPolicy::WalletConnect { .. } => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "WalletConnect not yet supported. Must use iguana seed.".to_string(),
+                )
+                .into())
             },
         };
         let address = SpendPolicy::PublicKey(key_pair.public).address();

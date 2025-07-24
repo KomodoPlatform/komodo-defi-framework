@@ -26,6 +26,7 @@ use tokio::time;
 ///
 /// [`SubscriptionClient`]: trait.SubscriptionClient.html
 #[async_trait]
+#[allow(dead_code)]
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
     async fn abci_info(&self) -> Result<abci_info::Response, Error> { self.perform(abci_info::Request).await }

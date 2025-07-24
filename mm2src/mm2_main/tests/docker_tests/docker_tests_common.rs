@@ -1,12 +1,10 @@
 use coins::z_coin::ZCoin;
-pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
-                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
-                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
+                                      wait_check_stats_swap_status, MarketMakerIt};
 
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;
@@ -122,7 +120,7 @@ pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com"
 // use thread local to affect only the current running test
 thread_local! {
     /// Set test dex pubkey as Taker (to check DexFee::NoFee)
-    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = Cell::new(false);
+    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = const { Cell::new(false) };
 }
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
@@ -239,7 +237,7 @@ impl CoinDockerOps for ZCoinAssetDockerOps {
 
 impl ZCoinAssetDockerOps {
     pub fn new() -> ZCoinAssetDockerOps {
-        let (ctx, coin) = block_on(z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe"));
+        let (ctx, coin) = block_on(z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe", "fe"));
 
         ZCoinAssetDockerOps { ctx, coin }
     }
@@ -830,7 +828,7 @@ where
         block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = block_on_f01(client.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])).unwrap();
+            let unspents = block_on_f01(client.list_unspent_impl(0, i32::MAX, vec![address.to_string()])).unwrap();
             if !unspents.is_empty() {
                 break;
             }
@@ -1261,7 +1259,7 @@ pub fn wait_until_relayer_container_is_ready(container_id: &str) {
 
         log!("Expected output {Q_RESULT}, received {output}.");
         if attempts > 10 {
-            panic!("{}", "Reached max attempts for <<{docker:?}>>.");
+            panic!("Reached max attempts for <<{:?}>>.", docker);
         } else {
             log!("Asking for relayer node status again..");
         }

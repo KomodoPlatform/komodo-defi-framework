@@ -38,6 +38,7 @@ use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_sec, Future01CompatExt, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
@@ -487,7 +488,7 @@ impl LightningCoin {
         min_final_cltv_expiry: u64,
     ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(&amount, self.decimals())?;
+        let amt_msat = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
         // note: No description is provided in the invoice to reduce the payload
@@ -563,7 +564,7 @@ impl LightningCoin {
             .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
         let payment_hex = hex::encode(payment_hash.0);
 
-        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()));
+        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()).map_mm_err());
 
         let coin = self.clone();
         let fut = async move {

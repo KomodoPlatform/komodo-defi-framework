@@ -808,7 +808,8 @@ fn test_wait_for_tx_spend() {
     log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
-    // also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    /// Also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    #[allow(static_mut_refs)]
     static mut SPEND_TX: Option<TransactionEnum> = None;
 
     let maker_pub_c = maker_pub.to_vec();

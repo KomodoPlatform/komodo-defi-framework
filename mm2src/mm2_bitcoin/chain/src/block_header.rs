@@ -157,11 +157,8 @@ impl Serializable for BlockHeader {
         if let Some(claim) = &self.claim_trie_root {
             s.append(claim);
         }
-        match &self.hash_final_sapling_root {
-            Some(h) => {
-                s.append(h);
-            },
-            None => (),
+        if let Some(h) = &self.hash_final_sapling_root {
+            s.append(h);
         };
         s.append(&self.time);
         s.append(&self.bits);
@@ -379,7 +376,7 @@ impl From<BlockHeader> for ExtBlockHeader {
 
 #[cfg(test)]
 mod tests {
-    use super::ExtBlockHeader;
+    #[cfg(not(target_arch = "wasm32"))] use super::ExtBlockHeader;
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC,
                        AUX_POW_VERSION_SYS, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION,
                        PROG_POW_SWITCH_TIME};
@@ -2510,6 +2507,7 @@ mod tests {
         assert_eq!(serialized.take(), header_bytes);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_blockheader_to_ext_blockheader() {
         // https://live.blockcypher.com/btc/block/00000000000000000020cf2bdc6563fb25c424af588d5fb7223461e72715e4a9/

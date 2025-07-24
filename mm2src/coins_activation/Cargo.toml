@@ -20,6 +20,7 @@ derive_more.workspace = true
 ethereum-types.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
 hex.workspace = true
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
