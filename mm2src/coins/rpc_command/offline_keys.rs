@@ -167,12 +167,7 @@ fn extract_prefix_values(
             }))
         },
         CoinProtocol::ZHTLC(_protocol_info) => {
-            let wif_type = coin_conf["wiftype"]
-                .as_u64()
-                .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
-                    ticker: ticker.to_string(),
-                    prefix_type: "wiftype".to_string(),
-                })? as u8;
+            let wif_type = coin_conf["wiftype"].as_u64().unwrap_or(128) as u8;
 
             let consensus_params = &coin_conf["protocol"]["protocol_data"]["consensus_params"];
 
@@ -934,8 +929,7 @@ mod tests {
     async fn test_arrr_hd_key_derivation() {
         use mm2_test_helpers::for_tests::pirate_conf;
 
-        let mut arrr_conf = pirate_conf();
-        arrr_conf["wiftype"] = json!(128);
+        let arrr_conf = pirate_conf();
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [arrr_conf],
@@ -969,8 +963,7 @@ mod tests {
     async fn test_arrr_iguana_key_derivation() {
         use mm2_test_helpers::for_tests::pirate_conf;
 
-        let mut arrr_conf = pirate_conf();
-        arrr_conf["wiftype"] = json!(128);
+        let arrr_conf = pirate_conf();
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [arrr_conf],
