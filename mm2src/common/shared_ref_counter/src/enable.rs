@@ -136,11 +136,7 @@ impl<T> WeakRc<T> {
     /// This behavior is considered acceptable since the `enable` feature is expected to be used for **debug** purposes only.
     #[track_caller]
     pub fn upgrade(&self) -> Option<SharedRc<T>> {
-        let inner = match self.inner.upgrade() {
-            Some(ctx) => ctx,
-            None => return None,
-        };
-
+        let inner = self.inner.upgrade()?;
         let next_index = self.next_index.upgrade().expect(UPGRADING_ERROR);
         let index = next_index.fetch_add(1, Ordering::Relaxed);
 

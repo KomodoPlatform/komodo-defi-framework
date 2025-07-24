@@ -36,6 +36,7 @@ fn alice_can_see_the_active_order_after_connection() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -254,6 +255,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -427,6 +429,7 @@ fn test_orderbook_segwit() {
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -540,6 +543,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -586,6 +590,7 @@ fn test_conf_settings_in_orderbook() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -708,6 +713,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
             "rpc_password": "password",
             "coins": bob_coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -848,6 +854,7 @@ fn orderbook_extended_data() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -960,6 +967,7 @@ fn orderbook_should_display_base_rel_volumes() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1058,6 +1066,7 @@ fn orderbook_should_work_without_coins_activation() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1139,6 +1148,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1210,6 +1220,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1323,7 +1334,7 @@ fn test_order_cancellation_received_before_creation() {
     );
 
     // Bob places maker order before Alice connects to the network so that Alice receives the order creation through IHAVE/IWANT messages.
-    let set_price = block_on(set_price(&mm_bob, "RICK", "MORTY", "0.9", "0.9", false));
+    let set_price = block_on(set_price(&mm_bob, "RICK", "MORTY", "0.9", "0.9", false, None));
 
     let mm_alice_conf = Mm2TestConf::light_node("alice passphrase", &coins, &[&mm_bob.ip.to_string()]);
     let mut mm_alice = MarketMakerIt::start(mm_alice_conf.conf, mm_alice_conf.rpc_password, None).unwrap();
@@ -1530,4 +1541,49 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         .iter()
         .find(|ask| ask.entry.uuid == bob_set_price_res.result.uuid)
         .unwrap();
+}
+
+#[test]
+fn test_expirable_order() {
+    let coins = json!([rick_conf(), morty_conf()]);
+
+    let bob_passphrase = "bob passphrase";
+    let mm_bob_conf = Mm2TestConf::seednode(bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(mm_bob_conf.conf, mm_bob_conf.rpc_password, None).unwrap();
+
+    block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+
+    let expiration_min = 1;
+    let _ = block_on(set_price(
+        &mm_bob,
+        "RICK",
+        "MORTY",
+        "0.1",
+        "0.1",
+        false,
+        Some(expiration_min),
+    ));
+
+    let mm_alice_conf = Mm2TestConf::light_node("alice passphrase", &coins, &[&mm_bob.ip.to_string()]);
+    let mut mm_alice = MarketMakerIt::start(mm_alice_conf.conf, mm_alice_conf.rpc_password, None).unwrap();
+
+    let orderbook = block_on(orderbook_v2(&mm_alice, "RICK", "MORTY"));
+    let asks = orderbook["result"]["asks"].as_array().unwrap();
+    // Alice should see the order in the orderbook as she got it through `GetOrderbook` p2p request.
+    assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
+
+    // Sleep until order expires
+    thread::sleep(Duration::from_secs(expiration_min as u64 * 60 + 1));
+
+    // Make sure Alice receives the order cancellation message.
+    block_on(mm_alice.wait_for_log(10., |log| {
+        log.contains("received ordermatch message MakerOrderCancelled")
+    }))
+    .unwrap();
+
+    let orderbook = block_on(orderbook_v2(&mm_alice, "RICK", "MORTY"));
+    let asks = orderbook["result"]["asks"].as_array().unwrap();
+    // Alice shouldn't find the order in the orderbook as it was expired just recently.
+    assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have exactly 0 ask");
 }

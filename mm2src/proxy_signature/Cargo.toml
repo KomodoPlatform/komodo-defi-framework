@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-chrono = "0.4"
-http = "0.2"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify"] }
-serde = "1"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+chrono.workspace = true
+http.workspace = true
+libp2p = { workspace = true, features = ["identify"] }
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
 [dev-dependencies]
-rand = { version = "0.7", features = ["std", "small_rng"] }
+rand = { workspace = true, features = ["std", "small_rng"] }

@@ -3,8 +3,8 @@ use crypto::dhash160;
 use hash::{H160, H264, H520};
 use hex::ToHex;
 use secp256k1::{recovery::{RecoverableSignature, RecoveryId},
-                Message as SecpMessage, PublicKey, Signature as SecpSignature};
-use std::{fmt, ops};
+                Error as SecpError, Message as SecpMessage, PublicKey, Signature as SecpSignature};
+use std::{fmt, ops::Deref};
 use {CompactSignature, Error, Message, Signature};
 
 /// Secret public key
@@ -80,9 +80,12 @@ impl Public {
             Public::Normal(_) => None,
         }
     }
+
+    #[inline(always)]
+    pub fn to_secp256k1_pubkey(&self) -> Result<PublicKey, SecpError> { PublicKey::from_slice(self.deref()) }
 }
 
-impl ops::Deref for Public {
+impl Deref for Public {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {

@@ -1,4 +1,106 @@
-## v2.4.0-beta - 2025-04-15
+## v2.5.0-beta - 2025-07-04
+
+### Features:
+
+**WalletConnect Integration**:
+- WalletConnect v2 support for EVM and Cosmos coins was implemented, enabling wallet connection and transaction signing via the WalletConnect protocol. [#2223](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2223) [#2485](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2485) [#2508](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2508)
+
+---
+
+### Work in Progress (WIP) Features:
+
+**Cosmos Network and IBC Swaps**:
+- Pre-swap validation logic was implemented for maker order creation, requiring HTLC assets and healthy IBC channels on the Cosmos network, with all changes gated behind the `ibc-routing-for-swaps` feature. [#2459](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2459)
+- The taker and maker order types were extended with an `order_metadata` field to carry protocol/IBC details, and cross-checks for IBC channels were added (also feature-gated), enabling both parties to validate IBC routing before a swap. [#2476](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2476)
+
+**TRON Integration**:
+- Initial groundwork for TRON integration was started, including the addition of basic structures and boilerplate code; no end-to-end functionality is yet available. [#2425](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2425)
+
+---
+
+### Enhancements/Fixes:
+
+**Event Streaming**:
+- Streamer IDs in the event-streaming system were strongly typed to improve type safety and code clarity. [#2441](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2441)
+
+**Peer-to-Peer Network**:
+- Hardcoded seed node IP addresses were removed from the peer-to-peer network configuration to improve maintainability. [#2439](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2439)
+
+**Orders and Trading Protocol**:
+- The minimum trading volume logic was revised to remove BTC-specific volume behavior, standardizing the calculation across all coins. [#2483](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2483)
+
+**Tendermint / Cosmos**:
+- A helper for generating internal transaction IDs for Tendermint transactions was introduced. [#2438](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2438)
+- The IBC channel handler was improved to enhance safety and reliability when interacting with IBC channels. [#2298](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2298)
+
+**Wallet**:
+- Unconfirmed z-coin notes are now correctly tracked. [#2331](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331)
+- HD multi-address support for message signing was implemented, allowing message signatures from multiple derived addresses. [#2432](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2432) [#2474](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2474)
+- A `delete_wallet` RPC was introduced to securely remove wallets after password confirmation, while preventing the deletion of the currently active wallet. [#2497](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2497)
+- A race condition during the initialization of Trezor-based hardware wallets was resolved by ensuring the correct account and address are loaded before fetching the enabled address, preventing startup errors. [#2504](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2504)
+
+**UTXO**:
+- Validation of expected public keys for p2pk inputs was corrected, resolving an error in p2pk transaction processing. [#2408](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2408)
+- Transaction fee calculation and minimum relay fee handling for UTXO coins were improved for accurate fee estimation. [#2316](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2316)
+
+**EVM / ERC20**:
+- ETH address serialization in event streaming was updated to use the `AddrToString` trait for consistency. [#2440](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2440)
+
+**Pubkey Banning**:
+- Expirable bans for pubkeys were introduced, allowing temporary exclusion of certain public keys. [#2455](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2455)
+
+**RPC Interface**:
+- A unified interface was implemented for legacy and current RPC methods. [#2450](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2450)
+
+**DNS Resolution**:
+- IP resolution logic was improved to fail only if no IPv4 address is found. [#2487](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2487)
+
+**Database and File System**:
+- More replacements of `dbdir` with `address_dir` were made as part of an ongoing improvement to database architecture. [#2398](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2398)
+
+**Build and Dependency Management**:
+- Duplicated mm2 build artifacts were removed from the build process to reduce clutter. [#2448](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2448)
+- Static CRT linking was enabled for MSVC builds, improving the portability of Windows binaries. [#2464](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2464)
+- The `timed-map` dependency was bumped to version `1.4.1` for improved performance and stability. [#2413](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2413) [#2481](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2481)
+- The `base58` crate was removed and replaced with `bs58` throughout the codebase for consistency and security. [#2427](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2427)
+- Dependencies were reorganized using the `workspace.dependencies` feature for centralized management. [#2449](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2449)
+
+---
+
+### Other Changes:
+
+**Documentation**:
+- Old URLs referencing atomicDEX or previous documentation pages were updated throughout the documentation. [#2428](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2428)
+- A DeepWiki badge was added to the README to highlight documentation resources. [#2463](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2463)
+
+**Core Maintenance**:
+- Workspace dependencies were organized for consistent dependency management across the project. [#2449](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2449)
+- A unit test was added to validate DEX fee handling for ZCoin. [#2460](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2460)
+- Improved ERC20 token lookup to use platform ticker alongside contract address for proper token identification across platforms. [#2445](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2445)
+
+---
+
+### NB - Backwards compatibility breaking changes:
+
+**WalletConnect/EVM Coin Activation Policy**:
+- The `priv_key_policy` field for EVM coin activation now requires the new enum variant format: `"priv_key_policy": { "type": "ContextPrivKey" }`. [#2223](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2223)
+
+**TRON/EVM Chain Specification**:
+- EVM coin configurations must now include `chain_id` inside the `protocol_data` field. Legacy `chain_id` fields are deprecated. [#2425](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2425)
+
+**mm2 Build Artifacts**:
+- The `mm2` binaries have been removed from build outputs. Users must reference new artifact locations. [#2448](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2448)
+
+**Seednode Configuration**:
+- Hardcoded seed nodes were removed. KDF will no longer connect to 8762 mainnet by default without proper `seednodes` configuration. [#2439](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2439)
+
+**IBC/Cosmos Changes**:
+- The `ibc_chains` and `ibc_transfer_channels` RPC endpoints have been removed. [#2459](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2459)
+- The `ibc_source_channel` field now requires numeric values only (e.g., `12` instead of `channel-12`). [#2459](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2459)
+
+---
+
+## v2.4.0-beta - 2025-05-02
 
 ### Features:
 
@@ -22,7 +124,8 @@
 ### Enhancements/Fixes:
 
 **Event Streaming**:
-- UnknownClient error was moved to trace level [2401](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2401)
+- UnknownClient error was moved to trace level [#2401](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2401)
+- Initial addresses registration in UTXO balance streaming was fixed to properly track address balances when streamer is enabled [#2431](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2431)
 
 **Peer-to-Peer Network**:
 - Implemented network time synchronization validation to avoid swap failures due to node clock drift [#2255](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2255) [#2302](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2302), with additional testing coverage [#2304](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2304)
@@ -71,6 +174,16 @@
 
 **NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)**:
 - Fixed `update_nft` to work correctly with HD wallets using the enabled address [#2386](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2386)
+- Fixed `withdraw_nft` method to work correctly in HD mode [#2424](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2424)
+
+**Simple Maker Bot [#1065](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1065)**:
+- Added LiveCoinWatch price provider and removed deprecated Nomics provider [#2416](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2416)
+
+**UTXO Improvements**:
+- Added support for parsing taproot output address types from `blockchain.transaction.get` verbose transactions [#2423](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2423)
+
+**Qtum Delegation**:
+- Standardized parameter naming by using `validator_address` for QTUM delegation similar to Cosmos [#2419](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2419)
 
 **Security Fixes**:
 - Fixed potential panics in hash processing by enforcing fixed-size arrays and proper length validation [#2279](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2279)

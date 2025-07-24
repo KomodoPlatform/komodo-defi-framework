@@ -273,12 +273,10 @@ impl RpcTask for InitCreateAccountTask {
                     on_passphrase_request: CreateAccountAwaitingStatus::EnterTrezorPassphrase,
                     on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,
                 };
-                Some(CreateAccountXPubExtractor::new_trezor_extractor(
-                    ctx,
-                    task_handle,
-                    hw_statuses,
-                    coin_protocol,
-                )?)
+                Some(
+                    CreateAccountXPubExtractor::new_trezor_extractor(ctx, task_handle, hw_statuses, coin_protocol)
+                        .map_mm_err()?,
+                )
             } else {
                 None
             };
@@ -318,7 +316,12 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     eth.is_trezor(),
-                    CoinProtocol::ETH,
+                    // Todo: add support for Tron by checking eth.chain_spec
+                    CoinProtocol::ETH {
+                        chain_id: eth.chain_id().ok_or_else(|| {
+                            CreateAccountRpcError::Internal("chain_id should be available for an EVM coin".to_string())
+                        })?,
+                    },
                 )
                 .await?,
             )),
@@ -332,7 +335,7 @@ pub async fn init_create_new_account(
     req: RpcInitReq<CreateNewAccountRequest>,
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
     let spawner = coin.spawner();
     let task = InitCreateAccountTask {
@@ -342,7 +345,8 @@ pub async fn init_create_new_account(
         task_state: CreateAccountState::default(),
     };
     let task_id =
-        CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task, client_id)?;
+        CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -369,7 +373,7 @@ pub async fn init_create_new_account_user_action(
         .create_account_manager
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -382,7 +386,7 @@ pub async fn cancel_create_new_account(
         .create_account_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -392,7 +396,7 @@ pub(crate) mod common_impl {
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
                            HDCoinExtendedPubkey, HDCoinHDAccount, HDWalletOps};
 
-    pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
+    pub async fn init_create_new_account_rpc<Coin, XPubExtractor>(
         coin: &Coin,
         params: CreateNewAccountParams,
         state: CreateAccountState,
@@ -407,9 +411,11 @@ pub(crate) mod common_impl {
         XPubExtractor: HDXPubExtractor + Send,
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
-        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id).await?;
+        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id)
+            .await
+            .map_mm_err()?;
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
@@ -418,9 +424,10 @@ pub(crate) mod common_impl {
 
         let addresses = if params.scan {
             let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-            let address_scanner = coin.produce_hd_address_scanner().await?;
+            let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
             coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
-                .await?
+                .await
+                .map_mm_err()?
         } else {
             Vec::new()
         };

@@ -9,6 +9,7 @@ use common::executor::{AbortSettings, SpawnAbortable, SpawnFuture, Timer};
 use common::log::{error, info};
 use common::{new_uuid, now_sec_i64};
 use core::time::Duration;
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
@@ -16,7 +17,7 @@ use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1v24::Secp256k1;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -181,8 +182,6 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
 pub enum SignFundingTransactionError {
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-    #[display(fmt = "Error converting transaction: {}", _0)]
-    ConvertTxErr(String),
     #[display(fmt = "Error signing transaction: {}", _0)]
     TxSignFailed(String),
 }
@@ -222,7 +221,7 @@ async fn sign_funding_transaction(
     )
     .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
 
-    Transaction::try_from(signed).map_err(|e| SignFundingTransactionError::ConvertTxErr(e.to_string()))
+    Ok(Transaction::from(signed))
 }
 
 async fn save_channel_closing_details(

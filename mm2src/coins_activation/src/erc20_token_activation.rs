@@ -76,6 +76,7 @@ impl TryFromCoinProtocol for Erc20Protocol {
                 contract_address,
             } => {
                 let token_addr = valid_addr_from_str(&contract_address).map_err(|_| CoinProtocol::ERC20 {
+                    // TODO: maybe add error description to this err (we're losing 'Invalid address checksum' here)
                     platform: platform.clone(),
                     contract_address,
                 })?;
@@ -154,9 +155,15 @@ impl TokenActivationOps for EthCoin {
                             erc20_protocol,
                             is_custom,
                         )
-                        .await?;
+                        .await
+                        .map_mm_err()?;
 
-                    let address = token.derivation_method().single_addr_or_err().await?.display_address();
+                    let address = token
+                        .derivation_method()
+                        .single_addr_or_err()
+                        .await
+                        .map_mm_err()?
+                        .display_address();
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
                     })?;
@@ -190,9 +197,10 @@ impl TokenActivationOps for EthCoin {
                         ));
                     }
                     let nft_global = match &nft_init_params.provider {
-                        NftProviderEnum::Moralis { url, komodo_proxy } => {
-                            platform_coin.initialize_global_nft(url, *komodo_proxy).await?
-                        },
+                        NftProviderEnum::Moralis { url, komodo_proxy } => platform_coin
+                            .initialize_global_nft(url, *komodo_proxy)
+                            .await
+                            .map_mm_err()?,
                     };
                     let nfts_by_address = nft_global.nfts_by_display_address().await;
                     let init_result = EthTokenInitResult::Nft(NftInitResult {

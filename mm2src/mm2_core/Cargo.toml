@@ -8,39 +8,41 @@ doctest = false
 
 [features]
 new-db-arch = []
+track-ctx-pointer = []
 
 [dependencies]
-arrayref = "0.3"
-async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1"
-cfg-if = "1.0"
+arrayref.workspace = true
+async-std = { workspace = true, features = ["unstable"] }
+async-trait.workspace = true
+cfg-if.workspace = true
 common = { path = "../common" }
-compatible-time = { version = "1.1.0", package = "web-time" }
+compatible-time.workspace = true
 db_common = { path = "../db_common" }
-derive_more = "0.99"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
-gstuff = { version = "0.7", features = ["nightly"] }
-hex = "0.4.2"
-lazy_static = "1.4"
+derive_more.workspace = true
+futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
+gstuff.workspace = true 
+hex.workspace = true
+lazy_static.workspace = true
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify"] }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
 primitives = { path = "../mm2_bitcoin/primitives" }
-rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
-serde = "1"
+rand.workspace = true 
+serde.workspace = true
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 shared_ref_counter = { path = "../common/shared_ref_counter" }
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+uuid.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 mm2_rpc = { path = "../mm2_rpc", features = [ "rpc_facilities" ] }
-timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
-wasm-bindgen-test = { version = "0.3.2" }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
+wasm-bindgen-test.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rustls = { version = "0.21", default-features = false }
-tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
-timed-map = { version = "1.3", features = ["rustc-hash"] }
+mm2_io = { path = "../mm2_io" }
+rustls.workspace = true
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
+timed-map = { workspace = true, features = ["rustc-hash"] }

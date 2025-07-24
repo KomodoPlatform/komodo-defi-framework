@@ -1,14 +1,18 @@
 use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum};
-use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
-            DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
+use crate::hd_wallet::HDAddressSelector;
+use crate::{coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
+            ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
+            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
+            ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut,
+            WithdrawRequest};
+use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
 use common::executor::AbortedError;
+use derive_more::Display;
 pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -16,7 +20,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -154,7 +158,7 @@ pub enum SiaCoinBuildError {
     EllipticCurveError(ed25519_dalek::ed25519::Error),
 }
 
-impl<'a> SiaCoinBuilder<'a> {
+impl SiaCoinBuilder<'_> {
     #[allow(dead_code)]
     fn ctx(&self) -> &MmArc { self.ctx }
 
@@ -164,7 +168,7 @@ impl<'a> SiaCoinBuilder<'a> {
     fn ticker(&self) -> &str { self.ticker }
 
     async fn build(self) -> MmResult<SiaCoin, SiaCoinBuildError> {
-        let conf = SiaConfBuilder::new(self.conf, self.ticker()).build()?;
+        let conf = SiaConfBuilder::new(self.conf, self.ticker()).build().map_mm_err()?;
         let sia_fields = SiaCoinFields {
             conf,
             http_client: SiaApiClient::new(self.params.http_conf.clone())
@@ -307,19 +311,37 @@ impl MarketCoinOps for SiaCoin {
                 )
                 .into());
             },
+            PrivKeyPolicy::WalletConnect { .. } => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "WalletConnect not yet supported. Must use iguana seed.".to_string(),
+                )
+                .into())
+            },
         };
         let address = SpendPolicy::PublicKey(key_pair.public).address();
         Ok(address.to_string())
     }
 
-    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let pubkey = PublicKey::from_bytes(&pubkey.0[..32]).map_err(|e| {
+            AddressFromPubkeyError::InternalError(format!("Couldn't parse bytes into ed25519 pubkey: {e:?}"))
+        })?;
+        let address = SpendPolicy::PublicKey(pubkey).address();
+        Ok(address.to_string())
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        MmError::err(UnexpectedDerivationMethod::InternalError("Not implemented".into()))
+    }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
+
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        MmError::err(SignatureError::InternalError("Not implemented".into()))
+    }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+        MmError::err(VerificationError::InternalError("Not implemented".into()))
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {

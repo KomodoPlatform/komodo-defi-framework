@@ -5,7 +5,7 @@ mod ping;
 pub(crate) mod peers_exchange;
 pub(crate) mod request_response;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use async_std::task::spawn;
     use common::executor::abortable_queue::AbortableQueue;
