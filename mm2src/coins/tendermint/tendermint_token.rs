@@ -3,7 +3,8 @@
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{create_withdraw_msg_as_any, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
             TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
-use crate::coin_errors::ValidatePaymentResult;
+use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
+use crate::hd_wallet::HDAddressSelector;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
@@ -29,7 +30,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use primitives::hash::H256;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -58,7 +59,7 @@ impl Deref for TendermintToken {
 pub struct TendermintTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
-    pub denom: String,
+    pub denom: Denom,
 }
 
 #[derive(Clone, Deserialize)]
@@ -66,7 +67,6 @@ pub struct TendermintTokenActivationParams {}
 
 pub enum TendermintTokenInitError {
     Internal(String),
-    InvalidDenom(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
 }
@@ -84,9 +84,8 @@ impl TendermintToken {
         ticker: String,
         platform_coin: TendermintCoin,
         decimals: u8,
-        denom: String,
+        denom: Denom,
     ) -> MmResult<Self, TendermintTokenInitError> {
-        let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
         let token_impl = TendermintTokenImpl {
             abortable_system: platform_coin.abortable_system.create_subsystem()?,
             ticker,
@@ -269,13 +268,19 @@ impl MarketCoinOps for TendermintToken {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        self.platform_coin.address_from_pubkey(pubkey)
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         self.platform_coin.get_public_key().await
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> { self.platform_coin.sign_message(message) }
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        self.platform_coin.sign_message(message, address)
+    }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
         self.platform_coin.verify_message(signature, message, address)
@@ -287,7 +292,8 @@ impl MarketCoinOps for TendermintToken {
             let balance_denom = coin
                 .platform_coin
                 .account_balance_for_denom(&coin.platform_coin.account_id, coin.denom.to_string())
-                .await?;
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -358,16 +364,7 @@ impl MarketCoinOps for TendermintToken {
 impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn wallet_only(&self, ctx: &MmArc) -> bool {
-        let coin_conf = crate::coin_conf(ctx, self.ticker());
-        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
-        if coin_conf.is_null() {
-            return true;
-        }
-        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
-
-        wallet_only_conf || self.platform_coin.is_keplr_from_ledger
-    }
+    fn wallet_only(&self, ctx: &MmArc) -> bool { self.platform_coin.wallet_only(ctx) }
 
     fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
@@ -378,19 +375,22 @@ impl MmCoin for TendermintToken {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let is_ibc_transfer = to_address.prefix() != platform.account_prefix || req.ibc_source_channel.is_some();
+            let is_ibc_transfer =
+                to_address.prefix() != platform.protocol_info.account_prefix || req.ibc_source_channel.is_some();
 
             let (account_id, maybe_priv_key) = platform
                 .extract_account_id_and_private_key(req.from)
                 .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
-                .await?;
+                .get_balance_as_unsigned_and_decimal(&account_id, &platform.protocol_info.denom, token.decimals())
+                .await
+                .map_mm_err()?;
 
             let (balance_denom, balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
                 (
@@ -408,7 +408,7 @@ impl MmCoin for TendermintToken {
                 }
 
                 (
-                    sat_from_big_decimal(&req.amount, token.decimals())?,
+                    sat_from_big_decimal(&req.amount, token.decimals()).map_mm_err()?,
                     req.amount.clone(),
                     req.amount,
                 )
@@ -430,7 +430,12 @@ impl MmCoin for TendermintToken {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(platform.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(
+                        platform
+                            .get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
+                            .await
+                            .map_mm_err()?,
+                    ),
                 }
             } else {
                 None
@@ -441,7 +446,7 @@ impl MmCoin for TendermintToken {
                 to_address.clone(),
                 &token.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
@@ -469,7 +474,8 @@ impl MmCoin for TendermintToken {
                     &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
 
@@ -482,22 +488,21 @@ impl MmCoin for TendermintToken {
             }
 
             let fee_amount = Coin {
-                denom: platform.denom.clone(),
+                denom: platform.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             };
 
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
-            let account_info = platform.account_info(&account_id).await?;
+            let account_info = platform.account_info(&account_id).await.map_mm_err()?;
 
             let tx = platform
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
+            let internal_id =
+                super::tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), Some(token.token_id()));
 
             Ok(TransactionDetails {
                 tx,

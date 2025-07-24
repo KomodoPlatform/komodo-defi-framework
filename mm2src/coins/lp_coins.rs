@@ -24,15 +24,14 @@
     forgetting_references,
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
-    clippy::forget_non_drop
+    clippy::forget_non_drop,
+    clippy::doc_lazy_continuation,
+    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
 )]
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics)]
-#![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
-#![feature(local_key_cell_methods)] // for tests
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -43,7 +42,6 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
@@ -54,7 +52,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, U256};
+use ethereum_types::{Address as EthAddress, H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -72,12 +70,13 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 #[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
+use rpc_command::tendermint::ibc::ChannelId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
 use std::cmp::Ordering;
-use std::collections::hash_map::{HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, AddAssign, Deref};
@@ -102,7 +101,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use ethereum_types::{H264 as EthH264, H520 as EthH520};
+    use ethereum_types::{H264 as EthH264};
     use hd_wallet::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -214,12 +213,9 @@ pub mod lp_price;
 pub mod watcher_common;
 
 pub mod coin_errors;
-use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
+use coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentFut,
+                  ValidatePaymentResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
-
-#[doc(hidden)]
-#[cfg(test)]
-pub mod coins_tests;
 
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
@@ -228,9 +224,9 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
-                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
-                HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps,
+                HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId,
+                HDWalletAddress, HDWalletCoinOps, HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -313,6 +309,7 @@ pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFun
 pub type ValidateTakerPaymentSpendPreimageResult = MmResult<(), ValidateTakerPaymentSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+pub type Ticker = String;
 
 // Constants for logs used in tests
 pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";
@@ -849,7 +846,7 @@ pub enum SwapTxTypeWithSecretHash<'a> {
     },
 }
 
-impl<'a> SwapTxTypeWithSecretHash<'a> {
+impl SwapTxTypeWithSecretHash<'_> {
     pub fn redeem_script(&self, time_lock: u32, my_public: &Public, other_public: &Public) -> Script {
         match self {
             SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => {
@@ -2080,11 +2077,13 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> MmResult<String, MyAddressError>;
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError>;
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String>;
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
@@ -2095,7 +2094,12 @@ pub trait MarketCoinOps {
             }
             Ok(MmNumber::from(spendable))
         };
-        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+
+        Box::new(
+            self.my_spendable_balance()
+                .map_err(|e| e.map(GetNonZeroBalance::from))
+                .and_then(closure),
+        )
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
@@ -2143,8 +2147,8 @@ pub trait MarketCoinOps {
     /// Is privacy coin like zcash or pirate
     fn is_privacy(&self) -> bool { false }
 
-    /// Is KMD coin
-    fn is_kmd(&self) -> bool { false }
+    /// Returns `true` for coins (like KMD) that should use direct DEX fee burning via OP_RETURN.
+    fn should_burn_directly(&self) -> bool { false }
 
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
@@ -2211,7 +2215,7 @@ pub trait GetWithdrawSenderAddress {
 #[derive(Clone, Default, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
-    from: Option<WithdrawFrom>,
+    from: Option<HDAddressSelector>,
     to: String,
     #[serde(default)]
     amount: BigDecimal,
@@ -2220,9 +2224,8 @@ pub struct WithdrawRequest {
     fee: Option<WithdrawFee>,
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
-    ibc_source_channel: Option<String>,
-    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
-    #[cfg(target_arch = "wasm32")]
+    ibc_source_channel: Option<ChannelId>,
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
 }
@@ -2295,10 +2298,11 @@ pub enum ValidatorsInfoDetails {
     Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct SignatureRequest {
     coin: String,
     message: String,
+    address: Option<HDAddressSelector>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2514,7 +2518,7 @@ impl TransactionDetails {
     pub fn should_update_block_height(&self) -> bool {
         // checking for std::u64::MAX because there was integer overflow
         // in case of electrum returned -1 so there could be records with MAX confirmations
-        self.block_height == 0 || self.block_height == std::u64::MAX
+        self.block_height == 0 || self.block_height == u64::MAX
     }
 
     /// Whether the transaction timestamp should be updated (when tx is confirmed)
@@ -2558,7 +2562,7 @@ impl BalanceObjectOps for CoinBalanceMap {
 
     fn add(&mut self, other: Self) {
         for (ticker, balance) in other {
-            let total_balance = self.entry(ticker).or_insert_with(CoinBalance::default);
+            let total_balance = self.entry(ticker).or_default();
             *total_balance += balance;
         }
     }
@@ -3104,6 +3108,12 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid fee parameters: {}", reason)]
+    InvalidFee {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<Json>,
+    },
     #[display(fmt = "Invalid memo field: {}", _0)]
     InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
@@ -3179,15 +3189,10 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Signing error {}", _0)]
     SigningError(String),
-    #[display(fmt = "Eth transaction type not supported")]
+    #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(fmt = "'chain_registry_name' was not found in coins configuration for '{}'", _0)]
-    RegistryNameIsMissing(String),
-    #[display(
-        fmt = "IBC channel could not found for '{}' address. Consider providing it manually with 'ibc_source_channel' in the request.",
-        _0
-    )]
-    IBCChannelCouldNotFound(String),
+    #[display(fmt = "Tendermint IBC error: {}", _0)]
+    IBCError(tendermint::IBCError),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3202,6 +3207,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidFee { .. }
             | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
@@ -3216,8 +3222,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::RegistryNameIsMissing(_)
-            | WithdrawError::IBCChannelCouldNotFound(_)
+            | WithdrawError::IBCError(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3297,6 +3302,25 @@ impl From<EthGasDetailsErr> for WithdrawError {
     fn from(e: EthGasDetailsErr) -> Self {
         match e {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthGasDetailsErr::AmountTooLow { amount, threshold } => WithdrawError::AmountTooLow { amount, threshold },
+            EthGasDetailsErr::GasFeeCapTooLow {
+                provided_fee_cap,
+                required_base_fee,
+            } => {
+                let reason = "Provided gas fee cap is less than the required network base fee.".to_string();
+                let details = json!({
+                    "provided_fee_cap_gwei": provided_fee_cap.to_string(),
+                    "required_base_fee_gwei": required_base_fee.to_string()
+                });
+                WithdrawError::InvalidFee {
+                    reason,
+                    details: Some(details),
+                }
+            },
+            EthGasDetailsErr::GasFeeCapBelowBaseFee => {
+                let reason = "The provided 'max fee per gas' is too low for current network conditions.".to_string();
+                WithdrawError::InvalidFee { reason, details: None }
+            },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
             EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
@@ -3414,17 +3438,14 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
-impl From<FromBase58Error> for VerificationError {
-    fn from(e: FromBase58Error) -> Self {
-        match e {
-            FromBase58Error::InvalidBase58Character(c, _) => {
-                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
-            },
-            FromBase58Error::InvalidBase58Length => {
-                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
-            },
-        }
-    }
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum OrderCreationPreCheckError {
+    #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
+    IsWalletOnly { ticker: String },
+    #[display(fmt = "Pre-Check failed due to this reason: {reason}")]
+    PreCheckFailed { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
@@ -3537,6 +3558,31 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
+
+    /// TODO: It's weird that we implement this function on this trait.
+    ///
+    /// Move this into the `SwapOps` trait when possible (this function requires `MmCoins`
+    /// trait to be implemented, but it's currently not possible to do `SwapOps: MmCoins`
+    /// as `MmCoins` is already `MmCoins: SwapOps`.
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        Ok(())
+    }
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -3782,7 +3828,7 @@ pub enum DexFee {
 }
 
 impl DexFee {
-    const DEX_FEE_SHARE: &str = "0.75";
+    const DEX_FEE_SHARE: &'static str = "0.75";
 
     /// Recreates a `DexFee` from separate fields (usually stored in db).
     #[cfg(any(test, feature = "for-tests"))]
@@ -3826,7 +3872,7 @@ impl DexFee {
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
 
-        if taker_coin.is_kmd() {
+        if taker_coin.should_burn_directly() {
             // use a special dex fee option for kmd
             return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
         }
@@ -4134,7 +4180,7 @@ impl CoinsContext {
 
     #[cfg(target_arch = "wasm32")]
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        Ok(self.tx_history_db.get_or_initialize().await?)
+        self.tx_history_db.get_or_initialize().await.map_mm_err()
     }
 
     #[inline(always)]
@@ -4194,13 +4240,26 @@ pub enum PrivKeyPolicy<T> {
     /// with the Metamask extension, especially within web-based contexts.
     #[cfg(target_arch = "wasm32")]
     Metamask(EthMetamaskPolicy),
+    /// WalletConnect private key policy.
+    ///
+    /// This variant represents the key management details for connections
+    /// established via WalletConnect. It includes both compressed and uncompressed
+    /// public keys.
+    /// - `public_key`: Compressed public key, represented as [H264].
+    /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
+    /// - `session_topic`: WalletConnect session that was used to activate this coin.
+    WalletConnect {
+        public_key: H264,
+        public_key_uncompressed: H520,
+        session_topic: String,
+    },
 }
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct EthMetamaskPolicy {
     pub(crate) public_key: EthH264,
-    pub(crate) public_key_uncompressed: EthH520,
+    pub(crate) public_key_uncompressed: H520,
 }
 
 impl<T> From<T> for PrivKeyPolicy<T> {
@@ -4215,7 +4274,7 @@ impl<T> PrivKeyPolicy<T> {
                 activated_key: activated_key_pair,
                 ..
             } => Some(activated_key_pair),
-            PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::WalletConnect { .. } | PrivKeyPolicy::Trezor => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4235,7 +4294,7 @@ impl<T> PrivKeyPolicy<T> {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
             } => Some(bip39_secp_priv_key),
-            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4257,8 +4316,7 @@ impl<T> PrivKeyPolicy<T> {
                 path_to_coin: derivation_path,
                 ..
             } => Some(derivation_path),
-            PrivKeyPolicy::Trezor => None,
-            PrivKeyPolicy::Iguana(_) => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4306,7 +4364,7 @@ where
 {
     match xpub_extractor {
         Some(xpub_extractor) => {
-            let trezor_coin = coin.trezor_coin()?;
+            let trezor_coin = coin.trezor_coin().map_mm_err()?;
             let xpub = xpub_extractor.extract_xpub(trezor_coin, derivation_path).await?;
             Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
         },
@@ -4515,11 +4573,19 @@ pub enum CoinProtocol {
         platform: String,
         contract_address: String,
     },
-    ETH,
+    // Todo: Document this
+    /// # Breaking Changes
+    ETH {
+        chain_id: u64,
+    },
     ERC20 {
         platform: String,
         contract_address: String,
     },
+    TRX {
+        network: eth::tron::Network,
+    },
+    // Todo: Add TRC20, Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4551,18 +4617,26 @@ pub enum CustomTokenError {
         fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateTickerInConfig { ticker_in_config: String },
+    DuplicateTickerInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateContractInConfig { ticker_in_config: String },
+    DuplicateContractInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token is already activated, ticker: {}, contract address: {}",
         ticker,
         contract_address
     )]
-    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
+    TokenWithSameContractAlreadyActivated {
+        ticker: String,
+        contract_address: String,
+    },
+    InvalidTokenAddress,
 }
 
 impl CoinProtocol {
@@ -4578,7 +4652,8 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
             CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
@@ -4596,7 +4671,8 @@ impl CoinProtocol {
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::TENDERMINTTOKEN(_)
@@ -4626,7 +4702,11 @@ impl CoinProtocol {
         // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
         // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
         // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
-        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(
+            ctx,
+            platform,
+            &EthAddress::from_str(contract_address).map_err(|_| MmError::new(CustomTokenError::InvalidTokenAddress))?,
+        ) {
             return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
                 ticker_in_config: existing_ticker,
             }));
@@ -4734,12 +4814,12 @@ pub enum RpcClientType {
     Ethereum,
 }
 
-impl ToString for RpcClientType {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for RpcClientType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RpcClientType::Native => "native".into(),
-            RpcClientType::Electrum => "electrum".into(),
-            RpcClientType::Ethereum => "ethereum".into(),
+            RpcClientType::Native => write!(f, "native"),
+            RpcClientType::Electrum => write!(f, "electrum"),
+            RpcClientType::Ethereum => write!(f, "ethereum"),
         }
     }
 }
@@ -4859,7 +4939,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(qtum_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
-        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
+        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, protocol, priv_key_policy).await).into()
         },
         CoinProtocol::QRC20 {
@@ -4917,6 +4997,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
+        CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(feature = "enable-sia")]
@@ -4962,20 +5043,21 @@ pub async fn lp_register_coin(
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let mut coins = cctx.coins.lock().await;
-    match coins.raw_entry_mut().from_key(&ticker) {
-        RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
-        },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
+    {
+        let mut coins = cctx.coins.lock().await;
+        match coins.entry(ticker.clone()) {
+            Entry::Occupied(_oe) => return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker }),
+            Entry::Vacant(ve) => ve.insert(MmCoinStruct::new(coin.clone())),
+        };
     };
 
     if coin.is_platform_coin() {
-        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-        platform_coin_tokens
+        cctx.platform_coin_tokens
+            .lock()
             .entry(coin.ticker().to_string())
             .or_insert_with(HashSet::new);
     }
+
     Ok(())
 }
 
@@ -5102,23 +5184,29 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.withdraw(req).compat().await
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.get_raw_transaction(req).compat().await
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let signature = coin.sign_message(&req.message)?;
+    if req.address.is_some() && !ctx.enable_hd() {
+        return MmError::err(SignatureError::InvalidRequest(
+            "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
+        ));
+    };
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
+    let signature = coin.sign_message(&req.message, req.address)?;
+
     Ok(SignatureResponse { signature })
 }
 
 pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     let validate_address_result = coin.validate_address(&req.address);
     if !validate_address_result.is_valid {
@@ -5133,12 +5221,12 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
 }
 
 pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.sign_raw_tx(&req).await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         Some(StakingDetails::Cosmos(req)) => {
@@ -5163,17 +5251,15 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 
         None => match coin {
             MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-            _ => {
-                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                    coin: coin.ticker().to_string(),
-                })
-            },
+            _ => MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            }),
         },
     }
 }
 
 pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         DelegationsInfoDetails::Qtum => {
@@ -5187,7 +5273,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         },
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5199,11 +5285,15 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 }
 
 pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t
+                .ongoing_undelegations_list(r.paging)
+                .await
+                .map(|v| json!(v))
+                .map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5215,7 +5305,7 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 }
 
 pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         ValidatorsInfoDetails::Cosmos(payload) => rpc_command::tendermint::staking::validators_rpc(coin, payload)
@@ -5225,7 +5315,7 @@ pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, Mm
 }
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
@@ -5252,7 +5342,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
     match req.claiming_details {
         ClaimingDetails::Cosmos(r) => {
-            let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+            let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
@@ -5474,47 +5564,6 @@ pub async fn register_balance_update_handler(
     coins_ctx.balance_update_handlers.lock().await.push(handler);
 }
 
-pub fn update_coins_config(mut config: Json) -> Result<Json, String> {
-    let coins = match config.as_array_mut() {
-        Some(c) => c,
-        _ => return ERR!("Coins config must be an array"),
-    };
-
-    for coin in coins {
-        // the coin_as_str is used only to be formatted
-        let coin_as_str = format!("{}", coin);
-        let coin = try_s!(coin
-            .as_object_mut()
-            .ok_or(ERRL!("Expected object, found {:?}", coin_as_str)));
-        if coin.contains_key("protocol") {
-            // the coin is up-to-date
-            continue;
-        }
-        let protocol = match coin.remove("etomic") {
-            Some(etomic) => {
-                let etomic = etomic
-                    .as_str()
-                    .ok_or(ERRL!("Expected etomic as string, found {:?}", etomic))?;
-                if etomic == "0x0000000000000000000000000000000000000000" {
-                    CoinProtocol::ETH
-                } else {
-                    let contract_address = etomic.to_owned();
-                    CoinProtocol::ERC20 {
-                        platform: "ETH".into(),
-                        contract_address,
-                    }
-                }
-            },
-            _ => CoinProtocol::UTXO,
-        };
-
-        let protocol = json::to_value(protocol).map_err(|e| ERRL!("Error {:?} on process {:?}", e, coin_as_str))?;
-        coin.insert("protocol".into(), protocol);
-    }
-
-    Ok(config)
-}
-
 #[derive(Deserialize)]
 struct ConvertUtxoAddressReq {
     address: String,
@@ -5550,7 +5599,11 @@ pub fn address_by_coin_conf_and_pubkey_str(
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
+            eth::addr_from_pubkey_str(pubkey)
+        },
+        // Todo: implement TRX address generation
+        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
@@ -5604,7 +5657,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -5678,7 +5731,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     history.sort_unstable_by(compare_transaction_details);
 
@@ -5828,7 +5881,9 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address)
+            .await
+            .map_mm_err()?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -5885,7 +5940,7 @@ pub trait Eip1559Ops {
 
 /// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
         MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
@@ -5895,7 +5950,7 @@ pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
 
 /// Set eip 1559 transaction fee per gas policy (low, medium, high)
 pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
             eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
@@ -5933,7 +5988,10 @@ where
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_account.address_limit();
     while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await?;
+        let hd_address = coin
+            .derive_address(hd_account, chain, checking_address_id)
+            .await
+            .map_mm_err()?;
         let checking_address = hd_address.address();
         let checking_address_der_path = hd_address.derivation_path();
 
@@ -5946,16 +6004,17 @@ where
                 // First, derive all empty addresses and put it into `balances` with default balance.
                 let address_ids = (last_non_empty_address_id..checking_address_id)
                     .map(|address_id| HDAddressId { chain, address_id });
-                let empty_addresses =
-                    coin.derive_addresses(hd_account, address_ids)
-                        .await?
-                        .into_iter()
-                        .map(|empty_address| HDAddressBalance {
-                            address: empty_address.address().display_address(),
-                            derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
-                            chain,
-                            balance: HDWalletBalanceObject::<T>::new(),
-                        });
+                let empty_addresses = coin
+                    .derive_addresses(hd_account, address_ids)
+                    .await
+                    .map_mm_err()?
+                    .into_iter()
+                    .map(|empty_address| HDAddressBalance {
+                        address: empty_address.address().display_address(),
+                        derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
+                        chain,
+                        balance: HDWalletBalanceObject::<T>::new(),
+                    });
                 balances.extend(empty_addresses);
 
                 // Then push this non-empty address.
@@ -5980,7 +6039,8 @@ where
         chain,
         checking_address_id - unused_addresses_counter,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     Ok(balances)
 }
@@ -6184,7 +6244,7 @@ mod tests {
 pub mod for_tests {
     use crate::rpc_command::init_withdraw::WithdrawStatusRequest;
     use crate::rpc_command::init_withdraw::{init_withdraw, withdraw_status};
-    use crate::{TransactionDetails, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawRequest};
+    use crate::{HDAddressSelector, TransactionDetails, WithdrawError, WithdrawFee, WithdrawRequest};
     use common::executor::Timer;
     use common::{now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
@@ -6206,7 +6266,7 @@ pub mod for_tests {
             client_id: 0,
             inner: WithdrawRequest {
                 amount: BigDecimal::from_str(amount).unwrap(),
-                from: from_derivation_path.map(|from_derivation_path| WithdrawFrom::DerivationPath {
+                from: from_derivation_path.map(|from_derivation_path| HDAddressSelector::DerivationPath {
                     derivation_path: from_derivation_path.to_owned(),
                 }),
                 to: to.to_owned(),

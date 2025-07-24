@@ -86,7 +86,7 @@ pub fn p2pk_spend(
         .to_secp256k1_pubkey()
         .map_err(|e| UtxoSignWithKeyPairError::BadPublicKey { error: e.to_string() })?;
     // Build the scriptPubKey for both compressed and uncompressed public keys.
-    let possible_script_pubkeys = vec![
+    let possible_script_pubkeys = [
         Builder::build_p2pk(&keys::Public::Compressed(pubkey.serialize().into())),
         Builder::build_p2pk(&keys::Public::Normal(pubkey.serialize_uncompressed().into())),
     ];

@@ -245,7 +245,7 @@ pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResu
     }
     let request = request_builder.body(Body::empty())?;
 
-    let (status, _header, body) = slurp_req_body(request).await?;
+    let (status, _header, body) = slurp_req_body(request).await.map_mm_err()?;
     if !status.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(format!(
             "Status code not in 2xx range from {}: {}, {}",

@@ -513,6 +513,30 @@ impl Script {
 
         script.sigops_count(true)
     }
+
+    /// Extracts the signature from a scriptSig at instruction 0.
+    ///
+    /// Usable for P2PK and P2PKH scripts.
+    pub fn extract_signature(&self) -> Result<Vec<u8>, String> {
+        match self.get_instruction(0) {
+            Some(Ok(instruction)) => match instruction.opcode {
+                Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
+                    Some(bytes) => Ok(bytes.to_vec()),
+                    None => Err(format!("No data at instruction 0 of script {:?}", self)),
+                },
+                opcode => Err(format!("Unexpected opcode {:?}", opcode)),
+            },
+            Some(Err(e)) => Err(format!("Error {} on getting instruction 0 of script {:?}", e, self)),
+            None => Err(format!("None instruction 0 of script {:?}", self)),
+        }
+    }
+
+    /// Checks if a scriptSig is a script that spends a P2PK output.
+    pub fn does_script_spend_p2pk(&self) -> bool {
+        // P2PK scriptSig is just a single signature. The script should consist of a single push bytes
+        // instruction with the data as the signature.
+        self.extract_signature().is_ok() && self.get_instruction(1).is_none()
+    }
 }
 
 pub struct Instructions<'a> {
@@ -547,7 +571,7 @@ impl<'a> Iterator for Instructions<'a> {
     }
 }
 
-impl<'a> Iterator for Opcodes<'a> {
+impl Iterator for Opcodes<'_> {
     type Item = Result<Opcode, Error>;
 
     fn next(&mut self) -> Option<Result<Opcode, Error>> {
@@ -944,7 +968,7 @@ OP_ADD
         assert!(script.get_instruction(5).is_none());
         assert!(script.get_instruction(10).is_none());
         assert!(script.get_instruction(1245).is_none());
-        assert!(script.get_instruction(99187829973).is_none());
+        assert!(script.get_instruction(99187829).is_none());
     }
 
     #[test]
@@ -970,5 +994,14 @@ OP_ADD
             max_idx = idx;
         }
         assert_eq!(max_idx, 3);
+    }
+
+    #[test]
+    fn test_does_script_spend_p2pk() {
+        let script_sig = Script::from("473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
+        assert!(!script_sig.does_script_spend_p2pk());
+        // The scriptSig of the input spent from: https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
+        let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
+        assert!(script_sig.does_script_spend_p2pk());
     }
 }

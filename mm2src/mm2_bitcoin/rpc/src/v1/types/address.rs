@@ -23,7 +23,7 @@ where
 #[derive(Default)]
 pub struct AddressVisitor;
 
-impl<'b> Visitor<'b> for AddressVisitor {
+impl Visitor<'_> for AddressVisitor {
     type Value = LegacyAddress;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("an address") }

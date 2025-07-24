@@ -116,9 +116,15 @@ pub struct TakerSwapWatcherData {
     pub maker_coin_start_block: u64,
 }
 
+#[allow(dead_code)]
 struct ValidatePublicKeys {}
+
+#[allow(dead_code)]
 struct ValidateTakerFee {}
+
+#[allow(dead_code)]
 struct ValidateTakerPayment {}
+
 struct WaitForTakerPaymentSpend {
     taker_payment_hex: Vec<u8>,
 }
@@ -137,6 +143,7 @@ struct Stopped {
     stop_reason: StopReason,
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum StopReason {
     Finished(WatcherSuccess),
@@ -151,6 +158,7 @@ enum WatcherSuccess {
     TakerPaymentRefundedByTaker,
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum WatcherError {
     InvalidTakerFee(String),

@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumC
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, ElectrumBuilderArgs, RecentlySpentOutPoints, TxFee, UtxoCoinConf, UtxoCoinFields,
+use crate::utxo::{output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields,
                   UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
@@ -19,9 +19,7 @@ use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use keys::bytes::Bytes;
-pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType,
-               KeyPair, Private, Public, Secret};
+pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
@@ -142,7 +140,9 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
         &self,
         priv_key: IguanaPrivKey,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker())
+            .build()
+            .map_mm_err()?;
         let private = Private {
             prefix: conf.wif_prefix,
             secret: priv_key,
@@ -172,13 +172,16 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         &self,
         global_hd_ctx: GlobalHDAccountArc,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker())
+            .build()
+            .map_mm_err()?;
 
         let path_to_address = self.activation_params().path_to_address;
         let path_to_coin = conf
             .derivation_path
             .as_ref()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)
+            .map_mm_err()?;
         let secret = global_hd_ctx
             .derive_secp256k1_secret(
                 &path_to_address
@@ -203,7 +206,9 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let address_format = self.address_format()?;
         let hd_wallet_rmd160 = *self.ctx().rmd160();
         let hd_wallet_storage =
-            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
+            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160)
+                .await
+                .map_mm_err()?;
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
@@ -235,7 +240,7 @@ async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
-    let key_pair = priv_key_policy.activated_key_or_err()?;
+    let key_pair = priv_key_policy.activated_key_or_err().map_mm_err()?;
     let addr_format = builder.address_format()?;
     let my_address = AddressBuilder::new(
         addr_format,
@@ -291,25 +296,23 @@ where
 pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     async fn build_utxo_fields_with_trezor(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let ticker = self.ticker().to_owned();
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker)
+            .build()
+            .map_mm_err()?;
 
         if !self.supports_trezor(&conf) {
             return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
         }
         let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
 
-        // For now, use a default script pubkey.
-        // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
-        let my_script_pubkey = Bytes::new();
-        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
-
         let address_format = self.address_format()?;
         let path_to_coin = conf
             .derivation_path
             .clone()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)
+            .map_mm_err()?;
 
-        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
+        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await.map_mm_err()?;
 
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
             .await
@@ -326,6 +329,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             },
             address_format,
         };
+
+        // TODO: Creating a dummy output script for now. We better set it to the enabled address output script.
+        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(Default::default()));
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
@@ -369,7 +375,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 
     fn trezor_wallet_rmd160(&self) -> UtxoCoinBuildResult<H160> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx()).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
@@ -379,7 +385,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     }
 
     fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx()).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
@@ -402,7 +408,8 @@ pub trait UtxoCoinBuilderCommonOps {
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();
         let format_from_conf = json::from_value::<Option<UtxoAddressFormat>>(self.conf()["address_format"].clone())
-            .map_to_mm(|e| UtxoConfError::InvalidAddressFormat(e.to_string()))?
+            .map_to_mm(|e| UtxoConfError::InvalidAddressFormat(e.to_string()))
+            .map_mm_err()?
             .unwrap_or(UtxoAddressFormat::Standard);
 
         let mut address_format = match format_from_req {
@@ -467,9 +474,9 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
     }
 
-    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<TxFee> {
+    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<FeeRate> {
         let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => TxFee::FixedPerKb(1000),
+            None => FeeRate::FixedPerKb(1000),
             Some(0) => {
                 let fee_method = match &rpc_client {
                     UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
@@ -479,9 +486,9 @@ pub trait UtxoCoinBuilderCommonOps {
                         .await
                         .map_to_mm(UtxoCoinBuildError::ErrorDetectingFeeMethod)?,
                 };
-                TxFee::Dynamic(fee_method)
+                FeeRate::Dynamic(fee_method)
             },
-            Some(fee) => TxFee::FixedPerKb(fee),
+            Some(fee) => FeeRate::FixedPerKb(fee),
         };
         Ok(tx_fee)
     }
@@ -624,7 +631,8 @@ pub trait UtxoCoinBuilderCommonOps {
                         None => {
                             let name = conf["name"]
                                 .as_str()
-                                .or_mm_err(|| UtxoConfError::CurrencyNameIsNotSet)?;
+                                .or_mm_err(|| UtxoConfError::CurrencyNameIsNotSet)
+                                .map_mm_err()?;
                             (name, false)
                         },
                     }
@@ -681,7 +689,7 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
+    fn tx_cache_path(&self) -> PathBuf { self.ctx().global_dir().join("TX_CACHE") }
 
     fn block_header_status_channel(
         &self,

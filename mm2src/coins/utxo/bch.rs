@@ -1,8 +1,9 @@
 use super::*;
 use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps};
-use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDExtractPubkeyError, HDXPubExtractor,
-                       TrezorCoinError, WithdrawSenderAddress};
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps,
+                       HDExtractPubkeyError, HDXPubExtractor, SettingEnabledAddressError, TrezorCoinError,
+                       WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -34,6 +35,7 @@ use keys::CashAddress;
 pub use keys::NetworkPrefix as CashAddrPrefix;
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
+use rpc::v1::types::H264 as H264Json;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, CoinVariant};
 use std::sync::MutexGuard;
@@ -63,7 +65,7 @@ impl BchActivationRequest {
     pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<BchFromLegacyReqErr>> {
         let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(BchFromLegacyReqErr::InvalidBchdUrls)?;
         let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
-        let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
+        let utxo_params = UtxoActivationParams::from_legacy_req(req).map_mm_err()?;
 
         Ok(BchActivationRequest {
             allow_slp_unsafe_conf,
@@ -112,7 +114,7 @@ impl BchUnspents {
             bch_unspent,
             slp_amount,
         };
-        self.slp.entry(token_id).or_insert_with(Vec::new).push(slp_unspent);
+        self.slp.entry(token_id).or_default().push(slp_unspent);
     }
 
     fn add_slp_baton(&mut self, utxo: UnspentInfo) { self.slp_batons.push(utxo) }
@@ -385,7 +387,7 @@ impl BchCoin {
             .await?;
         let maybe_op_return: Script = tx
             .outputs
-            .get(0)
+            .first()
             .ok_or(UtxoTxDetailsError::Internal(format!(
                 "Transaction {} has no outputs",
                 params.hash
@@ -492,7 +494,7 @@ impl BchCoin {
     ) -> MmResult<SlpGenesisParams, UtxoTxDetailsError> {
         let token_genesis_tx = self.tx_from_storage_or_rpc(&token_id.into(), storage).await?;
         let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
-        let slp_details = parse_slp_script(&maybe_genesis_script)?;
+        let slp_details = parse_slp_script(&maybe_genesis_script).map_mm_err()?;
         match slp_details.transaction {
             SlpTransaction::Genesis(params) => Ok(params),
             _ => {
@@ -700,17 +702,13 @@ impl UtxoTxBroadcastOps for BchCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for BchCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { utxo_common::get_fee_rate(&self.utxo_arc).await }
 
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
+        utxo_common::calc_interest_if_required(self, unsigned).await
     }
+
+    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
 }
 
 #[async_trait]
@@ -1138,6 +1136,11 @@ impl MarketCoinOps for BchCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let pubkey = Public::Compressed((*pubkey).into());
+        Ok(UtxoCommonOps::address_from_pubkey(self, &pubkey).to_string())
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
         Ok(pubkey.to_string())
@@ -1147,8 +1150,8 @@ impl MarketCoinOps for BchCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, address)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -1158,8 +1161,13 @@ impl MarketCoinOps for BchCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
-            let bch_unspents = coin.bch_unspents_for_display(&my_address).await?;
+            let my_address = coin
+                .as_ref()
+                .derivation_method
+                .single_addr_or_err()
+                .await
+                .map_mm_err()?;
+            let bch_unspents = coin.bch_unspents_for_display(&my_address).await.map_mm_err()?;
             Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };
         Box::new(fut.boxed().compat())
@@ -1386,6 +1394,15 @@ impl HDWalletCoinOps for BchCoin {
     }
 
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+
+    async fn received_enabled_address_from_hw_wallet(
+        &self,
+        enabled_address: UtxoHDAddress,
+    ) -> MmResult<(), SettingEnabledAddressError> {
+        utxo_common::received_enabled_address_from_hw_wallet(self, enabled_address.address)
+            .await
+            .mm_err(SettingEnabledAddressError::Internal)
+    }
 }
 
 impl HDCoinWithdrawOps for BchCoin {}
@@ -1472,7 +1489,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
                 return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
             },
         }
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().map_mm_err()?;
         Ok(GetTxHistoryFilters::for_address(my_address))
     }
 }
@@ -1480,7 +1497,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let addresses = self.all_addresses().await?;
+        let addresses = self.all_addresses().await.map_mm_err()?;
         Ok(addresses)
     }
 
@@ -1703,7 +1720,7 @@ mod bch_tests {
     #[test]
     fn test_sign_message() {
         let (_ctx, coin) = tbch_coin_for_test();
-        let signature = coin.sign_message("test").unwrap();
+        let signature = coin.sign_message("test", None).unwrap();
         assert_eq!(
             signature,
             "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="
