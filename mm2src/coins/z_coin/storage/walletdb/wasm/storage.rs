@@ -50,9 +50,9 @@ macro_rules! num_to_bigint {
     };
 }
 
-impl<'a> WalletDbShared {
+impl WalletDbShared {
     pub async fn new(
-        builder: &ZCoinBuilder<'a>,
+        builder: &ZCoinBuilder<'_>,
         checkpoint_block: Option<CheckPointBlockInfo>,
         continue_from_prev_sync: bool,
     ) -> ZcoinStorageRes<Self> {
@@ -130,7 +130,7 @@ pub struct WalletIndexedDb {
     pub params: ZcoinConsensusParams,
 }
 
-impl<'a> WalletIndexedDb {
+impl WalletIndexedDb {
     pub async fn new(
         ctx: &MmArc,
         ticker: &str,
@@ -1301,7 +1301,6 @@ impl WalletRead for WalletIndexedDb {
             .await
             .map_mm_err()?
             .into_iter()
-            .map(|(i, item)| (i, item))
             .collect::<Vec<_>>();
         // Witnesses
         let witnesses_table = db_transaction

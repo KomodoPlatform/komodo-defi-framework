@@ -114,8 +114,8 @@ impl NftTransferHistoryFilters {
     }
 
     fn is_date_match(&self, transfer: &NftTransferHistory) -> bool {
-        self.from_date.map_or(true, |from| transfer.block_timestamp >= from)
-            && self.to_date.map_or(true, |to| transfer.block_timestamp <= to)
+        self.from_date.is_none_or(|from| transfer.block_timestamp >= from)
+            && self.to_date.is_none_or(|to| transfer.block_timestamp <= to)
     }
 
     fn passes_spam_filter(&self, transfer: &NftTransferHistory) -> bool {

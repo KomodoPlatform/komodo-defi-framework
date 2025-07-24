@@ -6,6 +6,7 @@ use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDe
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
+use derive_more::Display;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;

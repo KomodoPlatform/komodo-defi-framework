@@ -60,7 +60,7 @@ impl<'a> SqlDelete<'a> {
 /// - [`SqlQuery::or_where_in`]
 /// - [`SqlQuery::or_where_in_quoted`]
 /// - [`SqlQuery::or_where_in_params`]
-impl<'a> SqlCondition for SqlDelete<'a> {
+impl SqlCondition for SqlDelete<'_> {
     fn sql_builder(&mut self) -> &mut SqlBuilder { &mut self.sql_builder }
 
     fn sql_params(&mut self) -> &mut SqlParamsBuilder { &mut self.params }

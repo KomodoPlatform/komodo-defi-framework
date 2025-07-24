@@ -4,6 +4,7 @@ use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;

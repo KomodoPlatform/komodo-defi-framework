@@ -1,6 +1,7 @@
 use crate::lp_wallet::WalletsContext;
 use async_trait::async_trait;
 use crypto::EncryptedData;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,

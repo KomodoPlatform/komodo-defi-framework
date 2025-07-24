@@ -127,10 +127,10 @@ fn test_iris_ibc_nucleus_orderbook() {
     let expected_address = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
     assert_eq!(response.result.address, expected_address);
 
-    let set_price_res = block_on(set_price(&mm, token, platform_coin, "1", "0.1", false));
+    let set_price_res = block_on(set_price(&mm, token, platform_coin, "1", "0.1", false, None));
     log!("{:?}", set_price_res);
 
-    let set_price_res = block_on(set_price(&mm, platform_coin, token, "1", "0.1", false));
+    let set_price_res = block_on(set_price(&mm, platform_coin, token, "1", "0.1", false, None));
     log!("{:?}", set_price_res);
 
     let orderbook = block_on(orderbook(&mm, token, platform_coin));

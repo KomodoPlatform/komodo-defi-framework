@@ -24,14 +24,14 @@
     forgetting_references,
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
-    clippy::forget_non_drop
+    clippy::forget_non_drop,
+    clippy::doc_lazy_continuation,
+    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
 )]
 #![allow(uncommon_codepoints)]
-// #![feature(integer_atomics)]
-#![feature(async_closure)]
+#![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
-#![feature(local_key_cell_methods)] // for tests
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -52,7 +52,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, H264, H520, U256};
+use ethereum_types::{Address as EthAddress, H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -309,6 +309,7 @@ pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFun
 pub type ValidateTakerPaymentSpendPreimageResult = MmResult<(), ValidateTakerPaymentSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+pub type Ticker = String;
 
 // Constants for logs used in tests
 pub const INVALID_SENDER_ERR_LOG: &str = "Invalid sender";
@@ -845,7 +846,7 @@ pub enum SwapTxTypeWithSecretHash<'a> {
     },
 }
 
-impl<'a> SwapTxTypeWithSecretHash<'a> {
+impl SwapTxTypeWithSecretHash<'_> {
     pub fn redeem_script(&self, time_lock: u32, my_public: &Public, other_public: &Public) -> Script {
         match self {
             SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => {
@@ -2517,7 +2518,7 @@ impl TransactionDetails {
     pub fn should_update_block_height(&self) -> bool {
         // checking for std::u64::MAX because there was integer overflow
         // in case of electrum returned -1 so there could be records with MAX confirmations
-        self.block_height == 0 || self.block_height == std::u64::MAX
+        self.block_height == 0 || self.block_height == u64::MAX
     }
 
     /// Whether the transaction timestamp should be updated (when tx is confirmed)
@@ -2561,7 +2562,7 @@ impl BalanceObjectOps for CoinBalanceMap {
 
     fn add(&mut self, other: Self) {
         for (ticker, balance) in other {
-            let total_balance = self.entry(ticker).or_insert_with(CoinBalance::default);
+            let total_balance = self.entry(ticker).or_default();
             *total_balance += balance;
         }
     }
@@ -3107,6 +3108,12 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid fee parameters: {}", reason)]
+    InvalidFee {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<Json>,
+    },
     #[display(fmt = "Invalid memo field: {}", _0)]
     InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
@@ -3200,6 +3207,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidFee { .. }
             | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
@@ -3294,6 +3302,25 @@ impl From<EthGasDetailsErr> for WithdrawError {
     fn from(e: EthGasDetailsErr) -> Self {
         match e {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
+            EthGasDetailsErr::AmountTooLow { amount, threshold } => WithdrawError::AmountTooLow { amount, threshold },
+            EthGasDetailsErr::GasFeeCapTooLow {
+                provided_fee_cap,
+                required_base_fee,
+            } => {
+                let reason = "Provided gas fee cap is less than the required network base fee.".to_string();
+                let details = json!({
+                    "provided_fee_cap_gwei": provided_fee_cap.to_string(),
+                    "required_base_fee_gwei": required_base_fee.to_string()
+                });
+                WithdrawError::InvalidFee {
+                    reason,
+                    details: Some(details),
+                }
+            },
+            EthGasDetailsErr::GasFeeCapBelowBaseFee => {
+                let reason = "The provided 'max fee per gas' is too low for current network conditions.".to_string();
+                WithdrawError::InvalidFee { reason, details: None }
+            },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
             EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
@@ -3801,7 +3828,7 @@ pub enum DexFee {
 }
 
 impl DexFee {
-    const DEX_FEE_SHARE: &str = "0.75";
+    const DEX_FEE_SHARE: &'static str = "0.75";
 
     /// Recreates a `DexFee` from separate fields (usually stored in db).
     #[cfg(any(test, feature = "for-tests"))]
@@ -4590,18 +4617,26 @@ pub enum CustomTokenError {
         fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateTickerInConfig { ticker_in_config: String },
+    DuplicateTickerInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
         ticker_in_config
     )]
-    DuplicateContractInConfig { ticker_in_config: String },
+    DuplicateContractInConfig {
+        ticker_in_config: String,
+    },
     #[display(
         fmt = "Token is already activated, ticker: {}, contract address: {}",
         ticker,
         contract_address
     )]
-    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
+    TokenWithSameContractAlreadyActivated {
+        ticker: String,
+        contract_address: String,
+    },
+    InvalidTokenAddress,
 }
 
 impl CoinProtocol {
@@ -4667,7 +4702,11 @@ impl CoinProtocol {
         // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
         // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
         // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
-        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(
+            ctx,
+            platform,
+            &EthAddress::from_str(contract_address).map_err(|_| MmError::new(CustomTokenError::InvalidTokenAddress))?,
+        ) {
             return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
                 ticker_in_config: existing_ticker,
             }));
@@ -4775,12 +4814,12 @@ pub enum RpcClientType {
     Ethereum,
 }
 
-impl ToString for RpcClientType {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for RpcClientType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RpcClientType::Native => "native".into(),
-            RpcClientType::Electrum => "electrum".into(),
-            RpcClientType::Ethereum => "ethereum".into(),
+            RpcClientType::Native => write!(f, "native"),
+            RpcClientType::Electrum => write!(f, "electrum"),
+            RpcClientType::Ethereum => write!(f, "ethereum"),
         }
     }
 }
@@ -5212,11 +5251,9 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 
         None => match coin {
             MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-            _ => {
-                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                    coin: coin.ticker().to_string(),
-                })
-            },
+            _ => MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            }),
         },
     }
 }

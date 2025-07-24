@@ -24,7 +24,7 @@ struct ZcashParamsWasmTable {
 }
 
 impl ZcashParamsWasmTable {
-    const SPEND_OUTPUT_INDEX: &str = "sapling_spend_sapling_output_index";
+    const SPEND_OUTPUT_INDEX: &'static str = "sapling_spend_sapling_output_index";
 }
 
 impl TableSignature for ZcashParamsWasmTable {

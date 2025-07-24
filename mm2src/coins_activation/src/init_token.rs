@@ -94,7 +94,7 @@ where
     }
 
     let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
-        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone()).map_mm_err::<InitTokenError>()?;
+        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone()).map_mm_err()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -108,7 +108,7 @@ where
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitTokenError::Internal)
-        .map_mm_err::<InitTokenError>()?;
+        .map_mm_err()?;
     let spawner = ctx.spawner();
     let task = InitTokenTask::<Token> {
         ctx,
@@ -155,9 +155,7 @@ pub async fn init_token_user_action<Token: InitTokenActivationOps>(
     let mut task_manager = Token::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitTokenUserActionError::Internal(poison.to_string()))?;
-    task_manager
-        .on_user_action(req.task_id, req.user_action)
-        .map_mm_err::<InitTokenUserActionError>()?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -170,9 +168,7 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
     let mut task_manager = Standalone::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| CancelInitTokenError::Internal(poison.to_string()))?;
-    task_manager
-        .cancel_task(req.task_id)
-        .map_mm_err::<CancelInitTokenError>()?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -236,10 +232,7 @@ where
         log::info!("{} current block {}", ticker, activation_result.current_block());
 
         let coins_ctx = CoinsContext::from_ctx(&self.ctx).unwrap();
-        coins_ctx
-            .add_token(token.clone().into())
-            .await
-            .map_mm_err::<Self::Error>()?;
+        coins_ctx.add_token(token.clone().into()).await.map_mm_err()?;
 
         self.platform_coin.register_token_info(&token);
 

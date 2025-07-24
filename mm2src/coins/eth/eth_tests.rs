@@ -9,7 +9,6 @@ cfg_native!(
 
     use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
-    use futures_util::future;
     use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODES, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
     use mocktopus::mocking::*;
@@ -165,6 +164,8 @@ fn test_wei_from_big_decimal() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout() {
+    use futures::future;
+
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
     EthCoin::events_from_block.mock_safe(|_, _, _, _, _, _| MockResult::Return(Box::pin(future::ok(vec![]))));

@@ -32,7 +32,7 @@ pub async fn handle_session_event(
 
             ctx.validate_chain_id(&session, &chain_id)?;
 
-            if session.get_active_chain_id().as_ref().map_or(false, |c| c == &chain_id) {
+            if session.get_active_chain_id().as_ref() == Some(&chain_id) {
                 return Ok(());
             };
 

@@ -18,6 +18,7 @@ construct_detailed!(DetailedRequiredBalance, required_balance);
 
 pub type TradePreimageRpcResult<T> = Result<T, MmError<TradePreimageRpcError>>;
 
+/// Calculate all fees for the swap and max volume (for maker)
 pub async fn trade_preimage_rpc(
     ctx: MmArc,
     req: TradePreimageRequest,

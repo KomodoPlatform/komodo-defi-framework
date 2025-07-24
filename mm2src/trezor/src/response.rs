@@ -103,7 +103,7 @@ impl<'a, 'b, T: 'static> TrezorResponse<'a, 'b, T> {
 }
 
 #[async_trait]
-impl<'a, 'b, T> ProcessTrezorResponse<T> for TrezorResponse<'a, 'b, T>
+impl<T> ProcessTrezorResponse<T> for TrezorResponse<'_, '_, T>
 where
     T: Send + Sync + 'static,
 {
@@ -148,7 +148,7 @@ pub struct ButtonRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for ButtonRequest<'a, 'b, T> {
+impl<T> fmt::Debug for ButtonRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 
@@ -175,7 +175,7 @@ pub struct PinMatrixRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for PinMatrixRequest<'a, 'b, T> {
+impl<T> fmt::Debug for PinMatrixRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 
@@ -202,7 +202,7 @@ pub struct PassphraseRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for PassphraseRequest<'a, 'b, T> {
+impl<T> fmt::Debug for PassphraseRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 

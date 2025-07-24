@@ -11,6 +11,7 @@ use chain::TransactionOutput;
 use common::log::error;
 use common::{async_blocking, new_uuid, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use keys::AddressHashEnum;
 use lightning::util::config::UserConfig;

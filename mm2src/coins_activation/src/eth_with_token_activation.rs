@@ -240,8 +240,8 @@ impl GetPlatformBalance for EthWithTokensActivationResult {
             EthWithTokensActivationResult::Iguana(result) => result
                 .eth_addresses_infos
                 .iter()
-                .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
-                    total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
+                .try_fold(BigDecimal::from(0), |total, (_, addr_info)| {
+                    addr_info.balances.as_ref().map(|b| total + b.get_total())
                 }),
             EthWithTokensActivationResult::HD(result) => result
                 .wallet_balance
@@ -311,10 +311,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self
-            .initialize_global_nft(url, proxy_auth)
-            .await
-            .map_mm_err::<Self::ActivationError>()?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await.map_mm_err()?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -460,7 +457,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     fn start_history_background_fetching(
         &self,
         _ctx: MmArc,
-        _storage: impl TxHistoryStorage + Send + 'static,
+        _storage: impl TxHistoryStorage + 'static,
         _initial_balance: Option<BigDecimal>,
     ) {
     }
@@ -479,7 +476,7 @@ async fn eth_priv_key_build_policy(
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
         EthPrivKeyActivationPolicy::ContextPrivKey => {
-            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err::<EthActivationV2Error>()?)
+            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err()?)
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {

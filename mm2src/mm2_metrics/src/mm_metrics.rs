@@ -192,7 +192,7 @@ fn map_metrics_to_prepare_tag_metric_output(
     let (metric_name, labels) = key.into_parts();
     output
         .entry(labels)
-        .or_insert_with(MetricNameValueMap::new)
+        .or_default()
         .insert(metric_name.as_str().to_string(), value);
 }
 
@@ -537,6 +537,7 @@ mod test {
         block_on(async { Timer::sleep(6.).await });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_prometheus_format() {
         let mm_metrics = MetricsArc::new();

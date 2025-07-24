@@ -9,6 +9,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb,
                          IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use protobuf::Message;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_extras::WalletRead;

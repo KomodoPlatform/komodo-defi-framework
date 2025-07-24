@@ -259,7 +259,7 @@ where
             data.clone().into(),
             my_address,
             call_addr,
-            false,
+            req.max,
         )
         .await
         .map_mm_err()?;

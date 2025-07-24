@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for StreamerId {
     {
         struct StreamerIdVisitor;
 
-        impl<'de> Visitor<'de> for StreamerIdVisitor {
+        impl Visitor<'_> for StreamerIdVisitor {
             type Value = StreamerId;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

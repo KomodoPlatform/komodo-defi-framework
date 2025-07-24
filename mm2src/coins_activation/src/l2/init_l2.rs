@@ -81,8 +81,8 @@ where
     }
 
     let (coin_conf_json, protocol_conf): (Json, L2::ProtocolInfo) =
-        coin_conf_with_protocol(&ctx, &ticker, None).map_mm_err::<InitL2Error>()?;
-    let coin_conf = L2::coin_conf_from_json(coin_conf_json).map_mm_err::<InitL2Error>()?;
+        coin_conf_with_protocol(&ctx, &ticker, None).map_mm_err()?;
+    let coin_conf = L2::coin_conf_from_json(coin_conf_json).map_mm_err()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, protocol_conf.platform_coin_ticker())
         .await
@@ -94,13 +94,13 @@ where
             l2_ticker: ticker.clone(),
         })?;
 
-    L2::validate_platform_configuration(&platform_coin).map_mm_err::<InitL2Error>()?;
+    L2::validate_platform_configuration(&platform_coin).map_mm_err()?;
 
-    let validated_params = L2::validate_activation_params(req.activation_params.clone()).map_mm_err::<InitL2Error>()?;
+    let validated_params = L2::validate_activation_params(req.activation_params.clone()).map_mm_err()?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitL2Error::Internal)
-        .map_mm_err::<InitL2Error>()?;
+        .map_mm_err()?;
     let spawner = ctx.spawner();
     let task = InitL2Task::<L2> {
         ctx,
@@ -130,7 +130,7 @@ where
 {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitL2StatusError::Internal)
-        .map_mm_err::<InitL2StatusError>()?;
+        .map_mm_err()?;
     let mut task_manager = L2::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitL2StatusError::Internal(poison.to_string()))?;
@@ -146,13 +146,11 @@ pub async fn init_l2_user_action<L2: InitL2ActivationOps>(
 ) -> MmResult<SuccessResponse, InitL2UserActionError> {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitL2UserActionError::Internal)
-        .map_mm_err::<InitL2UserActionError>()?;
+        .map_mm_err()?;
     let mut task_manager = L2::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitL2UserActionError::Internal(poison.to_string()))?;
-    task_manager
-        .on_user_action(req.task_id, req.user_action)
-        .map_mm_err::<InitL2UserActionError>()?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -162,11 +160,11 @@ pub async fn cancel_init_l2<L2: InitL2ActivationOps>(
 ) -> MmResult<SuccessResponse, CancelInitL2Error> {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(CancelInitL2Error::Internal)
-        .map_mm_err::<CancelInitL2Error>()?;
+        .map_mm_err()?;
     let mut task_manager = L2::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| CancelInitL2Error::Internal(poison.to_string()))
-        .map_mm_err::<CancelInitL2Error>()?;
+        .map_mm_err()?;
     task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }

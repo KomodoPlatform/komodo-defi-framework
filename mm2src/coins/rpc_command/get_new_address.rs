@@ -484,7 +484,7 @@ pub(crate) mod common_impl {
         })
     }
 
-    pub async fn get_new_address_rpc<'a, Coin, ConfirmAddress>(
+    pub async fn get_new_address_rpc<Coin, ConfirmAddress>(
         coin: &Coin,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,

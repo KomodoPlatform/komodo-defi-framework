@@ -252,9 +252,7 @@ fn extract_pubkey_from_signature(
 
 pub(crate) fn recover(signature: &Signature, message: &Message) -> Result<PublicKey, ethkey::Error> {
     let recovery_id = {
-        let recovery_id = signature[64]
-            .checked_sub(27)
-            .ok_or_else(|| ethkey::Error::InvalidSignature)?;
+        let recovery_id = signature[64].checked_sub(27).ok_or(ethkey::Error::InvalidSignature)?;
         RecoveryId::from_i32(recovery_id as i32)?
     };
     let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)?;

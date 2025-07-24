@@ -42,6 +42,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -86,6 +87,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -130,6 +132,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -174,6 +177,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -218,6 +222,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -262,6 +267,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let request = TakerRequest {
@@ -308,6 +314,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
     let request = TakerRequest {
         base: "KMD".to_owned(),
@@ -354,6 +361,7 @@ fn test_match_maker_order_and_taker_request() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
     let request = TakerRequest {
         base: "REL".to_owned(),
@@ -431,6 +439,7 @@ fn test_maker_order_available_amount() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
     maker.matches.insert(new_uuid(), MakerMatch {
         request: TakerRequest {
@@ -1103,6 +1112,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             swap_version: SwapVersion::default(),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
+            timeout_in_minutes: None,
         },
         None,
     );
@@ -1128,6 +1138,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             swap_version: SwapVersion::default(),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
+            timeout_in_minutes: None,
         },
         None,
     );
@@ -1153,6 +1164,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             swap_version: SwapVersion::default(),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
+            timeout_in_minutes: None,
         },
         None,
     );
@@ -1353,6 +1365,7 @@ fn test_maker_order_was_updated() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
     update_msg.with_new_price(BigRational::from_integer(2.into()));
@@ -3365,6 +3378,7 @@ fn test_maker_order_balance_loops() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     let morty_order = MakerOrder {
@@ -3387,6 +3401,7 @@ fn test_maker_order_balance_loops() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     assert!(!maker_orders_ctx.balance_loop_exists(rick_ticker));
@@ -3422,6 +3437,7 @@ fn test_maker_order_balance_loops() {
         swap_version: SwapVersion::default(),
         #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
+        timeout_in_minutes: None,
     };
 
     maker_orders_ctx.add_order(ctx.weak(), rick_order_2.clone(), None);

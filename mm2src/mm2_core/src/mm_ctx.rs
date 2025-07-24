@@ -447,7 +447,7 @@ impl MmCtx {
         }
 
         let default = !self.conf["disable_p2p"].as_bool().unwrap_or(false)
-            && self.conf["seednodes"].as_array().map_or(true, |t| t.is_empty());
+            && self.conf["seednodes"].as_array().is_none_or(|t| t.is_empty());
 
         default
     }
@@ -697,6 +697,8 @@ impl MmArc {
 
     #[cfg(feature = "track-ctx-pointer")]
     fn track_ctx_pointer(&self) {
+        use common::executor::SpawnFuture;
+
         let ctx_weak = self.weak();
         let fut = async move {
             let level = log::log_crate::Level::Info;
