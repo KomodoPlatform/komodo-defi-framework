@@ -277,7 +277,8 @@ impl InitL2ActivationOps for LightningCoin {
             activation_params.color.unwrap_or_else(|| "000000".into()),
             &mut node_color as &mut [u8],
         )
-        .map_to_mm(|_| LightningValidationErr::InvalidRequest("Invalid Hex Color".into()))?;
+        .map_to_mm(|_| LightningValidationErr::InvalidRequest("Invalid Hex Color".into()))
+        .map_mm_err()?;
 
         let listening_port = activation_params.listening_port.unwrap_or(DEFAULT_LISTENING_PORT);
 
@@ -306,10 +307,11 @@ impl InitL2ActivationOps for LightningCoin {
             validated_params,
             task_handle,
         )
-        .await?;
+        .await
+        .map_mm_err()?;
         Timer::sleep(10.).await;
 
-        let address = lightning_coin.my_address()?;
+        let address = lightning_coin.my_address().map_mm_err()?;
         let balance = lightning_coin
             .my_balance()
             .compat()
@@ -345,8 +347,10 @@ async fn start_lightning(
         protocol_conf.network.clone(),
         protocol_conf.confirmation_targets,
     )?);
-    task_handle.update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)?;
-    platform.set_latest_fees().await?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)
+        .map_mm_err()?;
+    platform.set_latest_fees().await.map_mm_err()?;
 
     // Initialize the Logger
     let logger = ctx.log.0.clone();
@@ -363,7 +367,9 @@ async fn start_lightning(
     let persister = init_persister(ctx, &node_id, conf.ticker.clone(), params.backup_path).await?;
 
     // Initialize the P2PGossipSync. This is used for providing routes to send payments over
-    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingNetworkGraphFromFile)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::ReadingNetworkGraphFromFile)
+        .map_mm_err()?;
     let network_graph = Arc::new(
         persister
             .get_network_graph(protocol_conf.network.into(), logger.clone())
@@ -380,7 +386,9 @@ async fn start_lightning(
     let db = init_db(ctx, &node_id, conf.ticker.clone()).await?;
 
     // Initialize the ChannelManager
-    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)
+        .map_mm_err()?;
     let (chain_monitor, channel_manager) = init_channel_manager(
         platform.clone(),
         logger.clone(),
@@ -392,7 +400,9 @@ async fn start_lightning(
     .await?;
 
     // Initialize the PeerManager
-    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingPeerManager)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::InitializingPeerManager)
+        .map_mm_err()?;
     let peer_manager = init_peer_manager(
         ctx.clone(),
         &platform,
@@ -418,7 +428,9 @@ async fn start_lightning(
     ));
 
     // Initialize routing Scorer
-    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingScorerFromFile)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::ReadingScorerFromFile)
+        .map_mm_err()?;
     // status_notifier
     //     .try_send(LightningInProgressStatus::ReadingScorerFromFile)
     //     .debug_log_with_msg("No one seems interested in LightningInProgressStatus");
@@ -451,7 +463,9 @@ async fn start_lightning(
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
     // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
-    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingBackgroundProcessor)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::InitializingBackgroundProcessor)
+        .map_mm_err()?;
     let background_processor = Arc::new(BackgroundProcessor::start(
         persister.clone(),
         invoice_payer.clone(),
@@ -464,7 +478,9 @@ async fn start_lightning(
     ));
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
-    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingChannelsAddressesFromFile)?;
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::ReadingChannelsAddressesFromFile)
+        .map_mm_err()?;
     let open_channels_nodes = Arc::new(PaMutex::new(
         get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));

@@ -26,6 +26,10 @@ sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
+# Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
+# once we consider it as stable.
+ibc-routing-for-swaps = []
+for-tests = []
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
@@ -33,9 +37,10 @@ async-trait.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
+cfg-if.workspace = true
 chain = { path = "../mm2_bitcoin/chain" }
 chrono.workspace = true
-cfg-if.workspace = true
+clap.workspace = true
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
@@ -58,6 +63,7 @@ hex.workspace = true
 http.workspace = true
 hw_common = { path = "../hw_common" }
 itertools.workspace = true
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static.workspace = true
 # ledger = { path = "../ledger" }
@@ -71,7 +77,7 @@ mm2_libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net"}
 mm2_number = { path = "../mm2_number" }
-mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
+mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"] }
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
@@ -97,6 +103,7 @@ serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sp-runtime-interface.workspace = true
 sp-trie.workspace = true
+tempfile.workspace = true
 trie-db.workspace = true
 trie-root.workspace = true
 uuid.workspace = true 
@@ -133,6 +140,7 @@ coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }
+env_logger.workspace = true
 mocktopus.workspace = true
 testcontainers.workspace = true
 web3 = { workspace = true, default-features = false, features = ["http-rustls-tls"] }

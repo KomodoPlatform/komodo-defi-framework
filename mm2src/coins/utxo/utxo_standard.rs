@@ -3,8 +3,9 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
-                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
+                       HDExtractPubkeyError, HDXPubExtractor, SettingEnabledAddressError, TrezorCoinError,
+                       WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
@@ -813,7 +814,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
             wait_until,
             10.,
         )
-        .await?;
+        .await
+        .map_mm_err()?;
         Ok(res)
     }
 
@@ -858,8 +860,8 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, address)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -1123,6 +1125,15 @@ impl HDWalletCoinOps for UtxoStandardCoin {
     }
 
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+
+    async fn received_enabled_address_from_hw_wallet(
+        &self,
+        enabled_address: UtxoHDAddress,
+    ) -> MmResult<(), SettingEnabledAddressError> {
+        utxo_common::received_enabled_address_from_hw_wallet(self, enabled_address.address)
+            .await
+            .mm_err(SettingEnabledAddressError::Internal)
+    }
 }
 
 impl HDCoinWithdrawOps for UtxoStandardCoin {}
@@ -1287,7 +1298,7 @@ impl CoinWithTxHistoryV2 for UtxoStandardCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for UtxoStandardCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let addresses = self.all_addresses().await?;
+        let addresses = self.all_addresses().await.map_mm_err()?;
         Ok(addresses)
     }
 

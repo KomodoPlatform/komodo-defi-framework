@@ -14,7 +14,6 @@ pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciReques
                                    health::Request as HealthRequest,
                                    tx_search::Request as TxSearchRequest};
 use tendermint_rpc::error::Error as TendermintRpcError;
-pub use tendermint_rpc::query::Query as TendermintQuery;
 use tendermint_rpc::request::SimpleRequest;
 pub use tendermint_rpc::Order;
 use tendermint_rpc::Response;

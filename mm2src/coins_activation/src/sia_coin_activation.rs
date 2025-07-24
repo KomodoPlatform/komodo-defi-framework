@@ -202,7 +202,7 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         _protocol_info: SiaCoinProtocolInfo,
         _task_handle: SiaCoinRpcTaskHandleShared,
     ) -> MmResult<Self, SiaCoinInitError> {
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err()?;
 
         let coin = sia_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
             .await
@@ -217,15 +217,18 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         task_handle: SiaCoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, SiaCoinInitError> {
-        task_handle.update_in_progress_status(SiaCoinInProgressStatus::RequestingWalletBalance)?;
+        task_handle
+            .update_in_progress_status(SiaCoinInProgressStatus::RequestingWalletBalance)
+            .map_mm_err()?;
         let current_block = self
             .current_block()
             .compat()
             .await
-            .map_to_mm(SiaCoinInitError::CouldNotGetBlockCount)?;
+            .map_to_mm(SiaCoinInitError::CouldNotGetBlockCount)
+            .map_mm_err()?;
 
-        let balance = self.my_balance().compat().await?;
-        let address = self.my_address()?;
+        let balance = self.my_balance().compat().await.map_mm_err()?;
+        let address = self.my_address().map_mm_err()?;
 
         Ok(SiaCoinActivationResult {
             ticker: self.ticker().into(),

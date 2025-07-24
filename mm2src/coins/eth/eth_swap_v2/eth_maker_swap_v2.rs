@@ -10,7 +10,7 @@ use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
-use mm2_err_handle::prelude::MapToMmResult;
+use mm2_err_handle::prelude::{MapToMmResult, MmResultExt};
 use std::convert::TryInto;
 use web3::types::TransactionId;
 
@@ -137,10 +137,10 @@ impl EthCoin {
             ))
         })?;
         let maker_address = public_to_address(args.maker_pub);
-        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract)?;
+        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let amount = wei_from_big_decimal(&args.amount, self.decimals)?;
+            let amount = wei_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
             MakerValidationArgs {
                 swap_id,
                 amount,

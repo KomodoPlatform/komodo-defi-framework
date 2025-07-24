@@ -67,11 +67,11 @@ pub enum UtxoRpcClientEnum {
     Electrum(ElectrumClient),
 }
 
-impl ToString for UtxoRpcClientEnum {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for UtxoRpcClientEnum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UtxoRpcClientEnum::Native(_) => "native".to_owned(),
-            UtxoRpcClientEnum::Electrum(_) => "electrum".to_owned(),
+            UtxoRpcClientEnum::Native(_) => write!(f, "native"),
+            UtxoRpcClientEnum::Electrum(_) => write!(f, "electrum"),
         }
     }
 }
@@ -780,12 +780,12 @@ impl JsonRpcBatchClient for NativeClientImpl {}
 impl UtxoRpcClientOps for NativeClient {
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
         let fut = self
-            .list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
+            .list_unspent_impl(0, i32::MAX, vec![address.to_string()])
             .map_to_mm_fut(UtxoRpcError::from)
             .and_then(move |unspents| {
                 unspents
                     .into_iter()
-                    .map(|unspent| Ok(UnspentInfo::from_native(unspent, decimals, None)?))
+                    .map(|unspent| UnspentInfo::from_native(unspent, decimals, None).map_mm_err())
                     .collect::<UtxoRpcResult<_>>()
             });
         Box::new(fut)
@@ -801,7 +801,7 @@ impl UtxoRpcClientOps for NativeClient {
         }
 
         let fut = self
-            .list_unspent_impl(0, std::i32::MAX, addresses_str)
+            .list_unspent_impl(0, i32::MAX, addresses_str)
             .map_to_mm_fut(UtxoRpcError::from)
             .and_then(move |unspents| {
                 unspents
@@ -814,7 +814,7 @@ impl UtxoRpcClientOps for NativeClient {
                                 UtxoRpcError::InvalidResponse(format!("Unexpected address '{}'", unspent.address))
                             })?
                             .clone();
-                        let unspent_info = UnspentInfo::from_native(unspent, decimals, None)?;
+                        let unspent_info = UnspentInfo::from_native(unspent, decimals, None).map_mm_err()?;
                         Ok((orig_address, unspent_info))
                     })
                     // Collect `(Address, UnspentInfo)` items into `HashMap<Address, Vec<UnspentInfo>>` grouped by the addresses.
@@ -865,7 +865,7 @@ impl UtxoRpcClientOps for NativeClient {
 
     fn display_balance(&self, address: Address, _decimals: u8) -> RpcRes<BigDecimal> {
         Box::new(
-            self.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
+            self.list_unspent_impl(0, i32::MAX, vec![address.to_string()])
                 .map(|unspents| {
                     unspents
                         .iter()
@@ -991,7 +991,7 @@ impl UtxoRpcClientOps for NativeClient {
     }
 
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<GetBlockHeaderError>> {
-        let block = self.get_block_by_height(height).await?;
+        let block = self.get_block_by_height(height).await.map_mm_err()?;
         Ok(block.time as u64)
     }
 }
@@ -1028,7 +1028,7 @@ impl NativeClient {
                     return Ok(transaction_list);
                 }
 
-                transaction_list.extend(transactions.into_iter());
+                transaction_list.extend(transactions);
                 from += step;
             }
         };

@@ -348,7 +348,7 @@ impl<'a> SqlQuery<'a> {
 /// - [`SqlQuery::or_where_in`]
 /// - [`SqlQuery::or_where_in_quoted`]
 /// - [`SqlQuery::or_where_in_params`]
-impl<'a> SqlCondition for SqlQuery<'a> {
+impl SqlCondition for SqlQuery<'_> {
     fn sql_builder(&mut self) -> &mut SqlBuilder { &mut self.sql_builder }
 
     fn sql_params(&mut self) -> &mut SqlParamsBuilder { &mut self.params }

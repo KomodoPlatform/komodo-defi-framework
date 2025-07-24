@@ -103,7 +103,7 @@ impl<'a, 'b, T: 'static> TrezorResponse<'a, 'b, T> {
 }
 
 #[async_trait]
-impl<'a, 'b, T> ProcessTrezorResponse<T> for TrezorResponse<'a, 'b, T>
+impl<T> ProcessTrezorResponse<T> for TrezorResponse<'_, '_, T>
 where
     T: Send + Sync + 'static,
 {
@@ -118,22 +118,25 @@ where
                 response = match response {
                     TrezorResponse::Ready(result) => return Ok(result),
                     TrezorResponse::ButtonRequest(button_req) => {
-                        processor_req.on_button_request().await?;
-                        button_req.ack().await?
+                        processor_req.on_button_request().await.map_mm_err()?;
+                        button_req.ack().await.map_mm_err()?
                     },
                     TrezorResponse::PinMatrixRequest(pin_req) => {
-                        let pin_response = processor_req.on_pin_request().await?;
-                        pin_req.ack_pin(pin_response.pin).await?
+                        let pin_response = processor_req.on_pin_request().await.map_mm_err()?;
+                        pin_req.ack_pin(pin_response.pin).await.map_mm_err()?
                     },
                     TrezorResponse::PassphraseRequest(passphrase_req) => {
-                        let passphrase_response = processor_req.on_passphrase_request().await?;
-                        passphrase_req.ack_passphrase(passphrase_response.passphrase).await?
+                        let passphrase_response = processor_req.on_passphrase_request().await.map_mm_err()?;
+                        passphrase_req
+                            .ack_passphrase(passphrase_response.passphrase)
+                            .await
+                            .map_mm_err()?
                     },
                 };
             }
         };
         let res = fut.await;
-        processor.on_ready().await?;
+        processor.on_ready().await.map_mm_err()?;
         res
     }
 }
@@ -145,7 +148,7 @@ pub struct ButtonRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for ButtonRequest<'a, 'b, T> {
+impl<T> fmt::Debug for ButtonRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 
@@ -172,7 +175,7 @@ pub struct PinMatrixRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for PinMatrixRequest<'a, 'b, T> {
+impl<T> fmt::Debug for PinMatrixRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 
@@ -199,7 +202,7 @@ pub struct PassphraseRequest<'a, 'b, T> {
     result_handler: ResultHandler<T>,
 }
 
-impl<'a, 'b, T> fmt::Debug for PassphraseRequest<'a, 'b, T> {
+impl<T> fmt::Debug for PassphraseRequest<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:?}", self.message) }
 }
 

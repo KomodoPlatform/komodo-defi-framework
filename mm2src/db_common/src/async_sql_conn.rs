@@ -43,6 +43,10 @@ impl std::error::Error for AsyncConnError {
     }
 }
 
+impl From<String> for AsyncConnError {
+    fn from(err: String) -> Self { Self::Internal(InternalError(err)) }
+}
+
 #[derive(Debug)]
 pub struct InternalError(pub String);
 

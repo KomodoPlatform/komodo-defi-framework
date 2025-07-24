@@ -33,7 +33,10 @@ impl HttpStatusCode for GetPublicKeyError {
 }
 
 pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyResponse> {
-    let public_key = CryptoCtx::from_ctx(&ctx)?.mm2_internal_pubkey().to_string();
+    let public_key = CryptoCtx::from_ctx(&ctx)
+        .map_mm_err()?
+        .mm2_internal_pubkey()
+        .to_string();
     Ok(GetPublicKeyResponse { public_key })
 }
 
