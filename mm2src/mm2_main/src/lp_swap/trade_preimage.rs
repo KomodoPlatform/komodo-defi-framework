@@ -18,6 +18,7 @@ construct_detailed!(DetailedRequiredBalance, required_balance);
 
 pub type TradePreimageRpcResult<T> = Result<T, MmError<TradePreimageRpcError>>;
 
+/// Calculate all fees for the swap and max volume (for maker)
 pub async fn trade_preimage_rpc(
     ctx: MmArc,
     req: TradePreimageRequest,
@@ -29,8 +30,8 @@ pub async fn trade_preimage_rpc(
         return MmError::err(TradePreimageRpcError::CoinIsWalletOnly { coin: req.rel });
     }
 
-    let base_coin = lp_coinfind_or_err(&ctx, &req.base).await?;
-    let rel_coin = lp_coinfind_or_err(&ctx, &req.rel).await?;
+    let base_coin = lp_coinfind_or_err(&ctx, &req.base).await.map_mm_err()?;
+    let rel_coin = lp_coinfind_or_err(&ctx, &req.rel).await.map_mm_err()?;
 
     match req.swap_method {
         TradePreimageMethod::SetPrice => maker_swap_trade_preimage(&ctx, req, base_coin, rel_coin)

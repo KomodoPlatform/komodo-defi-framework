@@ -32,6 +32,7 @@ use http::Response;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_rpc::data::legacy::{MatchBy, OrderConfirmationsSettings, TakerAction};
 use parking_lot::Mutex as PaMutex;
@@ -492,9 +493,11 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 
                     // Send a notification to the swap status streamer about a new event.
                     ctx.event_stream_manager
-                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
-                            uuid: running_swap.uuid,
-                            event: to_save.clone(),
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                            SwapStatusEvent::TakerV1 {
+                                uuid: running_swap.uuid,
+                                event: to_save.clone(),
+                            }
                         })
                         .ok();
                     save_my_taker_swap_event(&ctx, &running_swap, to_save)
@@ -2652,7 +2655,8 @@ pub async fn taker_swap_trade_preimage(
         Some(prepared_params),
         stage,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let conf_settings = OrderConfirmationsSettings {
         base_confs: base_coin.required_confirmations(),
@@ -2660,7 +2664,8 @@ pub async fn taker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
-    let our_public_id = CryptoCtx::from_ctx(ctx)?
+    let our_public_id = CryptoCtx::from_ctx(ctx)
+        .map_mm_err()?
         .keypair_ctx()
         .ok_or(CryptoCtxError::NotInitialized)?
         .mm2_internal_public_id();
@@ -2671,6 +2676,8 @@ pub async fn taker_swap_trade_preimage(
         .with_match_by(MatchBy::Any)
         .with_conf_settings(conf_settings)
         .with_sender_pubkey(H256Json::from(our_public_id.bytes));
+
+    // perform an additional validation
     let _ = order_builder
         .build()
         .map_to_mm(|e| TradePreimageRpcError::from_taker_order_build_error(e, &req.base, &req.rel))?;
@@ -2721,27 +2728,59 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 }
 
 /// If we want to calculate the maximum taker volume, we should solve the following equation:
-/// `max_vol = balance - locked_amount - trade_fee(max_vol) - fee_to_send_taker_fee(dex_fee(max_vol)) - dex_fee(max_vol)`
 ///
-/// 1) If the `trade_fee` and `fee_to_send_taker_fee` should be paid in base coin, the equation can be simplified:
-/// `max_vol = balance - locked_amount - dex_fee(max_vol)`,
-/// where we can calculate the exact `max_vol` since the function inverse to `dex_fee(x)` can be obtained.
+/// ```rust
+/// max_vol = balance - locked_amount
+///         - trade_fee(max_vol)
+///         - fee_to_send_taker_fee(dex_fee(max_vol))
+///         - dex_fee(max_vol)
+/// ```
 ///
-/// 2) Otherwise we cannot express the `max_vol` from the equation above, but we can find smallest of the largest `max_vol`.
-/// It means if we find the largest `trade_fee` and `fee_to_send_taker_fee` values and pass them into the equation, we will get:
-/// `min_max_vol = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee - dex_fee(max_vol)`
-/// and then `min_max_vol` can be calculated as in the first case.
+/// 1. If the `trade_fee` and `fee_to_send_taker_fee` should be paid in base coin, the equation can be simplified:
 ///
-/// Please note the following condition is satisfied for any `x` and `y`:
-/// `if x < y then trade_fee(x) <= trade_fee(y) and fee_to_send_taker_fee(x) <= fee_to_send_taker_fee(y) and dex_fee(x) <= dex_fee(y)`
-/// Let `real_max_vol` is a real desired volume.
-/// Performing the following steps one by one, we will get an approximate maximum volume:
-/// - `max_possible = balance - locked_amount` is a largest possible max volume. Hint, we've replaced unknown subtracted `trade_fee`, `fee_to_send_taker_fee`, `dex_fee` variables with zeros.
-/// - `max_trade_fee = trade_fee(max_possible)` is a largest possible `trade_fee` value.
-/// - `max_possible_2 = balance - locked_amount - max_trade_fee` is more accurate max volume than `max_possible`. Please note `real_max_vol <= max_possible_2 <= max_possible`.
-/// - `max_dex_fee = dex_fee(max_possible_2)` is an intermediate value that will be passed into the `fee_to_send_taker_fee`.
+/// ```rust
+/// max_vol = balance - locked_amount - dex_fee(max_vol)
+/// ```
+///
+/// where we can calculate the exact `max_vol` since the inverse of `dex_fee(x)` is obtainable.
+///
+/// 2. Otherwise we cannot express `max_vol` from the equation above, but we can find the smallest of the largest `max_vol`. That means if we find the largest `trade_fee` and `fee_to_send_taker_fee` values and plug them in:
+///
+/// ```rust
+/// min_max_vol = balance - locked_amount
+///             - max_trade_fee
+///             - max_fee_to_send_taker_fee
+///             - dex_fee(max_vol)
+/// ```
+///
+/// then `min_max_vol` can be calculated as in the first case.
+///
+/// Please note that for any `x` and `y`, if `x < y` then
+/// `trade_fee(x) <= trade_fee(y)`, `fee_to_send_taker_fee(x) <= fee_to_send_taker_fee(y)`,
+/// and `dex_fee(x) <= dex_fee(y)`.
+///
+/// Let `real_max_vol` be the actual desired volume. Performing the following steps yields
+/// an approximate maximum volume:
+///
+/// - `max_possible = balance - locked_amount`
+///   The largest possible max volume, replacing unknown fees with zero.
+/// - `max_trade_fee = trade_fee(max_possible)`
+///   The largest possible `trade_fee`.
+/// - `max_possible_2 = balance - locked_amount - max_trade_fee`
+///   A more accurate upper bound (`real_max_vol <= max_possible_2 <= max_possible`).
+/// - `max_dex_fee = dex_fee(max_possible_2)`
+///   Passed into `fee_to_send_taker_fee`.
 /// - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
-/// After that `min_max_vol = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee - dex_fee(max_vol)` can be solved as in the first case.
+///
+/// After that,
+/// ```rust
+/// min_max_vol = balance - locked_amount
+///             - max_trade_fee
+///             - max_fee_to_send_taker_fee
+///             - dex_fee(max_vol)
+/// ```
+/// can be solved as in the first case.
+///
 pub async fn calc_max_taker_vol(
     ctx: &MmArc,
     coin: &MmCoinEnum,
@@ -2749,7 +2788,7 @@ pub async fn calc_max_taker_vol(
     stage: FeeApproxStage,
 ) -> CheckBalanceResult<MmNumber> {
     let my_coin = coin.ticker();
-    let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
+    let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
     let locked = get_locked_amount(ctx, my_coin);
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
 

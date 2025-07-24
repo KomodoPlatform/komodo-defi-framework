@@ -40,7 +40,7 @@ pub fn encrypt_with_slip21(
 
     // Derive encryption and authentication keys using SLIP-0021
     let (key_aes, key_hmac) =
-        derive_encryption_authentication_keys(master_secret, &encryption_path, &authentication_path)?;
+        derive_encryption_authentication_keys(master_secret, &encryption_path, &authentication_path).map_mm_err()?;
 
     let key_derivation_details = KeyDerivationDetails::SLIP0021 {
         encryption_path,
@@ -71,7 +71,7 @@ pub fn decrypt_with_slip21(encrypted_data: &EncryptedData, master_secret: &[u8; 
 
     // Derive encryption and authentication keys using SLIP-0021
     let (key_aes, key_hmac) =
-        derive_encryption_authentication_keys(master_secret, encryption_path, authentication_path)?;
+        derive_encryption_authentication_keys(master_secret, encryption_path, authentication_path).map_mm_err()?;
 
     decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| SLIP21Error::DecryptionFailed(e.to_string()))
 }

@@ -1,7 +1,6 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::block_on;
-use futures_util::future;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
@@ -165,6 +164,8 @@ fn test_wei_from_big_decimal() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout() {
+    use futures::future;
+
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
     EthCoin::events_from_block.mock_safe(|_, _, _, _, _, _| MockResult::Return(Box::pin(future::ok(vec![]))));

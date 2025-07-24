@@ -748,7 +748,12 @@ mod tests {
         let mut incoming_rx = incoming_rx.inner;
 
         match incoming_rx.next().timeout_secs(0.5).await.unwrap_w() {
-            Some((_conn_idx, WebSocketEvent::Closed { reason })) if reason == ClosureReason::NormalClosure => (),
+            Some((
+                _conn_idx,
+                WebSocketEvent::Closed {
+                    reason: ClosureReason::NormalClosure,
+                },
+            )) => (),
             other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {:?}", other),
         }
     }

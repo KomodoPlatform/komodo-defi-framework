@@ -2,6 +2,7 @@ use crate::eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
@@ -107,6 +108,13 @@ pub enum MyAddressError {
     #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(String),
     InternalError(String),
+}
+
+impl std::error::Error for MyAddressError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // This error doesn't wrap another error, so we return None
+        None
+    }
 }
 
 #[derive(Debug, Display)]
