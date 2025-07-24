@@ -5520,12 +5520,12 @@ fn test_peer_time_sync_validation() {
     let timeoffset_tolerable = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() - 1;
     let timeoffset_too_big = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() + 1;
 
-    let start_peers_with_time_offset = |offset: i64, skip_seednodes_check: bool| -> (Json, Json) {
+    let start_peers_with_time_offset = |offset: i64, skip_peers_check: bool| -> (Json, Json) {
         let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 10.into());
         let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 10.into());
         let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
         let mut bob_conf = Mm2TestConf::seednode(&hex::encode(bob_priv_key), &coins);
-        bob_conf.conf["skip_seednodes_check"] = skip_seednodes_check.into();
+        bob_conf.conf["skip_peers_check"] = skip_peers_check.into();
         let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
             bob_conf.conf,
             bob_conf.rpc_password,
@@ -5537,7 +5537,7 @@ fn test_peer_time_sync_validation() {
         block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
         let mut alice_conf =
             Mm2TestConf::light_node(&hex::encode(alice_priv_key), &coins, &[mm_bob.ip.to_string().as_str()]);
-        alice_conf.conf["skip_seednodes_check"] = skip_seednodes_check.into();
+        alice_conf.conf["skip_peers_check"] = skip_peers_check.into();
         let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
             alice_conf.conf,
             alice_conf.rpc_password,
@@ -5585,7 +5585,7 @@ fn test_peer_time_sync_validation() {
     );
 
     // check with too big time offset:
-    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_too_big, true); // skip_seednodes_check = true as there should not be connected peers
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_too_big, true); // skip_peers_check = true as there should not be connected peers
     assert!(
         bob_peers["result"].as_object().unwrap().is_empty(),
         "bob must have no peers"

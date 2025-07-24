@@ -15,10 +15,7 @@ use std::env::var;
 /// This is not a separate test but a helper used by `MarketMakerIt` to run the MarketMaker from the test binary.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_mm_start() { test_mm_start_impl(); }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn test_mm_start_impl() {
+fn test_mm_start() {
     if let Ok(conf) = var("_MM2_TEST_CONF") {
         log!("test_mm_start] Starting the MarketMaker...");
         let conf: Json = json::from_str(&conf).unwrap();

@@ -1684,21 +1684,21 @@ impl MarketMakerIt {
     /// Check if the node is connected to at least one seednode,
     /// the rpc is used instead of checking the log for DEBUG messages (to opt out p2p debug logging)
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn check_seednodes(&mut self) -> Result<(), String> {
+    pub async fn check_if_any_peer_connected(&mut self) -> Result<(), String> {
         let timeout_sec = 22.;
         let start = now_float();
         loop {
-            let res = self.rpc(&json!({
-                "userpass": self.userpass,
-                "method": "get_directly_connected_peers",
-            }))
-            .await
-            .unwrap();
-            if res.0.is_success() {       
-                let res_value = serde_json::from_str::<Json>(&res.1).unwrap();
-                if let Some(peers) = res_value["result"].as_object() {
-                    if peers.len() > 0 {
-                        return Ok(());
+            if let Ok(res) = self.rpc(&json!({
+                    "userpass": self.userpass,
+                    "method": "get_directly_connected_peers",
+                }))
+                .await {
+                if res.0.is_success() {       
+                    let res_value = serde_json::from_str::<Json>(&res.1).unwrap();
+                    if let Some(peers) = res_value["result"].as_object() {
+                        if peers.len() > 0 {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -1748,9 +1748,9 @@ impl MarketMakerIt {
                 try_s!(self.wait_for_p2p_listen().await);
             }
 
-            let skip_seednodes_check = conf["skip_seednodes_check"].as_bool().unwrap_or_default();
-            if conf["seednodes"].as_array().is_some() && !skip_seednodes_check {
-                try_s!(self.check_seednodes().await);
+            let skip_peers_check = conf["skip_peers_check"].as_bool().unwrap_or_default();
+            if conf["seednodes"].as_array().is_some() && !skip_peers_check {
+                try_s!(self.check_if_any_peer_connected().await);
             }
         }
 
@@ -4182,13 +4182,7 @@ fn ensure_needed_modules_logged(rust_log: &str) -> String {
     // Add module=info or replace module=off with module=info
     let ensure_contains_info = |source: &str, module: &str| {
         let mut updated = source.split(',')
-            .map(|s| {
-                if s.starts_with(&(module.to_owned() + "=off")) {
-                    module.to_owned() + "=info"
-                } else {
-                    s.to_owned()
-                }
-            })
+            .filter(|s| s != &&(module.to_owned() + "=off"))
             .collect::<Vec<_>>()
             .join(",");
         if !updated.contains(&(module.to_owned() + "=")) { // don't override existing module tag (but ignore submodules) 
