@@ -3169,7 +3169,7 @@ fn test_maker_order_partial_fill_recovery_on_tpu() {
         serde_json::from_str(&rc.1).unwrap()
     };
 
-    block_on(set_price(&mm_bob, "ETH", "ETH1", "1.0", "2.0", false));
+    block_on(set_price(&mm_bob, "ETH", "ETH1", "1.0", "2.0", false, None));
 
     let orderbook_result = send_orderbook_rpc(&mm_onur);
     let asks = orderbook_result["result"]["asks"].as_array().unwrap();

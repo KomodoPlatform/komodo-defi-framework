@@ -198,7 +198,7 @@ testcontainers = "0.15.0"
 tiny-bip39 = "0.8.0"
 thiserror = "1.0.40"
 time = "0.3.36"
-timed-map = { version = "1.4", features = ["rustc-hash", "serde", "wasm"] }
+timed-map = { version = "1.5", features = ["rustc-hash", "serde", "wasm"] }
 tokio = { version = "1.20",  default-features = false }
 tokio-rustls = { version = "0.24", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "8fc7e2f", defautl-features = false, features = ["rustls-tls-native-roots"]}

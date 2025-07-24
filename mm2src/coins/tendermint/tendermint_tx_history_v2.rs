@@ -18,7 +18,7 @@ use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
-use mm2_event_stream::StreamingManager;
+use mm2_event_stream::{DeriveStreamerId, StreamingManager};
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;

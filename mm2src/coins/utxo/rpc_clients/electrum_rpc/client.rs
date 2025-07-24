@@ -51,7 +51,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures01::Future;
 use itertools::Itertools;
-use mm2_event_stream::{StreamingManager, StreamingManagerError};
+use mm2_event_stream::{DeriveStreamerId, StreamingManager, StreamingManagerError};
 use serde_json::{self as json, Value as Json};
 
 type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
