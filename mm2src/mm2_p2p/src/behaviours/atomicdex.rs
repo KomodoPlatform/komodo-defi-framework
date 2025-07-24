@@ -1,4 +1,5 @@
 use common::executor::SpawnFuture;
+use compatible_time::Duration;
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{channel::oneshot,
@@ -6,7 +7,7 @@ use futures::{channel::oneshot,
               Future, FutureExt, SinkExt, StreamExt};
 use futures_rustls::rustls;
 use futures_ticker::Ticker;
-use instant::Duration;
+use lazy_static::lazy_static;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::{ConnectedPoint, Endpoint};
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
@@ -21,18 +22,20 @@ use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::iter;
 use std::net::IpAddr;
+use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
+use timed_map::{MapKind, TimedMap};
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
 use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
-use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
+use crate::application::request_response::network_info::NetworkInfoRequest;
+use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
@@ -49,6 +52,22 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
+const DEFAULT_NETID: u16 = 8762;
+
+/// Used in time validation logic for each peer which runs immediately  after the
+/// `ConnectionEstablished` event.
+///
+/// Be careful when updating this value, we have some defaults (like for swaps)
+/// depending on this.
+pub const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 20;
+
+/// Used for storing peers in [`RECENTLY_DIALED_PEERS`].
+const DIAL_RETRY_DELAY: Duration = Duration::from_secs(60 * 5);
+
+lazy_static! {
+    /// Tracks recently dialed peers to avoid repeated connection attempts.
+    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<Multiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+}
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
     7777, // TODO: keep it inaccessible until Q2 of 2024.
@@ -162,6 +181,21 @@ pub enum AdexBehaviourCmd {
     },
 }
 
+/// Determines if a dial attempt to the remote should be made.
+///
+/// Returns `false` if a dial attempt to the given address has already been made,
+/// in which case the caller must skip the dial attempt.
+fn check_and_mark_dialed(recently_dialed_peers: &mut MutexGuard<TimedMap<Multiaddr, ()>>, addr: &Multiaddr) -> bool {
+    if recently_dialed_peers.get(addr).is_some() {
+        info!("Connection attempt was already made recently to '{addr}'.");
+        return false;
+    }
+
+    recently_dialed_peers.insert_expirable(addr.clone(), (), DIAL_RETRY_DELAY);
+
+    true
+}
+
 /// Returns info about directly connected peers.
 pub async fn get_directly_connected_peers(mut cmd_tx: AdexCmdTx) -> HashMap<String, Vec<String>> {
     let (result_tx, rx) = oneshot::channel();
@@ -197,6 +231,44 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     let cmd = AdexBehaviourCmd::GetRelayMesh { result_tx };
     cmd_tx.send(cmd).await.expect("Rx should be present");
     rx.await.expect("Tx should be present")
+}
+
+async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<PeerId>, rp_sender: RequestResponseSender) {
+    let request = P2PRequest::NetworkInfo(NetworkInfoRequest::GetPeerUtcTimestamp);
+    let encoded_request = encode_message(&request)
+        .expect("Static type `PeerInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
+
+    match request_one_peer(peer, encoded_request, rp_sender).await {
+        PeerResponse::Ok { res } => {
+            if let Ok(timestamp) = decode_message::<u64>(&res) {
+                let now = common::get_utc_timestamp();
+                let now: u64 = now
+                    .try_into()
+                    .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {}", now));
+
+                let diff = now.abs_diff(timestamp);
+
+                // If time diff is in the acceptable gap, end the validation here.
+                if diff <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
+                    debug!(
+                        "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
+                    );
+                    return;
+                }
+            };
+        },
+        other => {
+            error!("Unexpected response `{other:?}` from peer `{peer}`");
+            // TODO: Ideally, we should send `peer` to end the connection,
+            // but we don't want to cause a breaking change yet.
+            return;
+        },
+    }
+
+    // If the function reaches this point, this means validation has failed.
+    // Send the peer ID to disconnect from it.
+    error!("Failed to validate the time for peer `{peer}`; disconnecting.");
+    response_tx.send(peer).await.unwrap();
 }
 
 async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: RequestResponseSender) -> PeerResponse {
@@ -641,23 +713,12 @@ fn start_gossipsub(
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
         // build a gossipsub network behaviour
-        let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
+        let gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
         let floodsub = Floodsub::new(local_peer_id, config.netid != DEFAULT_NETID);
 
-        let mut peers_exchange = PeersExchange::new(network_info);
-        if !network_info.in_memory() {
-            // Please note WASM nodes don't support `PeersExchange` currently,
-            // so `get_all_network_seednodes` returns an empty list.
-            for (peer_id, addr, _domain) in get_all_network_seednodes(config.netid) {
-                let multiaddr = addr.try_to_multiaddr(network_info)?;
-                peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
-                if peer_id != local_peer_id {
-                    gossipsub.add_explicit_relay(peer_id);
-                }
-            }
-        }
+        let peers_exchange = PeersExchange::new(network_info);
 
         // build a request-response network behaviour
         let request_response = build_request_response_behaviour();
@@ -711,12 +772,26 @@ fn start_gossipsub(
         _ => (),
     }
 
+    let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
+        if !check_and_mark_dialed(&mut recently_dialed_peers, relay) {
+            continue;
+        }
+
         match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
             Ok(_) => info!("Dialed {}", relay),
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
     }
+
+    // All currently connected peers come from the config file (because we didn't connect any other
+    // ones yet), so it's safe to treat them as trusted nodes.
+    let peers: Vec<_> = libp2p::Swarm::connected_peers(&swarm).cloned().collect();
+    for peer in peers {
+        swarm.behaviour_mut().core.gossipsub.add_explicit_peer(&peer);
+    }
+
+    drop(recently_dialed_peers);
 
     let mut check_connected_relays_interval =
         Ticker::new_with_next(CONNECTED_RELAYS_CHECK_INTERVAL, CONNECTED_RELAYS_CHECK_INTERVAL);
@@ -724,6 +799,7 @@ fn start_gossipsub(
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
+    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::channel(mesh_n_high);
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
@@ -733,10 +809,27 @@ fn start_gossipsub(
             }
         }
 
+        while let Poll::Ready(Some(peer_id)) = timestamp_rx.poll_next_unpin(cx) {
+            if swarm.disconnect_peer_id(peer_id).is_err() {
+                error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
+            }
+            swarm.behaviour_mut().core.gossipsub.remove_explicit_peer(&peer_id);
+        }
+
         loop {
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => {
                     debug!("Swarm event {:?}", event);
+
+                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = &event {
+                        info!("Validating time data for peer `{peer_id}`.");
+                        let future = validate_peer_time(
+                            *peer_id,
+                            timestamp_tx.clone(),
+                            swarm.behaviour().core.request_response.sender(),
+                        );
+                        swarm.behaviour().spawn(future);
+                    }
 
                     if let SwarmEvent::Behaviour(event) = event {
                         if swarm.behaviour_mut().netid != DEFAULT_NETID {
@@ -798,19 +891,29 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
 
     let mut rng = rand::thread_rng();
     if connected_relays.len() < mesh_n_low {
+        let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
         let to_connect_num = mesh_n - connected_relays.len();
-        let to_connect = swarm
-            .behaviour_mut()
-            .core
-            .peers_exchange
-            .get_random_peers(to_connect_num, |peer| !connected_relays.contains(peer));
+        let to_connect =
+            swarm
+                .behaviour_mut()
+                .core
+                .peers_exchange
+                .get_random_peers(to_connect_num, |peer, addresses| {
+                    !connected_relays.contains(peer)
+                        && addresses
+                            .iter()
+                            .any(|addr| check_and_mark_dialed(&mut recently_dialed_peers, addr))
+                });
 
         // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
         if to_connect.len() < to_connect_num {
             let connect_bootstrap_num = to_connect_num - to_connect.len();
             for addr in bootstrap_addresses
                 .iter()
-                .filter(|addr| !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr))
+                .filter(|addr| {
+                    !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr)
+                        && check_and_mark_dialed(&mut recently_dialed_peers, addr)
+                })
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
@@ -824,11 +927,13 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 if swarm.behaviour().core.gossipsub.is_connected_to_addr(&addr) {
                     continue;
                 }
+
                 if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
                     error!("Peer {} address {} dial error {}", peer, addr, e);
                 }
             }
         }
+        drop(recently_dialed_peers);
     }
 
     if connected_relays.len() > max_n {

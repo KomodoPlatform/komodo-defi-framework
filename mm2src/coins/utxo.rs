@@ -32,6 +32,7 @@ pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
 pub mod swap_proto_v2_scripts;
+pub mod tx_history_events;
 pub mod utxo_balance_events;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
@@ -56,7 +57,7 @@ use common::{now_sec, now_sec_u32};
 use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
@@ -102,14 +103,15 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
                         EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
                         UtxoRpcFut, UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
-            CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
-            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
+use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
+            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
+            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            UnexpectedDerivationMethod, VerificationError, WithdrawError, WithdrawRequest};
+            UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
+use crate::hd_wallet::{AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps,
+                       HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -143,9 +145,6 @@ pub enum ScripthashNotification {
     Triggered(String),
     SubscribeToAddresses(HashSet<Address>),
 }
-
-pub type ScripthashNotificationSender = Option<UnboundedSender<ScripthashNotification>>;
-type ScripthashNotificationHandler = Option<Arc<AsyncMutex<UnboundedReceiver<ScripthashNotification>>>>;
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -243,7 +242,7 @@ impl From<UtxoRpcError> for TxProviderError {
 #[async_trait]
 impl TxProvider for UtxoRpcClientEnum {
     async fn get_rpc_transaction(&self, tx_hash: &H256Json) -> Result<RpcTransaction, MmError<TxProviderError>> {
-        Ok(self.get_verbose_transaction(tx_hash).compat().await?)
+        Ok(self.get_verbose_transaction(tx_hash).compat().await.map_mm_err()?)
     }
 }
 
@@ -261,27 +260,59 @@ pub struct AdditionalTxData {
     pub received_by_me: u64,
     pub spent_by_me: u64,
     pub fee_amount: u64,
-    pub unused_change: u64,
     pub kmd_rewards: Option<KmdRewardsDetails>,
 }
 
 /// The fee set from coins config
 #[derive(Debug)]
-pub enum TxFee {
+pub enum FeeRate {
     /// Tell the coin that it should request the fee from daemon RPC and calculate it relying on tx size
     Dynamic(EstimateFeeMethod),
     /// Tell the coin that it has fixed tx fee per kb.
     FixedPerKb(u64),
 }
 
-/// The actual "runtime" fee that is received from RPC in case of dynamic calculation
+/// The actual "runtime" tx fee rate (per kb) that is received from RPC in case of dynamic calculation
+/// or fixed tx fee rate
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ActualTxFee {
+pub enum ActualFeeRate {
     /// fee amount per Kbyte received from coin RPC
     Dynamic(u64),
-    /// Use specified amount per each 1 kb of transaction and also per each output less than amount.
+    /// Use specified fee amount per each 1 kb of transaction and also per each output less than the fee amount.
     /// Used by DOGE, but more coins might support it too.
     FixedPerKb(u64),
+}
+
+impl ActualFeeRate {
+    fn get_tx_fee(&self, tx_size: u64) -> u64 {
+        match self {
+            ActualFeeRate::Dynamic(fee_rate) => (fee_rate * tx_size) / KILO_BYTE,
+            // return fee_rate here as swap spend transaction size is always less than 1 kb
+            ActualFeeRate::FixedPerKb(fee_rate) => {
+                let tx_size_kb = if tx_size % KILO_BYTE == 0 {
+                    tx_size / KILO_BYTE
+                } else {
+                    tx_size / KILO_BYTE + 1
+                };
+                fee_rate * tx_size_kb
+            },
+        }
+    }
+
+    /// Return extra tx fee for the change output as p2pkh
+    fn get_tx_fee_for_change(&self, tx_size: u64) -> u64 {
+        match self {
+            ActualFeeRate::Dynamic(fee_rate) => (*fee_rate * P2PKH_OUTPUT_LEN) / KILO_BYTE,
+            ActualFeeRate::FixedPerKb(fee_rate) => {
+                // take into account the change output if tx_size_kb(tx with change) > tx_size_kb(tx without change)
+                if tx_size % KILO_BYTE + P2PKH_OUTPUT_LEN > KILO_BYTE {
+                    *fee_rate
+                } else {
+                    0
+                }
+            },
+        }
+    }
 }
 
 /// Fee policy applied on transaction creation
@@ -578,7 +609,7 @@ pub struct UtxoCoinFields {
     /// Emercoin has 6
     /// Bitcoin Diamond has 7
     pub decimals: u8,
-    pub tx_fee: TxFee,
+    pub tx_fee: FeeRate,
     /// Minimum transaction value at which the value is not less than fee
     pub dust_amount: u64,
     /// RPC client
@@ -593,6 +624,7 @@ pub struct UtxoCoinFields {
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
+    // TODO: change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>` to better support HD wallets.
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
@@ -604,14 +636,13 @@ pub struct UtxoCoinFields {
     /// The watcher/receiver of the block headers synchronization status,
     /// initialized only for non-native mode if spv is enabled for the coin.
     pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    /// A weak reference to the MM context we are running on top of.
+    ///
+    /// This faciliates access to global MM state and fields (e.g. event streaming manager).
+    pub ctx: MmWeak,
     /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
-    pub(crate) ctx: MmWeak,
-    /// This is used for balance event streaming implementation for UTXOs.
-    /// If balance event streaming isn't enabled, this value will always be `None`; otherwise,
-    /// it will be used for receiving scripthash notifications to re-fetch balances.
-    scripthash_notification_handler: ScripthashNotificationHandler,
 }
 
 #[derive(Debug, Display)]
@@ -814,6 +845,7 @@ impl UtxoCoinFields {
             posv: self.conf.is_posv,
             str_d_zeel,
             hash_algo: self.tx_hash_algo.into(),
+            v_extra_payload: None,
         }
     }
 }
@@ -840,18 +872,15 @@ pub trait UtxoTxBroadcastOps {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoTxGenerationOps {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee>;
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate>;
 
     /// Calculates interest if the coin is KMD
     /// Adds the value to existing output to my_script_pub or creates additional interest output
     /// returns transaction and data as is if the coin is not KMD
-    async fn calc_interest_if_required(
-        &self,
-        mut unsigned: TransactionInputSigner,
-        mut data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)>;
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64>;
+
+    /// Returns `true` if this coin supports Komodo-style interest accrual; otherwise, returns `false`.
+    fn supports_interest(&self) -> bool;
 }
 
 /// The UTXO address balance scanner.
@@ -1028,6 +1057,10 @@ impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
 }
 
+impl AddrToString for Address {
+    fn addr_to_string(&self) -> String { self.to_string() }
+}
+
 #[async_trait]
 impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Address = Address;
@@ -1158,7 +1191,7 @@ pub trait UtxoStandardOps {
     /// * `input_transactions` - the cache of the already requested transactions.
     async fn tx_details_by_hash(
         &self,
-        hash: &[u8],
+        hash: &H256Json,
         input_transactions: &mut HistoryUtxoTxMap,
     ) -> Result<TransactionDetails, String>;
 
@@ -1305,11 +1338,11 @@ impl VerboseTransactionFrom {
     }
 }
 
-pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
-    if raw.len() != 32 {
-        return ERR!("Invalid raw priv key len {}", raw.len());
-    }
-
+pub fn compressed_key_pair_from_bytes(
+    raw: &[u8; 32],
+    prefix: u8,
+    checksum_type: ChecksumType,
+) -> Result<KeyPair, String> {
     let private = Private {
         prefix,
         compressed: true,
@@ -1319,9 +1352,12 @@ pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: Che
     Ok(try_s!(KeyPair::from_private(private)))
 }
 
-pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType) -> Result<H264, String> {
+pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8; 32], sum_type: ChecksumType) -> Result<H264, String> {
     let key_pair: KeyPair = try_s!(compressed_key_pair_from_bytes(raw_priv, 0, sum_type));
-    Ok(H264::from(&**key_pair.public()))
+    match key_pair.public() {
+        Public::Compressed(pub_key) => Ok(*pub_key),
+        _ => ERR!("Invalid public key type"),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1741,7 +1777,6 @@ where
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
-
     let mut builder = UtxoTxBuilder::new(coin)
         .await
         .add_available_inputs(unspents)

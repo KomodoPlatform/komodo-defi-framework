@@ -114,7 +114,7 @@ impl Gravity {
 
 thread_local! {
     /// If set, pulls the `chunk2log` (aka `log!`) invocations into the gravity of another thread.
-    static GRAVITY: RefCell<Option<Weak<Gravity>>> = RefCell::new (None)
+    static GRAVITY: RefCell<Option<Weak<Gravity>>> = const { RefCell::new (None) }
 }
 
 #[doc(hidden)]
@@ -158,6 +158,22 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
     #[allow(deprecated)]
     let time = Utc.timestamp_millis(ms as i64);
     time.format("%d %H:%M:%S")
+}
+
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! covered_warn {
+    ($($arg:tt)+) => {
+        common::log::warn!($($arg)+)
+    };
+}
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! covered_warn {
+    ($($arg:tt)+) => {
+        panic!($($arg)+)
+    };
 }
 
 /// Debug logging.
@@ -317,7 +333,7 @@ impl<'a> TagParam<'a> for &'a str {
     fn val(&self) -> Option<String> { None }
 }
 
-impl<'a> TagParam<'a> for String {
+impl TagParam<'_> for String {
     fn key(&self) -> String { self.clone() }
     fn val(&self) -> Option<String> { None }
 }
@@ -337,7 +353,7 @@ impl<'a> TagParam<'a> for (&'a str, i32) {
     fn val(&self) -> Option<String> { Some(self.1.to_string()) }
 }
 
-impl<'a> TagParam<'a> for (String, String) {
+impl TagParam<'_> for (String, String) {
     fn key(&self) -> String { self.0.clone() }
     fn val(&self) -> Option<String> { Some(self.1.clone()) }
 }
@@ -1030,11 +1046,8 @@ impl Drop for LogState {
     }
 }
 
-#[derive(Debug)]
-pub struct UnknownLogLevel(String);
-
 impl FromStr for LogLevel {
-    type Err = UnknownLogLevel;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -1044,7 +1057,7 @@ impl FromStr for LogLevel {
             "info" => Ok(LogLevel::Info),
             "debug" => Ok(LogLevel::Debug),
             "trace" => Ok(LogLevel::Trace),
-            _ => Err(UnknownLogLevel(s.to_owned())),
+            _ => Err(s.to_owned()),
         }
     }
 }
@@ -1175,5 +1188,11 @@ pub mod tests {
         log.with_gravity_tail(&mut |tail| {
             assert!(tail[0].ends_with("/3:33) [tag] status 1%…"));
         });
+    }
+
+    #[test]
+    #[should_panic(expected = "Fail with me...")]
+    fn test_covered_warn() {
+        covered_warn!("Fail with me...");
     }
 }

@@ -32,24 +32,33 @@ const INSERT_STAT: &str = "INSERT INTO stats_nodes (name, version, timestamp, er
 
 pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
     debug!("Inserting info about node {} to the SQLite database", node_info.name);
-    let params = vec![
+    let params = [
         node_info.name.clone(),
         node_info.address.clone(),
         node_info.peer_id.clone(),
     ];
+    #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
     conn.execute(INSERT_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     debug!("Deleting info about node {} from the SQLite database", name);
-    let params = vec![name];
+    let params = [name];
+    #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
     conn.execute(DELETE_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, SqlError> {
+    #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
     let mut stmt = conn.prepare(SELECT_PEERS_ADDRESSES)?;
     let peers_addresses = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -59,10 +68,17 @@ pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, S
 }
 
 pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, SqlError> {
-    ctx.sqlite_connection()
+    #[cfg(not(feature = "new-db-arch"))]
+    let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
+    // TODO: Can't use `conn` in the return statement because it's a mutex borrow, and also clippy complains when assigning the result into a temporary `result`.
+    #[allow(clippy::let_and_return)]
+    let result = conn
         .prepare(SELECT_PEERS_NAMES)?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<SqlResult<HashMap<String, String>>>()
+        .collect::<SqlResult<HashMap<String, String>>>();
+    result
 }
 
 pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat) -> SqlResult<()> {
@@ -70,12 +86,15 @@ pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat)
         "Inserting new version stat for node {} to the SQLite database",
         node_version_stat.name
     );
-    let params = vec![
+    let params = [
         node_version_stat.name,
         node_version_stat.version.unwrap_or_default(),
         node_version_stat.timestamp.to_string(),
         node_version_stat.error.unwrap_or_default(),
     ];
+    #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
     conn.execute(INSERT_STAT, params_from_iter(params.iter())).map(|_| ())
 }

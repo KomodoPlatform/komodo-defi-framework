@@ -14,7 +14,6 @@ pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciReques
                                    health::Request as HealthRequest,
                                    tx_search::Request as TxSearchRequest};
 use tendermint_rpc::error::Error as TendermintRpcError;
-pub use tendermint_rpc::query::Query as TendermintQuery;
 use tendermint_rpc::request::SimpleRequest;
 pub use tendermint_rpc::Order;
 use tendermint_rpc::Response;
@@ -138,7 +137,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_get_abci_info() {
-        let client = HttpClient::new("https://rpc.sentry-02.theta-testnet.polypore.xyz", None).unwrap();
+        let client = HttpClient::new("http://34.80.202.172:26657", None).unwrap();
         client.abci_info().await.unwrap();
     }
 }

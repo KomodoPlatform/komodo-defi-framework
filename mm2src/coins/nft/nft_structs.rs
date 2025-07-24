@@ -1,4 +1,5 @@
 use common::ten;
+use derive_more::Display;
 use enum_derives::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -16,13 +17,12 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::eth::EthTxFeeDetails;
-use crate::nft::eth_addr_to_hex;
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractTypeError};
-use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
-use crate::{TransactionType, TxFeeDetails, WithdrawFee};
-
 #[cfg(not(target_arch = "wasm32"))]
 use crate::nft::storage::NftMigrationOps;
+use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
+use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
@@ -703,7 +703,7 @@ pub struct TransferMeta {
 impl From<Nft> for TransferMeta {
     fn from(nft_db: Nft) -> Self {
         TransferMeta {
-            token_address: eth_addr_to_hex(&nft_db.common.token_address),
+            token_address: nft_db.common.token_address.addr_to_string(),
             token_id: nft_db.token_id,
             token_uri: nft_db.common.token_uri,
             token_domain: nft_db.common.token_domain,
@@ -734,14 +734,15 @@ impl NftCtx {
     /// If an `NftCtx` instance doesn't already exist in the MM context, it gets created and cached for subsequent use.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
-        Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
+        from_ctx(&ctx.nft_ctx, move || {
             let async_sqlite_connection = ctx
                 .async_sqlite_connection
+                .get()
                 .ok_or("async_sqlite_connection is not initialized".to_owned())?;
             Ok(NftCtx {
                 nft_cache_db: async_sqlite_connection.clone(),
             })
-        })))
+        })
     }
 
     #[cfg(target_arch = "wasm32")]

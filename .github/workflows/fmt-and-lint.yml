@@ -18,16 +18,16 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal --component rustfmt clippy
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal --component rustfmt,clippy
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc' 'libudev-dev')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: fmt check
         # Format checks aren't OS dependant.
@@ -45,8 +45,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal --component clippy
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal --component clippy
+          rustup default nightly-2025-01-03
           rustup target add wasm32-unknown-unknown
 
       - name: Install build deps
@@ -54,8 +54,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: clippy lint
         run: cargo clippy --target wasm32-unknown-unknown -- --D warnings

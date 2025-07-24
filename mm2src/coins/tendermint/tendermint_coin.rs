@@ -3,31 +3,26 @@ use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, 
                   QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
-use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
-                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
-                                     IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
-                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
-use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
+use super::rpc::*;
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
+use crate::hd_wallet::{HDAddressSelector, HDPathAccountToAddressId};
+use crate::rpc_command::tendermint::ibc::ChannelId;
+use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
+                                              DelegationsQueryResponse, Undelegation, UndelegationEntry,
+                                              UndelegationsQueryResponse, ValidatorStatus};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
+            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -35,17 +30,30 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
-use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
-use cosmrs::bank::MsgSend;
+use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
+use compatible_time::Duration;
+use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
 use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::distribution::MsgWithdrawDelegatorReward;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto,
+                                           QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
-use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
-                                         SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
+use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
+                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
+                                              QueryDelegatorUnbondingDelegationsRequest,
+                                              QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+                                              QueryValidatorsResponse as QueryValidatorsResponseProto};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
+                                         TxRaw};
+use cosmrs::proto::ibc;
+use cosmrs::proto::ibc::core::channel::v1::{QueryChannelRequest, QueryChannelResponse};
 use cosmrs::proto::prost::{DecodeError, Message};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -59,27 +67,30 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
-use instant::Duration;
 use itertools::Itertools;
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
+use mm2_number::bigdecimal::ParseBigDecimalError;
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
+use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+#[cfg(test)] use mocktopus::macros::*;
 
 // ABCI Request Paths
 const ABCI_GET_LATEST_BLOCK_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock";
@@ -88,7 +99,15 @@ const ABCI_SIMULATE_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/Simulate";
 const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
-const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
+const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
+const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
+const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
+const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorUnbondingDelegations";
+const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
+const ABCI_IBC_CHANNEL_QUERY_PATH: &str = "/ibc.core.channel.v1.Query/Channel";
+
+#[cfg(feature = "ibc-routing-for-swaps")]
+const DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING: f32 = 2.0;
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -108,6 +127,9 @@ const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "account sequence mismatch";
+
+pub(crate) const IRIS_PREFIX: &str = "iaa";
+pub(crate) const NUCLEUS_PREFIX: &str = "nuc";
 
 lazy_static! {
     static ref SEQUENCE_PARSER_REGEX: Regex = Regex::new(r"expected (\d+)").unwrap();
@@ -153,6 +175,8 @@ impl RpcNode {
 
 #[async_trait]
 pub trait TendermintCommons {
+    fn denom_to_ticker(&self, denom: &str) -> Option<String>;
+
     fn platform_denom(&self) -> &Denom;
 
     fn set_history_sync_state(&self, new_state: HistorySyncState);
@@ -175,12 +199,16 @@ pub struct TendermintFeeDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintProtocolInfo {
-    decimals: u8,
-    denom: String,
+    pub decimals: u8,
+    pub(crate) denom: Denom,
+    min_balance_for_ibc_routing: Option<f32>,
     pub account_prefix: String,
-    chain_id: String,
+    pub chain_id: ChainId,
     gas_price: Option<f64>,
-    chain_registry_name: Option<String>,
+    /// Key represents the account prefix of the target chain and
+    /// the value is the channel ID used for sending transactions.
+    #[serde(default)]
+    ibc_channels: HashMap<String, ChannelId>,
 }
 
 #[derive(Clone)]
@@ -268,14 +296,17 @@ impl TendermintActivationPolicy {
                     PublicKey::from_raw_secp256k1(&activated_key.public_key.to_bytes())
                         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key"))
                 },
-
                 PrivKeyPolicy::Trezor => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
                     "Trezor is not supported yet!",
                 )),
-
+                PrivKeyPolicy::WalletConnect { public_key, .. } => PublicKey::from_raw_secp256k1(public_key.as_bytes())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
                 #[cfg(target_arch = "wasm32")]
-                PrivKeyPolicy::Metamask(_) => unreachable!(),
+                PrivKeyPolicy::Metamask(_) => Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "Metamask is not supported yet!",
+                )),
             },
             Self::PublicKey(account_public_key) => Ok(*account_public_key),
         }
@@ -354,27 +385,35 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
+#[derive(PartialEq)]
+pub enum TendermintWalletConnectionType {
+    Wc(String),
+    WcLedger(String),
+    KeplrLedger,
+    Keplr,
+    Native,
+}
+
+impl Default for TendermintWalletConnectionType {
+    fn default() -> Self { Self::Native }
+}
+
 pub struct TendermintCoinImpl {
     ticker: String,
     /// As seconds
     avg_blocktime: u8,
     /// My address
     pub account_id: AccountId,
-    pub(super) account_prefix: String,
-    pub(super) activation_policy: TendermintActivationPolicy,
-    pub(crate) decimals: u8,
-    pub(super) denom: Denom,
-    chain_id: ChainId,
-    gas_price: Option<f64>,
+    pub activation_policy: TendermintActivationPolicy,
     pub tokens_info: PaMutex<HashMap<String, ActivatedTokenInfo>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// or on [`MmArc::stop`].
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
-    pub(crate) chain_registry_name: Option<String>,
-    pub(crate) ctx: MmWeak,
-    pub(crate) is_keplr_from_ledger: bool,
+    pub ctx: MmWeak,
+    pub(crate) wallet_type: TendermintWalletConnectionType,
+    pub(crate) protocol_info: TendermintProtocolInfo,
 }
 
 #[derive(Clone)]
@@ -400,7 +439,7 @@ pub enum TendermintInitErrorKind {
     EmptyRpcUrls,
     RpcClientInitError(String),
     InvalidChainId(String),
-    InvalidDenom(String),
+    InvalidProtocolData(String),
     InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
     DerivationPathIsNotSet,
@@ -421,8 +460,12 @@ pub enum TendermintInitErrorKind {
     BalanceStreamInitError(String),
     #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
     CantUseWatchersWithPubkeyPolicy,
+    #[display(fmt = "Unable to fetch account for chain: {_0}")]
+    UnableToFetchChainAccount(String),
 }
 
+/// TODO: Rename this into `ClientRpcError` because this is very
+/// confusing atm.
 #[derive(Display, Debug, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TendermintCoinRpcError {
@@ -435,6 +478,31 @@ pub enum TendermintCoinRpcError {
     UnexpectedAccountType {
         prefix: String,
     },
+    NotFound(String),
+}
+
+#[derive(Clone, Debug, Display, PartialEq, Serialize)]
+pub enum IBCError {
+    #[display(
+        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
+        address_prefix
+    )]
+    IBCChannelCouldNotBeFound { address_prefix: String },
+    #[display(
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
+        channel_id
+    )]
+    IBCChannelNotHealthy { channel_id: ChannelId },
+    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
+    IBCChannelMissingOnNode { channel_id: ChannelId },
+    #[display(fmt = "Transport error: {reason}")]
+    Transport { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
+}
+
+impl From<IBCError> for WithdrawError {
+    fn from(err: IBCError) -> Self { WithdrawError::IBCError(err) }
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -449,13 +517,18 @@ impl From<TendermintCoinRpcError> for WithdrawError {
     fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
 }
 
+impl From<TendermintCoinRpcError> for DelegationError {
+    fn from(err: TendermintCoinRpcError) -> Self { DelegationError::Transport(err.to_string()) }
+}
+
 impl From<TendermintCoinRpcError> for BalanceError {
     fn from(err: TendermintCoinRpcError) -> Self {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -469,8 +542,9 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -580,7 +654,7 @@ impl From<DecodeError> for SearchForSwapTxSpendErr {
 
 #[async_trait]
 impl TendermintCommons for TendermintCoin {
-    fn platform_denom(&self) -> &Denom { &self.denom }
+    fn platform_denom(&self) -> &Denom { &self.protocol_info.denom }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.history_sync_state.lock().unwrap() = new_state;
@@ -594,11 +668,26 @@ impl TendermintCommons for TendermintCoin {
         Ok(u64::try_from(timestamp.seconds).ok())
     }
 
+    fn denom_to_ticker(&self, denom: &str) -> Option<String> {
+        if self.protocol_info.denom.as_ref() == denom {
+            return Some(self.ticker.clone());
+        }
+
+        let ctx = MmArc::from_weak(&self.ctx)?;
+
+        ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+            coin["protocol"]["protocol_data"]["denom"]
+                .as_str()
+                .filter(|&d| d.to_lowercase() == denom.to_lowercase())
+                .and_then(|_| coin["coin"].as_str().map(|s| s.to_owned()))
+        })
+    }
+
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
         let platform_balance_denom = self
-            .account_balance_for_denom(&self.account_id, self.denom.to_string())
+            .account_balance_for_denom(&self.account_id, self.protocol_info.denom.to_string())
             .await?;
-        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
+        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.protocol_info.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
         let mut requests = Vec::with_capacity(ibc_assets_info.len());
@@ -627,6 +716,7 @@ impl TendermintCommons for TendermintCoin {
     }
 }
 
+#[cfg_attr(test, mockable)]
 impl TendermintCoin {
     #[allow(clippy::too_many_arguments)]
     pub async fn init(
@@ -637,8 +727,8 @@ impl TendermintCoin {
         nodes: Vec<RpcNode>,
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
-        is_keplr_from_ledger: bool,
-    ) -> MmResult<Self, TendermintInitError> {
+        wallet_type: TendermintWalletConnectionType,
+    ) -> MmResult<TendermintCoin, TendermintInitError> {
         if nodes.is_empty() {
             return MmError::err(TendermintInitError {
                 ticker,
@@ -660,16 +750,6 @@ impl TendermintCoin {
 
         let client_impl = TendermintRpcClientImpl { rpc_clients };
 
-        let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::InvalidChainId(e.to_string()),
-        })?;
-
-        let denom = Denom::from_str(&protocol_info.denom).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::InvalidDenom(e.to_string()),
-        })?;
-
         let history_sync_state = if tx_history {
             HistorySyncState::NotStarted
         } else {
@@ -689,52 +769,99 @@ impl TendermintCoin {
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             account_id,
-            account_prefix: protocol_info.account_prefix,
             activation_policy,
-            decimals: protocol_info.decimals,
-            denom,
-            chain_id,
-            gas_price: protocol_info.gas_price,
             avg_blocktime: conf.avg_blocktime,
             tokens_info: PaMutex::new(HashMap::new()),
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
-            chain_registry_name: protocol_info.chain_registry_name,
+            protocol_info,
             ctx: ctx.weak(),
-            is_keplr_from_ledger,
+            wallet_type,
         })))
     }
 
-    /// Extracts corresponding IBC channel ID for `AccountId` from https://github.com/KomodoPlatform/chain-registry/tree/nucl.
-    pub(crate) async fn detect_channel_id_for_ibc_transfer(
+    /// Finds the IBC channel by querying the given channel ID and port ID
+    /// and returns its information.
+    async fn query_ibc_channel(
         &self,
-        to_address: &AccountId,
-    ) -> Result<String, MmError<WithdrawError>> {
-        let ctx = MmArc::from_weak(&self.ctx).ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
+        channel_id: ChannelId,
+        port_id: &str,
+    ) -> Result<ibc::core::channel::v1::Channel, IBCError> {
+        let payload = QueryChannelRequest {
+            channel_id: channel_id.to_string(),
+            port_id: port_id.to_string(),
+        }
+        .encode_to_vec();
 
-        let source_registry_name = self
-            .chain_registry_name
-            .clone()
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+        let request = AbciRequest::new(
+            Some(ABCI_IBC_CHANNEL_QUERY_PATH.to_string()),
+            payload,
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
-        let destination_registry_name = chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
+        let response = self
+            .rpc_client()
             .await
-            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?
+            .perform(request)
+            .await
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?;
 
-        Ok(channels
-            .ibc_transfer_channels
-            .last()
-            .ok_or_else(|| WithdrawError::InternalError("channel list can not be empty".to_owned()))?
-            .channel_id
-            .clone())
+        let response = QueryChannelResponse::decode(response.response.value.as_slice())
+            .map_err(|e| IBCError::InternalError { reason: e.to_string() })?;
+
+        response.channel.ok_or(IBCError::IBCChannelMissingOnNode { channel_id })
+    }
+
+    /// Looks for a healthy IBC channel on a network that supports HTLC transactions.
+    /// Right now it first tries to find a channel on IRIS network, if none is found, then falls
+    /// back to NUCLEUS network.
+    pub async fn get_healthy_ibc_channel_to_htlc_chain(&self) -> Result<ChannelId, MmError<IBCError>> {
+        let channel_id = if let Ok(channel_id) = self.get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX).await {
+            channel_id
+        } else {
+            self.get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX).await?
+        };
+
+        Ok(channel_id)
+    }
+
+    /// Returns a **healthy** IBC channel ID for the given target address.
+    pub async fn get_healthy_ibc_channel_for_address_prefix(
+        &self,
+        address_prefix: &str,
+    ) -> Result<ChannelId, MmError<IBCError>> {
+        // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
+        const STATE_OPEN: i32 = 3;
+
+        let channel_id = *self.protocol_info.ibc_channels.get(address_prefix).ok_or_else(|| {
+            IBCError::IBCChannelCouldNotBeFound {
+                address_prefix: address_prefix.to_owned(),
+            }
+        })?;
+
+        let channel = self.query_ibc_channel(channel_id, "transfer").await?;
+
+        // TODO: Extend the validation logic to also include:
+        //
+        //   - Checking the time of the last update on the channel
+        //   - Verifying the total amount transferred since the channel was created
+        //   - Check the channel creation time
+        if channel.state != STATE_OPEN {
+            return MmError::err(IBCError::IBCChannelNotHealthy { channel_id });
+        }
+
+        Ok(channel_id)
+    }
+
+    pub fn supports_htlc(&self) -> bool {
+        matches!(self.protocol_info.account_prefix.as_str(), NUCLEUS_PREFIX | IRIS_PREFIX)
     }
 
     #[inline(always)]
-    fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
+    fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
@@ -775,10 +902,10 @@ impl TendermintCoin {
         priv_key: &Secp256k1Secret,
         tx_payload: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Vec<u8>> {
         let fee_amount = Coin {
-            denom: self.denom.clone(),
+            denom: self.protocol_info.denom.clone(),
             amount: 0_u64.into(),
         };
 
@@ -787,7 +914,12 @@ impl TendermintCoin {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
         sign_doc.sign(&signkey)?.to_bytes()
     }
 
@@ -825,7 +957,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
@@ -842,6 +974,14 @@ impl TendermintCoin {
                 )
             },
             TendermintActivationPolicy::PublicKey(_) => {
+                if self.is_wallet_connect() {
+                    return try_tx_s!(
+                        self.seq_safe_send_raw_tx_bytes(tx_payload, fee, timeout_height, memo)
+                            .timeout(expiration)
+                            .await
+                    );
+                };
+
                 try_tx_s!(
                     self.send_unsigned_tx_externally(tx_payload, fee, timeout_height, memo, expiration)
                         .timeout(expiration)
@@ -851,39 +991,69 @@ impl TendermintCoin {
         }
     }
 
+    async fn get_tx_raw(
+        &self,
+        account_info: &BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: &str,
+    ) -> Result<Raw, TransactionErr> {
+        if self.is_wallet_connect() {
+            let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
+            let wc = try_tx_s!(WalletConnectCtx::from_ctx(&ctx).map_err(|e| e.to_string()));
+            let SerializedUnsignedTx { tx_json, .. } = if self.is_ledger_connection() {
+                try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, timeout_height, memo))
+            } else {
+                try_tx_s!(self.any_to_serialized_sign_doc(account_info, tx_payload, fee, timeout_height, memo))
+            };
+
+            return Ok(try_tx_s!(self.wc_sign_tx(&wc, tx_json).await.map_err(|err| err.to_string())).into());
+        }
+
+        let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
+            try_tx_s!(self.activation_policy.activated_key_or_err()),
+            account_info,
+            tx_payload,
+            fee,
+            timeout_height,
+            memo,
+        ));
+
+        Ok(tx_raw)
+    }
+
     async fn seq_safe_send_raw_tx_bytes(
         &self,
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<(String, Raw), TransactionErr> {
         let mut account_info = try_tx_s!(self.account_info(&self.account_id).await);
-        let (tx_id, tx_raw) = loop {
-            let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
-                try_tx_s!(self.activation_policy.activated_key_or_err()),
-                &account_info,
-                tx_payload.clone(),
-                fee.clone(),
-                timeout_height,
-                memo.clone(),
-            ));
+        loop {
+            let tx_raw = try_tx_s!(
+                self.get_tx_raw(&account_info, tx_payload.clone(), fee.clone(), timeout_height, memo,)
+                    .await
+            );
 
-            match self.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await {
-                Ok(tx_id) => break (tx_id, tx_raw),
+            // Attempt to send the transaction bytes
+            match self.send_raw_tx_bytes(try_tx_s!(&tx_raw.to_bytes())).compat().await {
+                Ok(tx_id) => {
+                    return Ok((tx_id, tx_raw));
+                },
                 Err(e) => {
+                    // Handle sequence number mismatch and retry
                     if e.contains(ACCOUNT_SEQUENCE_ERR) {
                         account_info.sequence = try_tx_s!(parse_expected_sequence_number(&e));
-                        debug!("Got wrong account sequence, trying again.");
+                        debug!("Account sequence mismatch, retrying...");
                         continue;
                     }
 
-                    return Err(crate::TransactionErr::Plain(ERRL!("{}", e)));
+                    return Err(TransactionErr::Plain(ERRL!("Transaction failed: {}", e)));
                 },
-            };
-        };
-
-        Ok((tx_id, tx_raw))
+            }
+        }
     }
 
     async fn send_unsigned_tx_externally(
@@ -891,7 +1061,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         #[derive(Deserialize)]
@@ -902,32 +1072,32 @@ impl TendermintCoin {
         let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
 
         let account_info = try_tx_s!(self.account_info(&self.account_id).await);
-        let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_keplr_from_ledger {
+        let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_ledger_connection() {
             try_tx_s!(self.any_to_legacy_amino_json(&account_info, tx_payload, fee, timeout_height, memo))
         } else {
             try_tx_s!(self.any_to_serialized_sign_doc(&account_info, tx_payload, fee, timeout_height, memo))
         };
 
         let data: TxHashData = try_tx_s!(ctx
-            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), tx_json, timeout)
+            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), tx_json.clone(), timeout)
             .await
             .map_err(|e| ERRL!("{}", e)));
 
         let tx = try_tx_s!(self.request_tx(data.hash.clone()).await.map_err(|e| ERRL!("{}", e)));
 
-        let tx_raw_inner = TxRaw {
+        let tx_raw = TxRaw {
             body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
             auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
             signatures: tx.signatures,
         };
 
-        if body_bytes != tx_raw_inner.body_bytes {
+        if body_bytes != tx_raw.body_bytes {
             return Err(crate::TransactionErr::Plain(ERRL!(
                 "Unsigned transaction don't match with the externally provided transaction."
             )));
         }
 
-        Ok((data.hash, Raw::from(tx_raw_inner)))
+        Ok((data.hash, Raw::from(tx_raw)))
     }
 
     #[allow(deprecated)]
@@ -935,10 +1105,12 @@ impl TendermintCoin {
         &self,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
-        let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
+        let activated_priv_key = if let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() {
+            activated_priv_key
+        } else {
             let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
             let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
 
@@ -953,13 +1125,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(&self.account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(
-                    &account_info,
-                    activated_priv_key,
-                    msg.clone(),
-                    timeout_height,
-                    memo.clone(),
-                )
+                .gen_simulated_tx(&account_info, activated_priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1020,10 +1186,12 @@ impl TendermintCoin {
         priv_key: Option<Secp256k1Secret>,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
-        let Some(priv_key) = priv_key else {
+        let priv_key = if let Some(priv_key) = priv_key {
+            priv_key
+        } else {
             let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
             return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
         };
@@ -1031,7 +1199,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1095,9 +1263,10 @@ impl TendermintCoin {
             .account
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("Account is None".into()))?;
 
+        let account_prefix = self.protocol_info.account_prefix.clone();
         let base_account = match BaseAccount::decode(account.value.as_slice()) {
             Ok(account) => account,
-            Err(err) if &self.account_prefix == "iaa" => {
+            Err(err) if account_prefix.as_str() == IRIS_PREFIX => {
                 let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
 
                 ethermint_account
@@ -1138,11 +1307,10 @@ impl TendermintCoin {
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
 
-    #[allow(clippy::result_large_err)]
-    pub(super) fn account_id_and_pk_for_withdraw(
+    pub(super) fn extract_account_id_and_private_key(
         &self,
-        withdraw_from: Option<WithdrawFrom>,
-    ) -> Result<(AccountId, Option<H256>), WithdrawError> {
+        withdraw_from: Option<HDAddressSelector>,
+    ) -> Result<(AccountId, Option<H256>), io::Error> {
         if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
             return Ok((self.account_id.clone(), None));
         }
@@ -1152,61 +1320,76 @@ impl TendermintCoin {
                 let path_to_coin = self
                     .activation_policy
                     .path_to_coin_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let path_to_address = from
                     .to_address_path(path_to_coin.coin_type())
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?
                     .to_derivation_path(path_to_coin)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let priv_key = self
                     .activation_policy
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
-                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.protocol_info.account_prefix)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
                 Ok((account_id, Some(priv_key)))
             },
             None => {
                 let activated_key = self
                     .activation_policy
                     .activated_key_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 Ok((self.account_id.clone(), Some(*activated_key)))
             },
         }
     }
 
-    pub(super) fn any_to_transaction_data(
+    pub(super) async fn any_to_transaction_data(
         &self,
-        maybe_pk: Option<H256>,
+        maybe_priv_key: Option<H256>,
         message: Any,
         account_info: &BaseAccount,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<TransactionData, ErrorReport> {
-        if let Some(priv_key) = maybe_pk {
+        if let Some(priv_key) = maybe_priv_key {
             let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
 
-            Ok(TransactionData::new_signed(
+            return Ok(TransactionData::new_signed(
                 tx_bytes.into(),
                 hex::encode_upper(hash.as_slice()),
-            ))
-        } else {
-            let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
-                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
-            } else {
-                self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
-            }?;
+            ));
+        };
 
-            Ok(TransactionData::Unsigned(tx_json))
-        }
+        let SerializedUnsignedTx { tx_json, .. } = if self.is_ledger_connection() {
+            self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
+        } else {
+            self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
+        }?;
+
+        if self.is_wallet_connect() {
+            let ctx = MmArc::from_weak(&self.ctx)
+                .ok_or(MyAddressError::InternalError(ERRL!("ctx must be initialized already")))?;
+            let wallet_connect = WalletConnectCtx::from_ctx(&ctx)?;
+
+            let tx_raw: Raw = self.wc_sign_tx(&wallet_connect, tx_json).await?.into();
+            let tx_bytes = tx_raw.to_bytes()?;
+            let hash = sha256(&tx_bytes);
+
+            return Ok(TransactionData::new_signed(
+                tx_bytes.into(),
+                hex::encode_upper(hash.as_slice()),
+            ));
+        };
+
+        Ok(TransactionData::Unsigned(tx_json))
     }
 
     fn gen_create_htlc_tx(
@@ -1220,10 +1403,10 @@ impl TendermintCoin {
         let amount = vec![Coin { denom, amount }];
         let timestamp = 0_u64;
 
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             TxMarshalingErr::NotSupported(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1248,10 +1431,10 @@ impl TendermintCoin {
     }
 
     fn gen_claim_htlc_tx(&self, htlc_id: String, secret: &[u8]) -> MmResult<TendermintHtlc, TxMarshalingErr> {
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             TxMarshalingErr::NotSupported(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1272,12 +1455,17 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Raw> {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
         sign_doc.sign(&signkey)
     }
 
@@ -1287,21 +1475,45 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let pubkey = self.activation_policy.public_key()?.into();
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
 
-        let tx_json = json!({
-            "sign_doc": {
-                "body_bytes": sign_doc.body_bytes,
-                "auth_info_bytes": sign_doc.auth_info_bytes,
-                "chain_id": sign_doc.chain_id,
-                "account_number": sign_doc.account_number,
-            }
-        });
+        let tx_json = if self.is_wallet_connect() {
+            let ctx = MmArc::from_weak(&self.ctx).expect("No context");
+            let wc = WalletConnectCtx::from_ctx(&ctx).expect("should never fail in this block");
+            let session_topic = self
+                .session_topic()
+                .expect("session_topic can't be None inside this block");
+            let encode = |data| wc.encode(session_topic, data);
+
+            json!({
+                "signerAddress":  self.my_address()?,
+                "signDoc": {
+                    "accountNumber": sign_doc.account_number.to_string(),
+                    "chainId": sign_doc.chain_id,
+                    "bodyBytes": encode(&sign_doc.body_bytes),
+                    "authInfoBytes": encode(&sign_doc.auth_info_bytes)
+                }
+            })
+        } else {
+            json!({
+                "sign_doc": {
+                    "body_bytes": &sign_doc.body_bytes,
+                    "auth_info_bytes": sign_doc.auth_info_bytes,
+                    "chain_id": sign_doc.chain_id,
+                    "account_number": sign_doc.account_number,
+                }
+            })
+        };
 
         Ok(SerializedUnsignedTx {
             tx_json,
@@ -1309,7 +1521,7 @@ impl TendermintCoin {
         })
     }
 
-    /// This should only be used for Keplr from Ledger!
+    /// This should only be used for Keplr/WalletConnect from Ledger!
     /// When using Keplr from Ledger, they don't accept `SING_MODE_DIRECT` transactions.
     ///
     /// Visit https://docs.cosmos.network/main/build/architecture/adr-050-sign-mode-textual#context for more context.
@@ -1319,7 +1531,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
         const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
@@ -1337,8 +1549,6 @@ impl TendermintCoin {
 
         let msg_send = MsgSend::from_any(&tx_payload)?;
         let timeout_height = u32::try_from(timeout_height)?;
-        let original_tx_type_url = tx_payload.type_url.clone();
-        let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
 
         let amount: Vec<Json> = msg_send
             .amount
@@ -1375,24 +1585,50 @@ impl TendermintCoin {
             })
             .collect();
 
-        let tx_json = serde_json::json!({
-            "legacy_amino_json": {
-                "account_number": account_info.account_number.to_string(),
-                "chain_id": self.chain_id.to_string(),
-                "fee": {
-                    "amount": fee_amount,
-                    "gas": fee.gas_limit.to_string()
+        let sign_doc = json!({
+            "account_number": account_info.account_number.to_string(),
+            "chain_id": self.protocol_info.chain_id.to_string(),
+            "fee": {
+                "amount": fee_amount,
+                "gas": fee.gas_limit.to_string()
                 },
-                "memo": memo,
-                "msgs": [msg],
-                "sequence": account_info.sequence.to_string(),
-            },
-            "original_tx_type_url": original_tx_type_url,
+            "memo": memo,
+            "msgs": [msg],
+            "sequence": account_info.sequence.to_string()
         });
+        let (tx_json, body_bytes) = match self.wallet_type {
+            TendermintWalletConnectionType::WcLedger(_) => {
+                let signer_address = self
+                    .my_address()
+                    .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
+                let json = serde_json::json!({
+                    "signerAddress": signer_address,
+                    "signDoc": sign_doc,
+                });
+                (json, body_bytes)
+            },
+            TendermintWalletConnectionType::KeplrLedger => {
+                let original_tx_type_url = tx_payload.type_url.clone();
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
+                let json = serde_json::json!({
+                    "legacy_amino_json": sign_doc,
+                    "original_tx_type_url": original_tx_type_url,
+                });
+                (json, body_bytes)
+            },
+            _ => {
+                return Err(ErrorReport::new(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Only WalletConnect activated with Ledger can call this function",
+                )))
+            },
+        };
 
         Ok(SerializedUnsignedTx { tx_json, body_bytes })
     }
 
+    #[allow(clippy::let_unit_value)] // for mockable
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
         self.tokens_info
             .lock()
@@ -1420,7 +1656,10 @@ impl TendermintCoin {
         }];
 
         let pubkey_hash = dhash160(other_pub);
-        let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let to_address = try_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            pubkey_hash.as_slice()
+        ));
 
         let htlc_id = self.calculate_htlc_id(&self.account_id, &to_address, &amount, secret_hash);
 
@@ -1464,7 +1703,7 @@ impl TendermintCoin {
                 let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(&tx.tx));
                 let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
                 let htlc = try_s!(CreateHtlcProto::decode(
-                    try_s!(HtlcType::from_str(&coin.account_prefix)),
+                    try_s!(HtlcType::from_str(&coin.protocol_info.account_prefix)),
                     msg.value.as_slice()
                 ));
 
@@ -1496,7 +1735,10 @@ impl TendermintCoin {
         decimals: u8,
     ) -> TransactionFut {
         let pubkey_hash = dhash160(other_pub);
-        let to = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let to = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            pubkey_hash.as_slice()
+        ));
 
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
         let amount = cosmrs::Amount::from(amount_as_u64);
@@ -1515,7 +1757,7 @@ impl TendermintCoin {
                 coin.calculate_fee(
                     create_htlc_tx.msg_payload.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.to_owned(),
+                    TX_DEFAULT_MEMO,
                     None
                 )
                 .await
@@ -1526,7 +1768,7 @@ impl TendermintCoin {
                     create_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.into(),
+                    TX_DEFAULT_MEMO,
                     Duration::from_secs(time_lock_duration),
                 )
                 .await
@@ -1542,8 +1784,7 @@ impl TendermintCoin {
 
     pub(super) fn send_taker_fee_for_denom(
         &self,
-        fee_addr: &[u8],
-        amount: BigDecimal,
+        dex_fee: &DexFee,
         denom: Denom,
         decimals: u8,
         uuid: &[u8],
@@ -1551,20 +1792,62 @@ impl TendermintCoin {
     ) -> TransactionFut {
         let memo = try_tx_fus!(Uuid::from_slice(uuid)).to_string();
         let from_address = self.account_id.clone();
-        let pubkey_hash = dhash160(fee_addr);
-        let to_address = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let burn_pubkey_hash = dhash160(self.burn_pubkey());
+        let dex_address = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            dex_pubkey_hash.as_slice()
+        ));
+        let burn_address = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            burn_pubkey_hash.as_slice()
+        ));
 
-        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
-        let amount = cosmrs::Amount::from(amount_as_u64);
+        let fee_amount_as_u64 = try_tx_fus!(dex_fee.fee_amount_as_u64(decimals));
+        let fee_amount = vec![Coin {
+            denom: denom.clone(),
+            amount: cosmrs::Amount::from(fee_amount_as_u64),
+        }];
 
-        let amount = vec![Coin { denom, amount }];
-
-        let tx_payload = try_tx_fus!(MsgSend {
-            from_address,
-            to_address,
-            amount,
-        }
-        .to_any());
+        let tx_result = match dex_fee {
+            DexFee::NoFee => try_tx_fus!(Err("Unexpected DexFee::NoFee".to_owned())),
+            DexFee::Standard(_) => MsgSend {
+                from_address,
+                to_address: dex_address,
+                amount: fee_amount,
+            }
+            .to_any(),
+            DexFee::WithBurn { .. } => {
+                let burn_amount_as_u64 = try_tx_fus!(dex_fee.burn_amount_as_u64(decimals)).unwrap_or_default();
+                let burn_amount = vec![Coin {
+                    denom: denom.clone(),
+                    amount: cosmrs::Amount::from(burn_amount_as_u64),
+                }];
+                let total_amount_as_u64 = fee_amount_as_u64 + burn_amount_as_u64;
+                let total_amount = vec![Coin {
+                    denom,
+                    amount: cosmrs::Amount::from(total_amount_as_u64),
+                }];
+                MsgMultiSend {
+                    inputs: vec![MultiSendIo {
+                        address: from_address,
+                        coins: total_amount,
+                    }],
+                    outputs: vec![
+                        MultiSendIo {
+                            address: dex_address,
+                            coins: fee_amount,
+                        },
+                        MultiSendIo {
+                            address: burn_address,
+                            coins: burn_amount,
+                        },
+                    ],
+                }
+                .to_any()
+            },
+        };
+        let tx_payload = try_tx_fus!(tx_result);
 
         let coin = self.clone();
         let fut = async move {
@@ -1572,7 +1855,7 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let fee = try_tx_s!(
-                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
                     .await
             );
 
@@ -1582,7 +1865,7 @@ impl TendermintCoin {
                     tx_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     Duration::from_secs(timeout)
                 )
                 .await
@@ -1601,8 +1884,7 @@ impl TendermintCoin {
         &self,
         fee_tx: &TransactionEnum,
         expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
+        dex_fee: &DexFee,
         decimals: u8,
         uuid: &[u8],
         denom: String,
@@ -1620,67 +1902,44 @@ impl TendermintCoin {
             .to_string();
 
         let sender_pubkey_hash = dhash160(expected_sender);
-        let expected_sender_address = try_f!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
-            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
-        .to_string();
-
-        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
-        let expected_dex_fee_address = try_f!(AccountId::new(
-            &self.account_prefix,
-            dex_fee_addr_pubkey_hash.as_slice()
+        let expected_sender_address = try_f!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            sender_pubkey_hash.as_slice()
         )
-        .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
-        .to_string();
-
-        let expected_amount = try_f!(sat_from_big_decimal(amount, decimals));
-        let expected_amount = CoinProto {
-            denom,
-            amount: expected_amount.to_string(),
-        };
+        .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())));
 
         let coin = self.clone();
+        let dex_fee = dex_fee.clone();
         let fut = async move {
             let tx_body = TxBody::decode(tx.data.body_bytes.as_slice())
                 .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-            if tx_body.messages.len() != 1 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Tx body must have exactly one message".to_string(),
-                ));
-            }
 
-            let msg = MsgSendProto::decode(tx_body.messages[0].value.as_slice())
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-            if msg.to_address != expected_dex_fee_address {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Dex fee is sent to wrong address: {}, expected {}",
-                    msg.to_address, expected_dex_fee_address
-                )));
-            }
-
-            if msg.amount.len() != 1 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Msg must have exactly one Coin".to_string(),
-                ));
-            }
-
-            if msg.amount[0] != expected_amount {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Invalid amount {:?}, expected {:?}",
-                    msg.amount[0], expected_amount
-                )));
-            }
-
-            if msg.from_address != expected_sender_address {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Invalid sender: {}, expected {}",
-                    msg.from_address, expected_sender_address
-                )));
+            match dex_fee {
+                DexFee::NoFee => {
+                    return MmError::err(ValidatePaymentError::InternalError(
+                        "unexpected DexFee::NoFee".to_string(),
+                    ))
+                },
+                DexFee::Standard(_) => coin.validate_standard_dex_fee(
+                    &tx_body,
+                    &expected_sender_address,
+                    &dex_fee,
+                    decimals,
+                    denom.clone(),
+                )?,
+                DexFee::WithBurn { .. } => coin.validate_with_burn_dex_fee(
+                    &tx_body,
+                    &expected_sender_address,
+                    &dex_fee,
+                    decimals,
+                    denom.clone(),
+                )?,
             }
 
             if tx_body.memo != uuid {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Invalid memo: {}, expected {}",
-                    msg.from_address, uuid
+                    tx_body.memo, uuid
                 )));
             }
 
@@ -1715,10 +1974,10 @@ impl TendermintCoin {
                 "Payment tx must have exactly one message".into(),
             ));
         }
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             ValidatePaymentError::InvalidParameter(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1728,10 +1987,10 @@ impl TendermintCoin {
             .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
 
         let sender_pubkey_hash = dhash160(&input.other_pub);
-        let sender = AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
+        let sender = AccountId::new(&self.protocol_info.account_prefix, sender_pubkey_hash.as_slice())
             .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
 
-        let amount = sat_from_big_decimal(&input.amount, decimals)?;
+        let amount = sat_from_big_decimal(&input.amount, decimals).map_mm_err()?;
         let amount = vec![Coin {
             denom,
             amount: amount.into(),
@@ -1757,7 +2016,7 @@ impl TendermintCoin {
         }
 
         let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
-        let tx_from_rpc = self.request_tx(hash).await?;
+        let tx_from_rpc = self.request_tx(hash).await.map_mm_err()?;
         if input.payment_tx != tx_from_rpc.encode_to_vec() {
             return MmError::err(ValidatePaymentError::InvalidRpcResponse(
                 "Tx from RPC doesn't match the input".into(),
@@ -1766,7 +2025,7 @@ impl TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, &amount, &input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
             .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
@@ -1778,6 +2037,152 @@ impl TendermintCoin {
                 unexpected_state
             ))),
         }
+    }
+
+    fn validate_standard_dex_fee(
+        &self,
+        tx_body: &TxBody,
+        expected_sender_address: &AccountId,
+        dex_fee: &DexFee,
+        decimals: u8,
+        denom: String,
+    ) -> MmResult<(), ValidatePaymentError> {
+        if tx_body.messages.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Tx body must have exactly one message".to_string(),
+            ));
+        }
+
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let expected_dex_address = AccountId::new(&self.protocol_info.account_prefix, dex_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
+        let expected_dex_amount = CoinProto {
+            denom,
+            amount: fee_amount_as_u64.to_string(),
+        };
+
+        let msg = MsgSendProto::decode(tx_body.messages[0].value.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+        if msg.to_address != expected_dex_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Dex fee is sent to wrong address: {}, expected {}",
+                msg.to_address, expected_dex_address
+            )));
+        }
+        if msg.amount.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.amount[0] != expected_dex_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid amount {:?}, expected {:?}",
+                msg.amount[0], expected_dex_amount
+            )));
+        }
+        if msg.from_address != expected_sender_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid sender: {}, expected {}",
+                msg.from_address, expected_sender_address
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_with_burn_dex_fee(
+        &self,
+        tx_body: &TxBody,
+        expected_sender_address: &AccountId,
+        dex_fee: &DexFee,
+        decimals: u8,
+        denom: String,
+    ) -> MmResult<(), ValidatePaymentError> {
+        if tx_body.messages.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Tx body must have exactly one message".to_string(),
+            ));
+        }
+
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let expected_dex_address = AccountId::new(&self.protocol_info.account_prefix, dex_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let burn_pubkey_hash = dhash160(self.burn_pubkey());
+        let expected_burn_address = AccountId::new(&self.protocol_info.account_prefix, burn_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
+        let expected_dex_amount = CoinProto {
+            denom: denom.clone(),
+            amount: fee_amount_as_u64.to_string(),
+        };
+        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals).map_mm_err()?.unwrap_or_default();
+        let expected_burn_amount = CoinProto {
+            denom,
+            amount: burn_amount_as_u64.to_string(),
+        };
+
+        let msg = MsgMultiSendProto::decode(tx_body.messages[0].value.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+        if msg.outputs.len() != 2 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly two outputs".to_string(),
+            ));
+        }
+
+        // Validate dex fee output
+        if msg.outputs[0].address != expected_dex_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Dex fee is sent to wrong address: {}, expected {}",
+                msg.outputs[0].address, expected_dex_address
+            )));
+        }
+        if msg.outputs[0].coins.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Dex fee output must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.outputs[0].coins[0] != expected_dex_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid dex fee amount {:?}, expected {:?}",
+                msg.outputs[0].coins[0], expected_dex_amount
+            )));
+        }
+
+        // Validate burn output
+        if msg.outputs[1].address != expected_burn_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Burn fee is sent to wrong address: {}, expected {}",
+                msg.outputs[1].address, expected_burn_address
+            )));
+        }
+        if msg.outputs[1].coins.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Burn fee output must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.outputs[1].coins[0] != expected_burn_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid burn amount {:?}, expected {:?}",
+                msg.outputs[1].coins[0], expected_burn_amount
+            )));
+        }
+        if msg.inputs.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly one input".to_string(),
+            ));
+        }
+
+        // validate input
+        if msg.inputs[0].address != expected_sender_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid sender: {}, expected {}",
+                msg.inputs[0].address, expected_sender_address
+            )));
+        }
+        Ok(())
     }
 
     pub(super) async fn get_sender_trade_fee_for_denom(
@@ -1793,10 +2198,10 @@ impl TendermintCoin {
         common::os_rng(&mut sec).map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
         drop_mutability!(sec);
 
-        let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
+        let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
-        let amount = sat_from_big_decimal(&amount, decimals)?;
+        let amount = sat_from_big_decimal(&amount, decimals).map_mm_err()?;
 
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
@@ -1822,12 +2227,13 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
-        let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.decimals);
+        let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.protocol_info.decimals);
 
         Ok(TradeFee {
             coin: ticker,
@@ -1843,9 +2249,9 @@ impl TendermintCoin {
         decimals: u8,
         dex_fee_amount: DexFee,
     ) -> TradePreimageResult<TradeFee> {
-        let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
+        let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals).map_mm_err()?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -1873,10 +2279,11 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 msg_send,
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
         Ok(TradeFee {
@@ -1952,10 +2359,11 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn query_htlc(&self, id: String) -> MmResult<QueryHtlcResponse, TendermintCoinRpcError> {
-        let htlc_type =
-            HtlcType::from_str(&self.account_prefix).map_err(|_| TendermintCoinRpcError::UnexpectedAccountType {
-                prefix: self.account_prefix.clone(),
-            })?;
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
+            TendermintCoinRpcError::UnexpectedAccountType {
+                prefix: self.protocol_info.account_prefix.clone(),
+            }
+        })?;
 
         let request = QueryHtlcRequestProto { id };
         let response = self
@@ -1978,9 +2386,9 @@ impl TendermintCoin {
         amount >= &min_tx_amount
     }
 
-    async fn search_for_swap_tx_spend(
+    async fn search_for_swap_tx_spend<'a>(
         &self,
-        input: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'a>,
     ) -> MmResult<Option<FoundSwapTxSpend>, SearchForSwapTxSpendErr> {
         let tx = cosmrs::Tx::from_bytes(input.tx)?;
         let first_message = tx
@@ -1989,16 +2397,17 @@ impl TendermintCoin {
             .first()
             .or_mm_err(|| SearchForSwapTxSpendErr::TxMessagesEmpty)?;
 
-        let htlc_type =
-            HtlcType::from_str(&self.account_prefix).map_err(|_| SearchForSwapTxSpendErr::UnexpectedAccountType {
-                prefix: self.account_prefix.clone(),
-            })?;
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
+            SearchForSwapTxSpendErr::UnexpectedAccountType {
+                prefix: self.protocol_info.account_prefix.clone(),
+            }
+        })?;
 
         let htlc_proto = CreateHtlcProto::decode(htlc_type, first_message.value.as_slice())?;
         let htlc = CreateHtlcMsg::try_from(htlc_proto)?;
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
 
         let htlc_state = match htlc_response.htlc_state() {
             Some(htlc_state) => htlc_state,
@@ -2008,37 +2417,31 @@ impl TendermintCoin {
         match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
-                let events_string = format!("claim_htlc.id='{}'", htlc_id);
-                // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-                #[allow(deprecated)]
-                let request = GetTxsEventRequest {
-                    events: vec![events_string],
-                    order_by: TendermintResultOrder::Ascending as i32,
+                let query = format!("claim_htlc.id='{}'", htlc_id);
+                let request = TxSearchRequest {
+                    query,
+                    order_by: TendermintResultOrder::Ascending.into(),
                     page: 1,
-                    limit: 1,
-                    pagination: None,
+                    per_page: 1,
+                    prove: false,
                 };
-                let encoded_request = request.encode_to_vec();
 
                 let response = self
                     .rpc_client()
-                    .await?
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE,
-                    )
                     .await
-                    .map_to_mm(TendermintCoinRpcError::from)?;
-                let response = GetTxsEventResponse::decode(response.value.as_slice())?;
+                    .map_mm_err()?
+                    .perform(request)
+                    .await
+                    .map_to_mm(TendermintCoinRpcError::from)
+                    .map_mm_err()?;
                 match response.txs.first() {
-                    Some(tx) => {
+                    Some(raw_tx) => {
+                        let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
                         let tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
                             data: TxRaw {
-                                body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                signatures: tx.signatures.clone(),
+                                body_bytes: tx.body.into_bytes()?,
+                                auth_info_bytes: tx.auth_info.into_bytes()?,
+                                signatures: tx.signatures,
                             },
                         });
                         Ok(Some(FoundSwapTxSpend::Spent(tx)))
@@ -2068,8 +2471,8 @@ impl TendermintCoin {
     }
 
     pub(crate) fn active_ticker_and_decimals_from_denom(&self, denom: &str) -> Option<(String, u8)> {
-        if self.denom.as_ref() == denom {
-            return Some((self.ticker.clone(), self.decimals));
+        if self.protocol_info.denom.as_ref() == denom {
+            return Some((self.ticker.clone(), self.protocol_info.decimals));
         }
 
         let tokens = self.tokens_info.lock();
@@ -2079,6 +2482,675 @@ impl TendermintCoin {
         }
 
         None
+    }
+
+    #[inline]
+    pub fn is_ledger_connection(&self) -> bool {
+        matches!(
+            self.wallet_type,
+            TendermintWalletConnectionType::WcLedger(_) | TendermintWalletConnectionType::KeplrLedger
+        )
+    }
+
+    #[inline]
+    pub fn is_wallet_connect(&self) -> bool {
+        matches!(
+            self.wallet_type,
+            TendermintWalletConnectionType::WcLedger(_) | TendermintWalletConnectionType::Wc(_)
+        )
+    }
+
+    pub(crate) async fn validators_list(
+        &self,
+        filter_status: ValidatorStatus,
+        paging: PagingOptions,
+    ) -> MmResult<Vec<Validator>, TendermintCoinRpcError> {
+        let request = QueryValidatorsRequest {
+            status: filter_status.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_VALIDATORS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryValidatorsResponseProto::decode(raw_response.value.as_slice())?;
+        let typed_response = QueryValidatorsResponse::try_from(decoded_proto)
+            .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+        Ok(typed_response.validators)
+    }
+
+    pub(crate) async fn delegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, ErrorReport> {
+            MsgDelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+        }
+
+        /// Calculates the send and total amounts.
+        ///
+        /// The send amount is what the receiver receives, while the total amount is what sender
+        /// pays including the transaction fee.
+        fn calc_send_and_total_amount(
+            coin: &TendermintCoin,
+            balance_u64: u64,
+            balance_decimal: BigDecimal,
+            fee_u64: u64,
+            fee_decimal: BigDecimal,
+            request_amount: BigDecimal,
+            is_max: bool,
+        ) -> Result<(u64, BigDecimal), DelegationError> {
+            let not_sufficient = |required| DelegationError::NotSufficientBalance {
+                coin: coin.ticker.clone(),
+                available: balance_decimal.clone(),
+                required,
+            };
+
+            if is_max {
+                if balance_u64 < fee_u64 {
+                    return Err(not_sufficient(fee_decimal));
+                }
+
+                let amount_u64 = balance_u64 - fee_u64;
+                return Ok((amount_u64, balance_decimal));
+            }
+
+            let total = &request_amount + &fee_decimal;
+            if balance_decimal < total {
+                return Err(not_sufficient(total));
+            }
+
+            let amount_u64 = sat_from_big_decimal(&request_amount, coin.protocol_info.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+            Ok((amount_u64, total))
+        }
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(req.withdraw_from)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let (balance_u64, balance_dec) = self
+            .get_balance_as_unsigned_and_decimal(&delegator_address, &self.protocol_info.denom, self.decimals())
+            .await
+            .map_mm_err()?;
+
+        let amount_u64 = if req.max {
+            balance_u64
+        } else {
+            sat_from_big_decimal(&req.amount, self.protocol_info.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        // This is used for transaction simulation so we can predict the best possible fee amount.
+        let msg_for_fee_prediction = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.protocol_info.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // `delegate` uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                msg_for_fee_prediction,
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await
+            .map_mm_err()?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.protocol_info.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let (amount_u64, total_amount) = calc_send_and_total_amount(
+            self,
+            balance_u64,
+            balance_dec,
+            fee_amount_u64,
+            fee_amount_dec.clone(),
+            req.amount,
+            req.max,
+        )?;
+
+        let msg_for_actual_tx = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.protocol_info.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                msg_for_actual_tx,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .await
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![req.validator_address],
+            my_balance_change: &BigDecimal::default() - &total_amount,
+            spent_by_me: total_amount.clone(),
+            total_amount,
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::StakingDelegation,
+            memo: Some(req.memo),
+        })
+    }
+
+    pub(crate) async fn undelegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, ErrorReport> {
+            MsgUndelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+        }
+
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let (total_delegated_amount, total_delegated_uamount) = self.get_delegated_amount(&validator_address).await?;
+
+        let uamount_to_undelegate = if req.max {
+            total_delegated_uamount
+        } else {
+            if req.amount > total_delegated_amount {
+                return MmError::err(DelegationError::TooMuchToUndelegate {
+                    available: total_delegated_amount,
+                    requested: req.amount,
+                });
+            };
+
+            sat_from_big_decimal(&req.amount, self.protocol_info.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        let undelegate_msg = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.protocol_info.denom.clone(),
+            uamount_to_undelegate.into(),
+        )
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than any other transactions
+        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                undelegate_msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await
+            .map_mm_err()?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.protocol_info.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                undelegate_msg,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .await
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![], // We just pay the transaction fee for undelegation
+            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: fee_amount_dec.clone(),
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::RemoveDelegation,
+            memo: Some(req.memo),
+        })
+    }
+
+    async fn get_delegated_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<(BigDecimal, u64), DelegationError> {
+        let delegator_addr = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_addr = validator_addr.to_string();
+
+        let request = QueryDelegationRequest {
+            delegator_addr,
+            validator_addr,
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await
+            .map_mm_err()?
+            .abci_query(
+                Some(ABCI_DELEGATION_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let Some(delegation_response) = decoded_response.delegation_response else {
+            return MmError::err(DelegationError::CanNotUndelegate {
+                delegator_addr: request.delegator_addr,
+                validator_addr: request.validator_addr,
+            });
+        };
+
+        let Some(balance) = delegation_response.balance else {
+            return MmError::err(DelegationError::Transport(
+                format!("Unexpected response from '{ABCI_DELEGATION_PATH}' with {request:?} request; balance field should not be empty.")
+            ));
+        };
+
+        let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
+    }
+
+    async fn get_delegation_reward_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<BigDecimal, DelegationError> {
+        let delegator_address = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_address = validator_addr.to_string();
+
+        let query_payload = QueryDelegationRewardsRequest {
+            delegator_address,
+            validator_address,
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await
+            .map_mm_err()?
+            .abci_query(
+                Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
+                query_payload.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationRewardsResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        match decoded_response
+            .rewards
+            .iter()
+            .find(|t| t.denom == self.protocol_info.denom.to_string())
+        {
+            Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.protocol_info.decimals as u32)
+                .map_to_mm(|e| DelegationError::InternalError(e.to_string())),
+            None => MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            }),
+        }
+    }
+
+    pub(crate) async fn claim_staking_rewards(
+        &self,
+        req: ClaimRewardsPayload,
+    ) -> MmResult<TransactionDetails, DelegationError> {
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let msg = MsgWithdrawDelegatorReward {
+            delegator_address: delegator_address.clone(),
+            validator_address: validator_address.clone(),
+        }
+        .to_any()
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let reward_amount = self.get_delegation_reward_amount(&validator_address).await?;
+
+        if reward_amount.is_zero() {
+            return MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            });
+        }
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await
+            .map_mm_err()?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        if !req.force && fee_amount_dec > reward_amount {
+            return MmError::err(DelegationError::UnprofitableReward {
+                reward: reward_amount.clone(),
+                fee: fee_amount_dec.clone(),
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.protocol_info.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
+
+        let tx = self
+            .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
+            .await
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![validator_address.to_string()],
+            to: vec![delegator_address.to_string()],
+            my_balance_change: &reward_amount - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: reward_amount.clone(),
+            received_by_me: reward_amount,
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::ClaimDelegationRewards,
+            memo: Some(req.memo),
+        })
+    }
+
+    pub(crate) async fn delegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<DelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_DELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorDelegationsResponse::decode(raw_response.value.as_slice())?;
+
+        let mut delegations = Vec::new();
+        let selfi = self.clone();
+        for response in decoded_proto.delegation_responses {
+            let Some(delegation) = response.delegation else {
+                continue;
+            };
+            let Some(balance) = response.balance else { continue };
+
+            let account_id = AccountId::from_str(&delegation.validator_address)
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            let reward_amount = match selfi.get_delegation_reward_amount(&account_id).await {
+                Ok(reward) => reward,
+                Err(e) => match e.get_inner() {
+                    DelegationError::NothingToClaim { .. } => BigDecimal::zero(),
+                    _ => return MmError::err(TendermintCoinRpcError::InvalidResponse(e.to_string())),
+                },
+            };
+
+            let amount = balance
+                .amount
+                .parse::<u64>()
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            delegations.push(Delegation {
+                validator_address: delegation.validator_address,
+                delegated_amount: big_decimal_from_sat_unsigned(amount, selfi.decimals()),
+                reward_amount,
+            });
+        }
+
+        Ok(DelegationsQueryResponse { delegations })
+    }
+
+    pub(crate) async fn ongoing_undelegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<UndelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorUnbondingDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_UNDELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorUnbondingDelegationsResponse::decode(raw_response.value.as_slice())?;
+        let ongoing_undelegations = decoded_proto
+            .unbonding_responses
+            .into_iter()
+            .map(|r| {
+                let entries = r
+                    .entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let balance: u64 = e.balance.parse().ok()?;
+
+                        Some(UndelegationEntry {
+                            creation_height: e.creation_height,
+                            completion_datetime: e.completion_time?.to_string(),
+                            balance: big_decimal_from_sat_unsigned(balance, self.decimals()),
+                        })
+                    })
+                    .collect();
+
+                Undelegation {
+                    validator_address: r.validator_address,
+                    entries,
+                }
+            })
+            .collect();
+
+        Ok(UndelegationsQueryResponse { ongoing_undelegations })
     }
 }
 
@@ -2115,59 +3187,50 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
     Ok(clients)
 }
 
-pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
-    fn map_metadata_to_chain_registry_name(metadata: &FileMetadata) -> Result<String, MmError<IBCChainsRequestError>> {
-        let split_filename_by_dash: Vec<&str> = metadata.name.split('-').collect();
-        let chain_registry_name = split_filename_by_dash
-            .first()
-            .or_mm_err(|| {
-                IBCChainsRequestError::InternalError(format!(
-                    "Could not read chain registry name from '{}'",
-                    metadata.name
-                ))
-            })?
-            .to_string();
-
-        Ok(chain_registry_name)
-    }
-
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCChainsRequestError::Transport(format!("{:?}", e)))?;
-
-    let chain_list: Result<Vec<String>, MmError<IBCChainsRequestError>> =
-        metadata_list.iter().map(map_metadata_to_chain_registry_name).collect();
-
-    let mut distinct_chain_list = chain_list?;
-    distinct_chain_list.dedup();
-
-    Ok(IBCChainRegistriesResponse {
-        chain_registry_list: distinct_chain_list,
-    })
-}
-
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
 
+    #[cfg(feature = "ibc-routing-for-swaps")]
     fn wallet_only(&self, ctx: &MmArc) -> bool {
-        let coin_conf = crate::coin_conf(ctx, self.ticker());
-        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
+        // Keplr with Ledger does not support some transactions like HTLC due to
+        // the transaction format they use. As HTLC is part of our swap system's DNA,
+        // treat any Tendermint asset as wallet-only.
+        //
+        // TODO: Once `SIGN_MODE_DIRECT` is supported, we can remove this.
+        if self.is_ledger_connection() {
+            common::log::info!("Using Keplr with Ledger: operating in wallet only mode.");
+            return true;
+        }
 
-        wallet_only_conf || self.is_keplr_from_ledger
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        let wallet_only_conf = coin_conf
+            .get("wallet_only")
+            .unwrap_or(&json!(false))
+            .as_bool()
+            .unwrap_or(false);
+
+        if wallet_only_conf {
+            warn!("`wallet_only` option cannot be set to true for Tendermint assets. This setting will be ignored.");
+        }
+
+        false
     }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
+    #[cfg(not(feature = "ibc-routing-for-swaps"))]
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
+        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
+
+        wallet_only_conf || self.is_ledger_connection()
+    }
+
+    fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
@@ -2175,22 +3238,32 @@ impl MmCoin for TendermintCoin {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let is_ibc_transfer = to_address.prefix() != coin.account_prefix || req.ibc_source_channel.is_some();
+            let is_ibc_transfer =
+                to_address.prefix() != coin.protocol_info.account_prefix || req.ibc_source_channel.is_some();
 
-            let (account_id, maybe_pk) = coin.account_id_and_pk_for_withdraw(req.from)?;
+            let (account_id, maybe_priv_key) = coin
+                .extract_account_id_and_private_key(req.from)
+                .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
-                .await?;
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.protocol_info.denom, coin.decimals())
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
-                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
+                (
+                    amount_denom,
+                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals()),
+                )
             } else {
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?,
+                    req.amount.clone(),
+                )
             };
 
-            if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
+            if !coin.is_tx_amount_enough(coin.decimals(), &amount_dec) {
                 return MmError::err(WithdrawError::AmountTooLow {
                     amount: amount_dec,
                     threshold: coin.min_tx_amount(),
@@ -2206,7 +3279,11 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(
+                        coin.get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
+                            .await
+                            .map_mm_err()?,
+                    ),
                 }
             } else {
                 None
@@ -2215,9 +3292,9 @@ impl MmCoin for TendermintCoin {
             let msg_payload = create_withdraw_msg_as_any(
                 account_id.clone(),
                 to_address.clone(),
-                &coin.denom,
+                &coin.protocol_info.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
@@ -2240,21 +3317,24 @@ impl MmCoin for TendermintCoin {
             let fee_amount_u64 = coin
                 .calculate_account_fee_amount_as_u64(
                     &account_id,
-                    maybe_pk,
+                    maybe_priv_key,
                     msg_payload.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
-            let fee_amount_u64 = if coin.is_keplr_from_ledger {
+            let fee_amount_u64 = if coin.is_ledger_connection() {
                 // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
                 // and calculates another one which is usually double what we calculate.
                 // To make sure the transaction doesn't fail on the Keplr side (because if Keplr
                 // calculates a higher fee than us, the withdrawal might fail), we use three times
                 // the actual fee.
                 fee_amount_u64 * 3
+            } else if is_ibc_transfer {
+                fee_amount_u64 * 3 / 2
             } else {
                 fee_amount_u64
             };
@@ -2262,7 +3342,7 @@ impl MmCoin for TendermintCoin {
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
-                denom: coin.denom.clone(),
+                denom: coin.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             };
 
@@ -2288,28 +3368,26 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
+                (sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?, total)
             };
 
             let msg_payload = create_withdraw_msg_as_any(
                 account_id.clone(),
                 to_address.clone(),
-                &coin.denom,
+                &coin.protocol_info.denom,
                 amount_denom,
                 channel_id,
             )
             .await?;
 
-            let account_info = coin.account_info(&account_id).await?;
+            let account_info = coin.account_info(&account_id).await.map_mm_err()?;
 
             let tx = coin
-                .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+                .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
+            let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
 
             Ok(TransactionDetails {
                 tx,
@@ -2331,7 +3409,7 @@ impl MmCoin for TendermintCoin {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer { token_id: None }
                 } else {
                     TransactionType::StandardTransfer
                 },
@@ -2345,7 +3423,7 @@ impl MmCoin for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
-            let tx_from_rpc = coin.request_tx(req.tx_hash).await?;
+            let tx_from_rpc = coin.request_tx(req.tx_hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -2355,9 +3433,13 @@ impl MmCoin for TendermintCoin {
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
         let coin = self.clone();
-        let hash = hex::encode_upper(H256::from(tx_hash.as_slice()));
         let fut = async move {
-            let tx_from_rpc = coin.request_tx(hash).await?;
+            let len = tx_hash.len();
+            let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
+                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
+            })?;
+            let hash = hex::encode_upper(H256::from(hash));
+            let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -2365,7 +3447,7 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { self.decimals }
+    fn decimals(&self) -> u8 { self.protocol_info.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         // TODO
@@ -2405,8 +3487,129 @@ impl MmCoin for TendermintCoin {
         let amount = match value {
             TradePreimageValue::Exact(decimal) | TradePreimageValue::UpperBound(decimal) => decimal,
         };
-        self.get_sender_trade_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, amount)
+        self.get_sender_trade_fee_for_denom(
+            self.ticker.clone(),
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
+            amount,
+        )
+        .await
+    }
+
+    /// Overrides the default `pre_check_for_order_creation` implementation with
+    /// additional IBC-related logic on top of the default behavior.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &crate::MmCoinEnum,
+    ) -> MmResult<(), crate::OrderCreationPreCheckError> {
+        use crate::{lp_coinfind, MmCoinEnum, OrderCreationPreCheckError};
+
+        /// Looks for a Tendermint platform coin by the given ticker.
+        ///
+        /// Returns `Ok(Some(...))` if the coin exists and is a Tendermint platform coin,
+        /// `Ok(None)` if it's not active, or an error if somethings goes wrong or the ticker
+        /// isn't belongs to a Tendermint platform coin.
+        async fn find_tendermint_platform_coin(
+            ctx: &MmArc,
+            ticker: &str,
+        ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
+            match lp_coinfind(ctx, ticker).await {
+                Ok(Some(MmCoinEnum::Tendermint(coin))) => Ok(Some(coin)),
+                Ok(Some(other)) => MmError::err(OrderCreationPreCheckError::InternalError {
+                    reason: format!(
+                        "Expected a Tendermint coin for '{}', but found '{}'.",
+                        ticker,
+                        other.ticker()
+                    ),
+                }),
+                Ok(None) => Ok(None),
+                Err(reason) => MmError::err(OrderCreationPreCheckError::PreCheckFailed { reason }),
+            }
+        }
+
+        /// Picks an HTLC coin (IRIS or NUCLEUS) based on which IBC channel is configured
+        /// and is healthy.
+        async fn get_htlc_coin(
+            coin: &TendermintCoin,
+            ctx: &MmArc,
+        ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
+            const IRIS_TICKER: &str = "IRIS";
+            const NUCLEUS_TICKER: &str = "NUCLEUS";
+
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX)
+                .await
+                .is_ok()
+            {
+                return find_tendermint_platform_coin(ctx, IRIS_TICKER).await;
+            }
+
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX)
+                .await
+                .is_ok()
+            {
+                return find_tendermint_platform_coin(ctx, NUCLEUS_TICKER).await;
+            }
+
+            MmError::err(OrderCreationPreCheckError::PreCheckFailed {
+                reason: format!("No healthy IBC channel found for {}.", coin.ticker()),
+            })
+        }
+
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        if self.supports_htlc() {
+            return Ok(());
+        }
+
+        // If `self` is not an HTLC-supported coin, we need to check a few things when creating the order:
+        //  - Is there an HTLC coin enabled?
+        //  - Does that HTLC network have an IBC channel configured to `self` network?
+        //  - Does that HTLC coin have enough balance to handle IBC routing?
+
+        let Some(htlc_coin) = get_htlc_coin(self, ctx).await? else {
+            return MmError::err(OrderCreationPreCheckError::PreCheckFailed {
+                reason: "No HTLC coin is currently enabled. Please enable either Iris or Nucleus.".into(),
+            });
+        };
+
+        let my_balance = htlc_coin
+            .my_balance()
+            .compat()
             .await
+            .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?
+            .spendable;
+
+        let min_balance_for_ibc_routing = htlc_coin
+            .protocol_info
+            .min_balance_for_ibc_routing
+            .unwrap_or(DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING);
+        let min_balance_for_ibc_routing = BigDecimal::try_from(min_balance_for_ibc_routing)
+            .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?;
+
+        if min_balance_for_ibc_routing > my_balance {
+            let htlc_ticker = htlc_coin.ticker();
+            let self_ticker = self.ticker();
+            let reason = format!(
+                "Insufficient balance on HTLC coin ({htlc_ticker}) for making orders with {self_ticker}. Minimum required expected balance {min_balance_for_ibc_routing}, current balance {my_balance}.",
+            );
+            return MmError::err(OrderCreationPreCheckError::PreCheckFailed { reason });
+        }
+
+        Ok(())
     }
 
     fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
@@ -2416,8 +3619,8 @@ impl MmCoin for TendermintCoin {
             // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
             coin.get_sender_trade_fee_for_denom(
                 coin.ticker.clone(),
-                coin.denom.clone(),
-                coin.decimals,
+                coin.protocol_info.denom.clone(),
+                coin.decimals(),
                 coin.min_tx_amount(),
             )
             .await
@@ -2430,8 +3633,13 @@ impl MmCoin for TendermintCoin {
         dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        self.get_fee_to_send_taker_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, dex_fee_amount)
-            .await
+        self.get_fee_to_send_taker_fee_for_denom(
+            self.ticker.clone(),
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
+            dex_fee_amount,
+        )
+        .await
     }
 
     fn required_confirmations(&self) -> u64 { 0 }
@@ -2473,8 +3681,14 @@ impl MarketCoinOps for TendermintCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let address = account_id_from_raw_pubkey(&self.protocol_info.account_prefix, &pubkey.0)
+            .map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;
+        Ok(address.to_string())
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
+        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err().map_mm_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
@@ -2484,7 +3698,7 @@ impl MarketCoinOps for TendermintCoin {
         None
     }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
         // TODO
         MmError::err(SignatureError::InternalError("Not implemented".into()))
     }
@@ -2498,10 +3712,11 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             let balance_denom = coin
-                .account_balance_for_denom(&coin.account_id, coin.denom.to_string())
-                .await?;
+                .account_balance_for_denom(&coin.account_id, coin.protocol_info.denom.to_string())
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
-                spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
+                spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals()),
                 unspendable: BigDecimal::default(),
             })
         };
@@ -2519,7 +3734,7 @@ impl MarketCoinOps for TendermintCoin {
         self.send_raw_tx_bytes(&tx_bytes)
     }
 
-    /// Consider using `seq_safe_raw_tx_bytes` instead.
+    /// Consider using `seq_safe_send_raw_tx_bytes` instead.
     /// This is considered as unsafe due to sequence mismatches.
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         // as sanity check
@@ -2600,42 +3815,32 @@ impl MarketCoinOps for TendermintCoin {
         let tx = try_tx_s!(cosmrs::Tx::from_bytes(args.tx_bytes));
         let first_message = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             first_message.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
-        let events_string = format!("claim_htlc.id='{}'", htlc_id);
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events_string],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = format!("claim_htlc.id='{}'", htlc_id);
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let encoded_request = request.encode_to_vec();
 
         loop {
-            let response = try_tx_s!(
-                try_tx_s!(self.rpc_client().await)
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE
-                    )
-                    .await
-            );
-            let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
-            if let Some(tx) = response.txs.first() {
+            let response = try_tx_s!(try_tx_s!(self.rpc_client().await).perform(request.clone()).await);
+
+            if let Some(raw_tx) = response.txs.first() {
+                let tx = try_tx_s!(cosmrs::Tx::from_bytes(&raw_tx.tx));
+
                 return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                     data: TxRaw {
-                        body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        signatures: tx.signatures.clone(),
+                        body_bytes: try_tx_s!(tx.body.into_bytes()),
+                        auth_info_bytes: try_tx_s!(tx.auth_info.into_bytes()),
+                        signatures: tx.signatures,
                     },
                 }));
             }
@@ -2669,10 +3874,13 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     #[inline]
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals) }
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    #[inline]
+    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
 
     fn is_trezor(&self) -> bool {
         match &self.activation_policy {
@@ -2685,12 +3893,11 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         self.send_taker_fee_for_denom(
-            fee_addr,
-            dex_fee.fee_amount().into(),
-            self.denom.clone(),
-            self.decimals,
+            &dex_fee,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
             uuid,
             expire_at,
         )
@@ -2704,8 +3911,8 @@ impl SwapOps for TendermintCoin {
             maker_payment_args.other_pubkey,
             maker_payment_args.secret_hash,
             maker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
         )
         .compat()
         .await
@@ -2717,12 +3924,17 @@ impl SwapOps for TendermintCoin {
             taker_payment_args.other_pubkey,
             taker_payment_args.secret_hash,
             taker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
         )
         .compat()
         .await
     }
+
+    // TODO: release this function once watchers are supported
+    // fn is_supported_by_watchers(&self) -> bool {
+    //     !matches!(self.activation_policy, TendermintActivationPolicy::PublicKey(_))
+    // }
 
     async fn send_maker_spends_taker_payment(
         &self,
@@ -2732,7 +3944,7 @@ impl SwapOps for TendermintCoin {
         let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
@@ -2760,13 +3972,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (_tx_id, tx_raw) = try_tx_s!(
@@ -2774,7 +3981,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -2793,7 +4000,7 @@ impl SwapOps for TendermintCoin {
         let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
@@ -2821,13 +4028,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.into(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (tx_id, tx_raw) = try_tx_s!(
@@ -2835,7 +4037,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -2862,23 +4064,22 @@ impl SwapOps for TendermintCoin {
         self.validate_fee_for_denom(
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
-            validate_fee_args.fee_addr,
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.decimals,
+            validate_fee_args.dex_fee,
+            self.protocol_info.decimals,
             validate_fee_args.uuid,
-            self.denom.to_string(),
+            self.protocol_info.denom.to_string(),
         )
         .compat()
         .await
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
-        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+        self.validate_payment_for_denom(input, self.protocol_info.denom.clone(), self.protocol_info.decimals)
             .await
     }
 
     async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
-        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+        self.validate_payment_for_denom(input, self.protocol_info.denom.clone(), self.protocol_info.decimals)
             .await
     }
 
@@ -2887,8 +4088,8 @@ impl SwapOps for TendermintCoin {
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Result<Option<TransactionEnum>, String> {
         self.check_if_my_payment_sent_for_denom(
-            self.decimals,
-            self.denom.clone(),
+            self.protocol_info.decimals,
+            self.protocol_info.denom.clone(),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.amount,
@@ -2916,31 +4117,17 @@ impl SwapOps for TendermintCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_s!(ClaimHtlcProto::decode(
-            try_s!(HtlcType::from_str(&self.account_prefix)),
+            try_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_s!(ClaimHtlcMsg::try_from(htlc_proto));
 
-        Ok(try_s!(hex::decode(htlc.secret())))
-    }
-
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
-    // Todo
-    fn is_auto_refundable(&self) -> bool { false }
-
-    // Todo
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
+        Ok(try_s!(try_s!(hex::decode(htlc.secret())).as_slice().try_into()))
     }
 
     fn negotiate_swap_contract_addr(
@@ -2953,17 +4140,20 @@ impl SwapOps for TendermintCoin {
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
         key_pair_from_secret(
-            self.activation_policy
+            &self
+                .activation_policy
                 .activated_key_or_err()
                 .expect("valid priv key")
-                .as_ref(),
+                .take(),
         )
         .expect("valid priv key")
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
-        self.activation_policy.public_key().expect("valid pubkey").to_bytes()
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
+        let mut res = [0u8; 33];
+        res.copy_from_slice(&self.activation_policy.public_key().expect("valid pubkey").to_bytes());
+        res
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
@@ -2971,124 +4161,10 @@ impl SwapOps for TendermintCoin {
             .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
         Ok(())
     }
-
-    async fn maker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
 }
 
 #[async_trait]
-impl TakerSwapMakerCoin for TendermintCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for TendermintCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl WatcherOps for TendermintCoin {
-    fn create_maker_payment_spend_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn create_taker_payment_refund_preimage(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!();
-    }
-
-    async fn get_taker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _coin_amount: Option<BigDecimal>,
-        _other_coin_amount: Option<BigDecimal>,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-
-    async fn get_maker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-}
+impl WatcherOps for TendermintCoin {}
 
 /// Processes the given `priv_key_build_policy` and returns corresponding `TendermintPrivKeyPolicy`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
@@ -3101,7 +4177,7 @@ pub fn tendermint_priv_key_policy(
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
-            let mm2_internal_key_pair = key_pair_from_secret(iguana.as_ref()).mm_err(|e| TendermintInitError {
+            let mm2_internal_key_pair = key_pair_from_secret(&iguana.take()).mm_err(|e| TendermintInitError {
                 ticker: ticker.to_string(),
                 kind: TendermintInitErrorKind::Internal(e.to_string()),
             })?;
@@ -3153,54 +4229,15 @@ pub fn tendermint_priv_key_policy(
     }
 }
 
-pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str) -> Option<String> {
-    let Some(coins) = ctx.conf["coins"].as_array() else {
-        return None;
-    };
-
-    for coin in coins {
-        let protocol = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("type")
-            .unwrap_or(&serde_json::Value::Null)
-            .as_str();
-
-        if protocol != Some(TENDERMINT_COIN_PROTOCOL_TYPE) {
-            continue;
-        }
-
-        let coin_account_prefix = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("protocol_data")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("account_prefix")
-            .map(|t| t.as_str().unwrap_or_default());
-
-        if coin_account_prefix == Some(prefix) {
-            return coin
-                .get("protocol")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("protocol_data")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("chain_registry_name")
-                .map(|t| t.as_str().unwrap_or_default().to_owned());
-        }
-    }
-
-    None
-}
-
 pub(crate) async fn create_withdraw_msg_as_any(
     sender: AccountId,
     receiver: AccountId,
     denom: &Denom,
     amount: u64,
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
 ) -> Result<Any, MmError<WithdrawError>> {
     if let Some(channel_id) = ibc_source_channel {
-        MsgTransfer::new_with_default_timeout(channel_id, sender, receiver, Coin {
+        MsgTransfer::new_with_default_timeout(channel_id.to_string(), sender, receiver, Coin {
             denom: denom.clone(),
             amount: amount.into(),
         })
@@ -3219,84 +4256,11 @@ pub(crate) async fn create_withdraw_msg_as_any(
     .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
 }
 
-pub async fn get_ibc_transfer_channels(
-    source_registry_name: String,
-    destination_registry_name: String,
-) -> IBCTransferChannelsResult {
-    #[derive(Deserialize)]
-    struct ChainRegistry {
-        channels: Vec<IbcChannel>,
-    }
-
-    #[derive(Deserialize)]
-    struct ChannelInfo {
-        channel_id: String,
-        port_id: String,
-    }
-
-    #[derive(Deserialize)]
-    struct IbcChannel {
-        #[allow(dead_code)]
-        chain_1: ChannelInfo,
-        chain_2: ChannelInfo,
-        ordering: String,
-        version: String,
-        tags: Option<IBCTransferChannelTag>,
-    }
-
-    let source_filename = format!("{}-{}.json", source_registry_name, destination_registry_name);
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    let source_channel_file = metadata_list
-        .iter()
-        .find(|metadata| metadata.name == source_filename)
-        .or_mm_err(|| IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(source_filename))?;
-
-    let mut registry_object = git_controller
-        .client
-        .deserialize_json_source::<ChainRegistry>(source_channel_file.to_owned())
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    registry_object
-        .channels
-        .retain(|ch| ch.chain_2.port_id == *IBC_OUT_SOURCE_PORT);
-
-    let result: Vec<IBCTransferChannel> = registry_object
-        .channels
-        .iter()
-        .map(|ch| IBCTransferChannel {
-            channel_id: ch.chain_2.channel_id.clone(),
-            ordering: ch.ordering.clone(),
-            version: ch.version.clone(),
-            tags: ch.tags.clone().map(|t| IBCTransferChannelTag {
-                status: t.status,
-                preferred: t.preferred,
-                dex: t.dex,
-            }),
-        })
-        .collect();
-
-    if result.is_empty() {
-        return MmError::err(IBCTransferChannelsRequestError::CouldNotFindChannel(
-            destination_registry_name,
-        ));
-    }
-
-    Ok(IBCTransferChannelsResponse {
-        ibc_transfer_channels: result,
-    })
+fn extract_big_decimal_from_dec_coin(dec_coin: &DecCoin, decimals: u32) -> Result<BigDecimal, ParseBigDecimalError> {
+    let raw = BigDecimal::from_str(&dec_coin.amount)?;
+    // `DecCoin` represents decimal numbers as integer-like strings where the last 18 digits are the decimal part.
+    let scale = BigDecimal::from(1_000_000_000_000_000_000u64) * BigDecimal::from(10u64.pow(decimals));
+    Ok(raw / scale)
 }
 
 fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcError> {
@@ -3313,14 +4277,25 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
     )))
 }
 
+pub(crate) fn tendermint_tx_internal_id(bytes: &[u8], token_id: Option<BytesJson>) -> BytesJson {
+    let mut bytes = bytes.to_vec();
+
+    if let Some(token_id) = token_id {
+        bytes.extend_from_slice(&token_id);
+    }
+    sha256(&bytes).to_vec().into()
+}
+
 #[cfg(test)]
-pub mod tendermint_coin_tests {
+pub mod tendermint_falsecoin_tests {
     use super::*;
+    use crate::DexFeeBurnDestination;
 
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
-    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
-    use std::mem::discriminant;
+    use mocktopus::mocking::{MockResult, Mockable};
+    use std::{mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -3362,23 +4337,49 @@ pub mod tendermint_coin_tests {
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"),
-            account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-9"),
+            denom: Denom::from_str("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(IRIS_PREFIX),
+            chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels: HashMap::new(),
         }
     }
 
     fn get_iris_protocol() -> TendermintProtocolInfo {
+        let mut ibc_channels = HashMap::new();
+        ibc_channels.insert("cosmos".into(), ChannelId::new(0));
+
         TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("unyan"),
-            account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-9"),
+            denom: Denom::from_str("unyan").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(IRIS_PREFIX),
+            chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels,
         }
+    }
+
+    fn get_iris_ibc_nucleus_protocol() -> TendermintProtocolInfo {
+        TendermintProtocolInfo {
+            decimals: 6,
+            denom: Denom::from_str("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(NUCLEUS_PREFIX),
+            chain_id: ChainId::from_str("nucleus-testnet").unwrap(),
+            gas_price: None,
+            ibc_channels: HashMap::new(),
+        }
+    }
+
+    fn get_tx_signer_pubkey_unprefixed(tx: &Tx, i: usize) -> Vec<u8> {
+        tx.auth_info.as_ref().unwrap().signer_infos[i]
+            .public_key
+            .as_ref()
+            .unwrap()
+            .value[2..]
+            .to_vec()
     }
 
     #[test]
@@ -3417,14 +4418,14 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
         // << BEGIN HTLC CREATION
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount = 1;
-        let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals);
+        let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals());
 
         let mut sec = [0u8; 32];
         common::os_rng(&mut sec).unwrap();
@@ -3434,7 +4435,7 @@ pub mod tendermint_coin_tests {
 
         let create_htlc_tx = coin
             .gen_create_htlc_tx(
-                coin.denom.clone(),
+                coin.protocol_info.denom.clone(),
                 &to,
                 amount.into(),
                 sha256(&sec).as_slice(),
@@ -3450,7 +4451,7 @@ pub mod tendermint_coin_tests {
             coin.calculate_fee(
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await
@@ -3461,7 +4462,7 @@ pub mod tendermint_coin_tests {
             create_htlc_tx.msg_payload.clone(),
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(20),
         );
         block_on(async {
@@ -3490,21 +4491,16 @@ pub mod tendermint_coin_tests {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = block_on(async {
-            coin.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None,
-            )
-            .await
-            .unwrap()
+            coin.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
+                .unwrap()
         });
 
         let send_tx_fut = coin.common_send_raw_tx_bytes(
             claim_htlc_tx.msg_payload,
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(30),
         );
 
@@ -3540,34 +4536,25 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
-        let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events.into()],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'".to_owned();
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-            request.encode_to_vec(),
-            ABCI_REQUEST_HEIGHT,
-            ABCI_REQUEST_PROVE,
-        ))
-        .unwrap();
+        let response = block_on(block_on(coin.rpc_client()).unwrap().perform(request)).unwrap();
         println!("{:?}", response);
 
-        let response = GetTxsEventResponse::decode(response.value.as_slice()).unwrap();
-        let tx = response.txs.first().unwrap();
+        let tx = cosmrs::Tx::from_bytes(&response.txs.first().unwrap().tx).unwrap();
         println!("{:?}", tx);
 
-        let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
+        let first_msg = tx.body.messages.first().unwrap();
         println!("{:?}", first_msg);
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
@@ -3603,7 +4590,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -3674,25 +4661,26 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
         // CreateHtlc tx, validation should fail because first message of dex fee tx must be MsgSend
         // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
-        let create_htlc_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
-        let create_htlc_tx_bytes = block_on(coin.request_tx(create_htlc_tx_hash.into()))
-            .unwrap()
-            .encode_to_vec();
+        let create_htlc_tx_response = GetTxResponse::decode(hex::decode("0ac4030a96020a8e020a1b2f697269736d6f642e68746c632e4d736743726561746548544c4312ee010a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321a40623736353830316334303930363762623837396565326563666665363138623931643734346663343030303030303030303030303030303030303030303030302a0d0a036e696d120631303030303032403063333463373165626132613531373338363939663966336436646166666231356265353736653865643534333230333438353739316235646133396431306440ea3c18afaba80212670a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50312120a0c0a05756e79616e120332303010a08d061a4029dfbe5fc6ec9ed257e0f3a86542cb9da0d6047620274f22265c4fb8221ed45830236adef675f76962f74e4cfcc7a10e1390f4d2071bc7dd07838e300381952612882208ccaaa8021240324442333832434533443939353345344139343935374234373542304538413938463542364444423332443642463046364137363544393439434634413732372ac60130413631304131423246363937323639373336443646363432453638373436433633324534443733363734333732363536313734363534383534344334333132343230413430343634333339343433383433333033353336343233363339343233323436333433313331333734353332343134333433333533323337343133343339333933303435333734353434333234323336343533323432343634313334343333323334333533373335333034343339333333353434333833313332333434333330333832cc095b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a2269616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d2c7b2274797065223a226372656174655f68746c63222c2261747472696275746573223a5b7b226b6579223a226964222c2276616c7565223a2246433944384330353642363942324634313137453241434335323741343939304537454432423645324246413443323435373530443933354438313234433038227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a227265636569766572222c2276616c7565223a22696161316530727838376d646a37397a656a65777563346a6737716c3975643232383667327573386632227d2c7b226b6579223a2272656365697665725f6f6e5f6f746865725f636861696e222c2276616c7565223a2262373635383031633430393036376262383739656532656366666536313862393164373434666334303030303030303030303030303030303030303030303030227d2c7b226b6579223a2273656e6465725f6f6e5f6f746865725f636861696e227d2c7b226b6579223a227472616e73666572222c2276616c7565223a2266616c7365227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f697269736d6f642e68746c632e4d736743726561746548544c43227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2268746c63227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a2269616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d5d7d5d3ac7061a5c0a0d636f696e5f726563656976656412360a087265636569766572122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d12130a06616d6f756e7412093130303030306e696d1a580a0a636f696e5f7370656e7412350a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612130a06616d6f756e7412093130303030306e696d1acc020a0b6372656174655f68746c6312460a02696412404643394438433035364236394232463431313745324143433532374134393930453745443242364532424641344332343537353044393335443831323443303812340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612360a087265636569766572122a696161316530727838376d646a37397a656a65777563346a6737716c3975643232383667327573386632125b0a1772656365697665725f6f6e5f6f746865725f636861696e12406237363538303163343039303637626238373965653265636666653631386239316437343466633430303030303030303030303030303030303030303030303012170a1573656e6465725f6f6e5f6f746865725f636861696e12110a087472616e73666572120566616c73651aac010a076d65737361676512250a06616374696f6e121b2f697269736d6f642e68746c632e4d736743726561746548544c4312340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76120e0a066d6f64756c65120468746c6312340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a761a8e010a087472616e7366657212370a09726563697069656e74122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d12340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612130a06616d6f756e7412093130303030306e696d48a08d06509bd3045ade030a152f636f736d6f732e74782e763162657461312e547812c4030a96020a8e020a1b2f697269736d6f642e68746c632e4d736743726561746548544c4312ee010a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321a40623736353830316334303930363762623837396565326563666665363138623931643734346663343030303030303030303030303030303030303030303030302a0d0a036e696d120631303030303032403063333463373165626132613531373338363939663966336436646166666231356265353736653865643534333230333438353739316235646133396431306440ea3c18afaba80212670a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50312120a0c0a05756e79616e120332303010a08d061a4029dfbe5fc6ec9ed257e0f3a86542cb9da0d6047620274f22265c4fb8221ed45830236adef675f76962f74e4cfcc7a10e1390f4d2071bc7dd07838e30038195266214323032322d30392d31355432333a30343a35355a6a410a027478123b0a076163635f736571122e696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a762f34323118016a6d0a02747812670a097369676e617475726512584b642b2b583862736e744a5834504f6f5a554c4c6e614457424859674a3038694a6c7850754349653146677749327265396e583361574c33546b7a387836454f45354430306763627839304867343477413447564a673d3d18016a5b0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112140a06616d6f756e741208323030756e79616e18016a5f0a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112140a06616d6f756e741208323030756e79616e18016a93010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112140a06616d6f756e741208323030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a170a02747812110a036665651208323030756e79616e18016a320a076d65737361676512270a06616374696f6e121b2f697269736d6f642e68746c632e4d736743726561746548544c4318016a5c0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112150a06616d6f756e7412093130303030306e696d18016a600a0d636f696e5f726563656976656412380a087265636569766572122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d180112150a06616d6f756e7412093130303030306e696d18016a94010a087472616e7366657212390a09726563697069656e74122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112150a06616d6f756e7412093130303030306e696d18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016ad8020a0b6372656174655f68746c6312480a026964124046433944384330353642363942324634313137453241434335323741343939304537454432423645324246413443323435373530443933354438313234433038180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112380a087265636569766572122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321801125d0a1772656365697665725f6f6e5f6f746865725f636861696e124062373635383031633430393036376262383739656532656366666536313862393164373434666334303030303030303030303030303030303030303030303030180112190a1573656e6465725f6f6e5f6f746865725f636861696e180112130a087472616e73666572120566616c736518016a530a076d65737361676512100a066d6f64756c65120468746c63180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a761801").unwrap().as_slice()).unwrap();
+        let mock_tx = create_htlc_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
         let create_htlc_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
+            data: TxRaw::decode(create_htlc_tx_response.tx.as_ref().unwrap().encode_to_vec().as_slice()).unwrap(),
         });
 
         let invalid_amount: MmNumber = 1.into();
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &create_htlc_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount.clone()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3709,22 +4697,31 @@ pub mod tendermint_coin_tests {
                 error
             ),
         }
+        TendermintCoin::request_tx.clear_mock();
 
         // just a random transfer tx not related to AtomicDEX, should fail on recipient address check
         // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
-        let random_transfer_tx_hash = "65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF";
-        let random_transfer_tx_bytes = block_on(coin.request_tx(random_transfer_tx_hash.into()))
-            .unwrap()
-            .encode_to_vec();
-
+        let random_transfer_tx_response = GetTxResponse::decode(hex::decode("0ac6020a95010a8c010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126c0a2a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791a120a05756e79616e1209313030303030303030120474657374126a0a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103327a4866304ead15d941dbbdf2d2563514fcc94d25e4af897a71681a02b637b212040a02080118880212150a0f0a05756e79616e120632303030303010c09a0c1a402d1c8c1e1a44bd56fe24947d6ed6cae27c6f8a46e3e9beaaad9798dc842ae4ea0c0a20f33144c8fad3490638455b65f63decdb74c347a7c97d0469f5de453fe312a41608febfba021240363538313538313445374437343833324438373935363134344331453834383031444339344645394135303944323037413041424333463137373735453544462a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432da055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d5d7d5d3ad1031a610a0d636f696e5f726563656976656412360a087265636569766572122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a7912180a06616d6f756e74120e313030303030303030756e79616e1a5d0a0a636f696e5f7370656e7412350a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753812180a06616d6f756e74120e313030303030303030756e79616e1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538120e0a066d6f64756c65120462616e6b1a93010a087472616e7366657212370a09726563697069656e74122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a7912340a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753812180a06616d6f756e74120e313030303030303030756e79616e48c09a0c5092e5035ae0020a152f636f736d6f732e74782e763162657461312e547812c6020a95010a8c010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126c0a2a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791a120a05756e79616e1209313030303030303030120474657374126a0a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103327a4866304ead15d941dbbdf2d2563514fcc94d25e4af897a71681a02b637b212040a02080118880212150a0f0a05756e79616e120632303030303010c09a0c1a402d1c8c1e1a44bd56fe24947d6ed6cae27c6f8a46e3e9beaaad9798dc842ae4ea0c0a20f33144c8fad3490638455b65f63decdb74c347a7c97d0469f5de453fe36214323032322d31302d30335430363a35313a31375a6a410a027478123b0a076163635f736571122e696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275382f32363418016a6d0a02747812670a097369676e617475726512584c52794d486870457656622b4a4a52396274624b346e7876696b626a36623671725a655933495171354f6f4d4369447a4d5554492b744e4a426a68465732583250657a62644d4e4870386c3942476e31336b552f34773d3d18016a5e0a0a636f696e5f7370656e7412370a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538180112170a06616d6f756e74120b323030303030756e79616e18016a620a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112170a06616d6f756e74120b323030303030756e79616e18016a96010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538180112170a06616d6f756e74120b323030303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753818016a1a0a02747812140a03666565120b323030303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a610a0a636f696e5f7370656e7412370a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275381801121a0a06616d6f756e74120e313030303030303030756e79616e18016a650a0d636f696e5f726563656976656412380a087265636569766572122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791801121a0a06616d6f756e74120e313030303030303030756e79616e18016a99010a087472616e7366657212390a09726563697069656e74122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79180112360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275381801121a0a06616d6f756e74120e313030303030303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753818016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = random_transfer_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
         let random_transfer_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
+            data: TxRaw::decode(
+                random_transfer_tx_response
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .encode_to_vec()
+                    .as_slice(),
+            )
+            .unwrap(),
         });
 
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &random_transfer_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount.clone()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3736,26 +4733,25 @@ pub mod tendermint_coin_tests {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
             _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
         }
+        TendermintCoin::request_tx.clear_mock();
 
         // dex fee tx sent during real swap
         // https://nyancat.iobscan.io/#/tx?txHash=8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7
-        let dex_fee_hash = "8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7";
-        let dex_fee_tx = block_on(coin.request_tx(dex_fee_hash.into())).unwrap();
+        let dex_fee_tx_response = GetTxResponse::decode(hex::decode("0abc020a8e010a86010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412660a2a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0c0a05756e79616e120331303018a89bb00212670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103d4f75874e5f2a51d9d22f747ebd94da63207b08c7b023b09865051f074eb7ea412040a020801180612130a0d0a05756e79616e12043130303010a08d061a40784831c62a96658e9b0c484bbf684465788701c4fbd46c744f20f4ade3dbba1152f279c8afb118ae500ed9dc1260a8125a0f173c91ea408a3a3e0bd42b226ae012da1508c59ab0021240384141364239353931464531454539334338423839444534463243353942324635443334373342443946423546334346463641353434324245444338383144372a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432c8055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a2273656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d5d7d5d3abf031a5b0a0d636f696e5f726563656976656412360a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12120a06616d6f756e741208313030756e79616e1a570a0a636f696e5f7370656e7412350a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703812120a06616d6f756e741208313030756e79616e1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038120e0a066d6f64756c65120462616e6b1a8d010a087472616e7366657212370a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12340a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703812120a06616d6f756e741208313030756e79616e48a08d0650acdf035ad6020a152f636f736d6f732e74782e763162657461312e547812bc020a8e010a86010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412660a2a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0c0a05756e79616e120331303018a89bb00212670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103d4f75874e5f2a51d9d22f747ebd94da63207b08c7b023b09865051f074eb7ea412040a020801180612130a0d0a05756e79616e12043130303010a08d061a40784831c62a96658e9b0c484bbf684465788701c4fbd46c744f20f4ade3dbba1152f279c8afb118ae500ed9dc1260a8125a0f173c91ea408a3a3e0bd42b226ae06214323032322d30392d32335431313a31313a35395a6a3f0a02747812390a076163635f736571122c69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b70382f3618016a6d0a02747812670a097369676e6174757265125865456778786971575a5936624445684c763268455a5869484163543731477830547944307265506275684653386e6e4972374559726c414f32647753594b675357673858504a487151496f36506776554b794a7134413d3d18016a5c0a0a636f696e5f7370656e7412370a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112150a06616d6f756e74120931303030756e79616e18016a600a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112150a06616d6f756e74120931303030756e79616e18016a94010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112150a06616d6f756e74120931303030756e79616e18016a410a076d65737361676512360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703818016a180a02747812120a03666565120931303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a5b0a0a636f696e5f7370656e7412370a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112140a06616d6f756e741208313030756e79616e18016a5f0a0d636f696e5f726563656976656412380a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112140a06616d6f756e741208313030756e79616e18016a93010a087472616e7366657212390a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112140a06616d6f756e741208313030756e79616e18016a410a076d65737361676512360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703818016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = dex_fee_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
 
-        let pubkey = dex_fee_tx.auth_info.as_ref().unwrap().signer_infos[0]
-            .public_key
-            .as_ref()
-            .unwrap()
-            .value[2..]
-            .to_vec();
+        let pubkey = get_tx_signer_pubkey_unprefixed(dex_fee_tx_response.tx.as_ref().unwrap(), 0);
         let dex_fee_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
+            data: TxRaw::decode(dex_fee_tx_response.tx.as_ref().unwrap().encode_to_vec().as_slice()).unwrap(),
         });
 
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3773,7 +4769,6 @@ pub mod tendermint_coin_tests {
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(valid_amount.clone().into()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3790,7 +4785,6 @@ pub mod tendermint_coin_tests {
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &pubkey,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(valid_amount.into()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3804,31 +4798,93 @@ pub mod tendermint_coin_tests {
         }
 
         // https://nyancat.iobscan.io/#/tx?txHash=5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9
-        let fee_with_memo_hash = "5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9";
-        let fee_with_memo_tx = block_on(coin.request_tx(fee_with_memo_hash.into())).unwrap();
+        let fee_with_memo_tx_response = GetTxResponse::decode(hex::decode("0ae2020ab2010a84010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412640a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0a0a036e696d1203313030122463616536303131622d393831302d343731302d623738342d31653564643062336130643018dbe0bb0212690a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50412140a0e0a05756e79616e1205353030303010a08d061a4078295295db2e305b7b53c6b7154f1d6b1c311fd10aaf56ad96840e59f403bae045f2ca5920e7bef679eacd200d6f30eca7d3571b93dcde38c8c130e1c1d9e4c712f41508f8dfbb021240353933394139443141463537424238323837313445304334433444374632414545333439424237313942304131463235463846424343334242323237433546392a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432c2055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d5d7d5d3ab9031a590a0d636f696e5f726563656976656412360a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12100a06616d6f756e7412063130306e696d1a550a0a636f696e5f7370656e7412350a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612100a06616d6f756e7412063130306e696d1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76120e0a066d6f64756c65120462616e6b1a8b010a087472616e7366657212370a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612100a06616d6f756e7412063130306e696d48a08d0650d4e1035afc020a152f636f736d6f732e74782e763162657461312e547812e2020ab2010a84010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412640a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0a0a036e696d1203313030122463616536303131622d393831302d343731302d623738342d31653564643062336130643018dbe0bb0212690a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50412140a0e0a05756e79616e1205353030303010a08d061a4078295295db2e305b7b53c6b7154f1d6b1c311fd10aaf56ad96840e59f403bae045f2ca5920e7bef679eacd200d6f30eca7d3571b93dcde38c8c130e1c1d9e4c76214323032322d31302d30345431313a33343a35355a6a410a027478123b0a076163635f736571122e696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a762f35343918016a6d0a02747812670a097369676e6174757265125865436c536c6473754d4674375538613346553864617877784839454b723161746c6f514f57665144757542463873705a494f652b396e6e717a53414e627a447370394e5847355063336a6a497754446877646e6b78773d3d18016a5d0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112160a06616d6f756e74120a3530303030756e79616e18016a610a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112160a06616d6f756e74120a3530303030756e79616e18016a95010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112160a06616d6f756e74120a3530303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a190a02747812130a03666565120a3530303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a590a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112120a06616d6f756e7412063130306e696d18016a5d0a0d636f696e5f726563656976656412380a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112120a06616d6f756e7412063130306e696d18016a91010a087472616e7366657212390a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112120a06616d6f756e7412063130306e696d18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = fee_with_memo_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
 
-        let pubkey = fee_with_memo_tx.auth_info.as_ref().unwrap().signer_infos[0]
-            .public_key
-            .as_ref()
-            .unwrap()
-            .value[2..]
-            .to_vec();
-
+        let pubkey = get_tx_signer_pubkey_unprefixed(fee_with_memo_tx_response.tx.as_ref().unwrap(), 0);
         let fee_with_memo_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(fee_with_memo_tx.encode_to_vec().as_slice()).unwrap(),
+            data: TxRaw::decode(
+                fee_with_memo_tx_response
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .encode_to_vec()
+                    .as_slice(),
+            )
+            .unwrap(),
         });
 
         let uuid: Uuid = "cae6011b-9810-4710-b784-1e5dd0b3a0d0".parse().unwrap();
-        let amount: BigDecimal = "0.0001".parse().unwrap();
+        let dex_fee = DexFee::Standard(MmNumber::from("0.0001"));
+        block_on(
+            coin.validate_fee_for_denom(&fee_with_memo_tx, &pubkey, &dex_fee, 6, uuid.as_bytes(), "nim".into())
+                .compat(),
+        )
+        .unwrap();
+        TendermintCoin::request_tx.clear_mock();
+    }
+
+    #[test]
+    fn validate_taker_fee_with_burn_test() {
+        const NUCLEUS_TEST_SEED: &str = "nucleus test seed";
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(NUCLEUS_TEST_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+        let nucleus_nodes = vec![RpcNode::for_test("http://localhost:26657")];
+        let iris_ibc_nucleus_protocol = get_iris_ibc_nucleus_protocol();
+        let iris_ibc_nucleus_denom =
+            String::from("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C");
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "NUCLEUS-TEST".to_string(),
+            conf,
+            iris_ibc_nucleus_protocol,
+            nucleus_nodes,
+            false,
+            activation_policy,
+            Default::default(),
+        ))
+        .unwrap();
+
+        // tx from docker test (no real swaps yet)
+        let fee_with_burn_tx = Tx::decode(hex::decode("0abd030a91030a212f636f736d6f732e62616e6b2e763162657461312e4d73674d756c746953656e6412eb020a770a2a6e7563316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c65647736337912490a446962632f4637463238464633433039303234413032323545444242444232303745353837324432423445463246423837344645343742303545463943394137443231314312013912770a2a6e7563316567307167617a37336a737676727676747a713478383233686d7a387161706c656877326b3212490a446962632f4637463238464633433039303234413032323545444242444232303745353837324432423445463246423837344645343742303545463943394137443231314312013712770a2a6e756331797937346b393278707437367a616e6c3276363837636175393861666d70363071723564743712490a446962632f46374632384646334330393032344130323235454442424442323037453538373244324234454632464238373446453437423035454639433941374432313143120132122433656338646436352d313036342d346630362d626166332d66373265623563396230346418b50a12680a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a020801180312140a0e0a05756e75636c1205333338383510c8d0071a40852793cb49aeaff1f895fa18a4fc0a63a5c54813fd57b3f5a2af9d0d849a04cb4abe81bc8feb4178603e1c9eed4e4464157f0bffb7cf51ef3beb80f48cd73b91").unwrap().as_slice()).unwrap();
+        let mock_tx = fee_with_burn_tx.clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
+
+        let pubkey = get_tx_signer_pubkey_unprefixed(&fee_with_burn_tx, 0);
+        let fee_with_burn_cosmos_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
+            data: TxRaw::decode(fee_with_burn_tx.encode_to_vec().as_slice()).unwrap(),
+        });
+
+        let uuid: Uuid = "3ec8dd65-1064-4f06-baf3-f72eb5c9b04d".parse().unwrap();
+        let dex_fee = DexFee::WithBurn {
+            fee_amount: MmNumber::from("0.000007"), // Amount is 0.008, both dex and burn fees rounded down
+            burn_amount: MmNumber::from("0.000002"),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
         block_on(
             coin.validate_fee_for_denom(
-                &fee_with_memo_tx,
+                &fee_with_burn_cosmos_tx,
                 &pubkey,
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &amount,
+                &dex_fee,
                 6,
                 uuid.as_bytes(),
-                "nim".into(),
+                iris_ibc_nucleus_denom,
             )
             .compat(),
         )
@@ -3861,7 +4917,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -3944,7 +5000,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4020,7 +5076,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4092,7 +5148,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4147,7 +5203,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4220,5 +5276,165 @@ pub mod tendermint_coin_tests {
         assert_eq!(17, parse_expected_sequence_number("account sequence mismatch, expected. check_tx log: account sequence mismatch, expected 17, got 16: incorrect account sequence, deliver_tx log...").unwrap());
         assert!(parse_expected_sequence_number("").is_err());
         assert!(parse_expected_sequence_number("check_tx log: account sequence mismatch, expected").is_err());
+    }
+
+    #[test]
+    fn test_extract_big_decimal_from_dec_coin() {
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "232503485176823921544000".into(),
+        };
+
+        let expected = BigDecimal::from_str("0.232503485176823921544").unwrap();
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
+
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "1000000000000000000000000".into(),
+        };
+
+        let expected = BigDecimal::from(1);
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_claim_staking_rewards() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            Default::default(),
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let memo = "test".to_owned();
+        let req = ClaimRewardsPayload {
+            validator_address: validator_address.to_owned(),
+            fee: None,
+            memo: memo.clone(),
+            force: false,
+        };
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+        let res = block_on(coin.claim_staking_rewards(req)).unwrap();
+
+        assert_eq!(vec![validator_address], res.from);
+        assert_eq!(vec![coin.account_id.to_string()], res.to);
+        assert_eq!(TransactionType::ClaimDelegationRewards, res.transaction_type);
+        assert_eq!(Some(memo), res.memo);
+        // Rewards can increase during our tests, so round the first 4 digits.
+        assert_eq!(reward_amount.round(4), res.total_amount.round(4));
+        assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
+        // tx fee must be taken into account
+        assert!(reward_amount > res.my_balance_change);
+    }
+
+    #[test]
+    fn test_delegations_list() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            Default::default(),
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+
+        let expected_list = DelegationsQueryResponse {
+            delegations: vec![Delegation {
+                validator_address: validator_address.to_owned(),
+                delegated_amount: BigDecimal::from_str("1.98").unwrap(),
+                reward_amount: reward_amount.round(4),
+            }],
+        };
+
+        let mut actual_list = block_on(coin.delegations_list(PagingOptions {
+            limit: 0,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        }))
+        .unwrap();
+        for delegation in &mut actual_list.delegations {
+            delegation.reward_amount = delegation.reward_amount.round(4);
+        }
+
+        assert_eq!(expected_list, actual_list);
+    }
+
+    #[test]
+    fn test_get_ibc_channel_for_target_address() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            Default::default(),
+        ))
+        .unwrap();
+
+        let expected_channel = ChannelId::new(0);
+        let expected_channel_str = "channel-0";
+
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address_prefix("cosmos")).unwrap();
+        let actual_channel_str = actual_channel.to_string();
+
+        assert_eq!(expected_channel, actual_channel);
+        assert_eq!(expected_channel_str, actual_channel_str);
     }
 }

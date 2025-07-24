@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
+                                               SET_BURN_PUBKEY_TO_ALICE};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
 use crate::integration_tests_common::*;
@@ -16,15 +17,17 @@ use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use http::StatusCode;
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
                                   enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
                                   kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf};
+                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::env;
 use std::iter::FromIterator;
 use std::str::FromStr;
@@ -402,6 +405,7 @@ fn order_should_be_cancelled_when_entire_balance_is_withdrawn() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -518,6 +522,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_upda
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -651,6 +656,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_upd
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -798,6 +804,7 @@ fn test_order_should_be_updated_when_matched_partially() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -903,6 +910,7 @@ fn test_match_and_trade_setprice_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1002,6 +1010,7 @@ fn test_max_taker_vol_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1122,6 +1131,7 @@ fn test_buy_when_coins_locked_by_other_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1215,6 +1225,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1307,6 +1318,7 @@ fn test_buy_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1371,6 +1383,7 @@ fn test_maker_trade_preimage() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1508,6 +1521,7 @@ fn test_taker_trade_preimage() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1649,6 +1663,7 @@ fn test_trade_preimage_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1768,6 +1783,7 @@ fn test_trade_preimage_additional_validation() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1907,6 +1923,7 @@ fn test_trade_preimage_legacy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1977,6 +1994,7 @@ fn test_get_max_taker_vol() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2029,6 +2047,7 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2090,6 +2109,7 @@ fn test_get_max_taker_vol_dust_threshold() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2141,6 +2161,7 @@ fn test_get_max_taker_vol_with_kmd() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2208,7 +2229,7 @@ fn test_get_max_maker_vol() {
     let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
     assert_eq!(actual, expected);
 
-    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
 }
 
@@ -2247,6 +2268,7 @@ fn test_set_price_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2302,6 +2324,7 @@ fn swaps_should_stop_on_stop_rpc() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2392,6 +2415,7 @@ fn test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2449,6 +2473,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2544,6 +2569,7 @@ fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let relay = MarketMakerIt::start(relay_conf, "pass".to_string(), None).unwrap();
     let (_relay_dump_log, _relay_dump_dashboard) = mm_dump(&relay.log_path);
@@ -2556,7 +2582,6 @@ fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
         "coins": coins,
         "rpc_password": "pass",
         "seednodes": vec![format!("{}", relay.ip)],
-        "i_am_seed": false,
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2635,6 +2660,7 @@ fn test_orders_should_match_on_both_nodes_with_same_priv() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2738,6 +2764,7 @@ fn test_maker_and_taker_order_created_with_same_priv_should_not_match() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2809,6 +2836,7 @@ fn test_taker_order_converted_to_maker_should_cancel_properly_when_matched() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2932,6 +2960,7 @@ fn test_utxo_merge() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2985,6 +3014,7 @@ fn test_utxo_merge_max_merge_at_once() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3033,6 +3063,7 @@ fn test_withdraw_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3119,6 +3150,7 @@ fn test_taker_should_match_with_best_price_buy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3252,6 +3284,7 @@ fn test_taker_should_match_with_best_price_sell() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3390,6 +3423,7 @@ fn test_match_utxo_with_eth_taker_sell() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3466,6 +3500,7 @@ fn test_match_utxo_with_eth_taker_buy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3890,6 +3925,13 @@ fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); 
 #[test]
 fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
 
+// run swap with burn pubkey set to alice (no dex fee)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
+
 fn withdraw_and_send(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3962,6 +4004,7 @@ fn test_withdraw_and_send_eth_erc20() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -4082,7 +4125,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
@@ -4535,7 +4578,7 @@ fn test_set_price_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4608,7 +4651,7 @@ fn test_buy_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4681,7 +4724,7 @@ fn test_sell_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -5257,127 +5300,6 @@ fn test_sell_min_volume_dust() {
     assert!(!rc.0.is_success(), "!sell: {}", rc.1);
 }
 
-#[test]
-fn test_enable_eth_erc20_coins_with_enable_hd() {
-    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
-
-    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
-
-    // Withdraw from HD account 0, change address 0, index 0
-    let path_to_address = HDAccountAddressId::default();
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[0].address,
-        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-
-    // Enable HD account 0, change address 0, index 1
-    let path_to_address = HDAccountAddressId {
-        account_id: 0,
-        chain: Bip44Chain::External,
-        address_id: 1,
-    };
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[1].address,
-        "0xDe841899aB4A22E23dB21634e54920aDec402397"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-
-    // Enable HD account 77, change address 0, index 7
-    let path_to_address = HDAccountAddressId {
-        account_id: 77,
-        chain: Bip44Chain::External,
-        address_id: 7,
-    };
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[7].address,
-        "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-}
-
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -5516,4 +5438,158 @@ fn test_orderbook_depth() {
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+fn test_approve_erc20() {
+    let privkey = random_secp256k1_secret();
+    fill_eth_erc20_with_private_key(privkey);
+
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let mm = MarketMakerIt::start(
+        Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins).conf,
+        DEFAULT_RPC_PASSWORD.to_string(),
+        None,
+    )
+    .unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("Node log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let _eth_enable = block_on(enable_eth_coin(
+        &mm,
+        "ETH",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+    let _erc20_enable = block_on(enable_eth_coin(
+        &mm,
+        "ERC20DEV",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"approve_token",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+          "amount": BigDecimal::from_str("11.0").unwrap(),
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "approve_token error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert!(
+        hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
+        "approve_token result incorrect"
+    );
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"get_token_allowance",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "get_token_allowance error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert_eq!(
+        BigDecimal::from_str(res["result"].as_str().unwrap()).unwrap(),
+        BigDecimal::from_str("11.0").unwrap(),
+        "get_token_allowance result incorrect"
+    );
+
+    block_on(mm.stop()).unwrap();
+}
+
+#[test]
+fn test_peer_time_sync_validation() {
+    let timeoffset_tolerable = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() - 1;
+    let timeoffset_too_big = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() + 1;
+
+    let start_peers_with_time_offset = |offset: i64| -> (Json, Json) {
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 10.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 10.into());
+        let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+        let bob_conf = Mm2TestConf::seednode(&hex::encode(bob_priv_key), &coins);
+        let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+            bob_conf.conf,
+            bob_conf.rpc_password,
+            None,
+            &[],
+        ))
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+        let alice_conf =
+            Mm2TestConf::light_node(&hex::encode(alice_priv_key), &coins, &[mm_bob.ip.to_string().as_str()]);
+        let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+            alice_conf.conf,
+            alice_conf.rpc_password,
+            None,
+            &[("TEST_TIMESTAMP_OFFSET", offset.to_string().as_str())],
+        ))
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+        block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+        let res_bob = block_on(mm_bob.rpc(&json!({
+            "userpass": mm_bob.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(res_bob.0.is_success(), "!get_directly_connected_peers: {}", res_bob.1);
+        let bob_peers = serde_json::from_str::<Json>(&res_bob.1).unwrap();
+
+        let res_alice = block_on(mm_alice.rpc(&json!({
+            "userpass": mm_alice.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(
+            res_alice.0.is_success(),
+            "!get_directly_connected_peers: {}",
+            res_alice.1
+        );
+        let alice_peers = serde_json::from_str::<Json>(&res_alice.1).unwrap();
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+        (bob_peers, alice_peers)
+    };
+
+    // check with small time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_tolerable);
+    assert!(
+        bob_peers["result"].as_object().unwrap().len() == 1,
+        "bob must have one peer"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().len() == 1,
+        "alice must have one peer"
+    );
+
+    // check with too big time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_too_big);
+    assert!(
+        bob_peers["result"].as_object().unwrap().is_empty(),
+        "bob must have no peers"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().is_empty(),
+        "alice must have no peers"
+    );
 }

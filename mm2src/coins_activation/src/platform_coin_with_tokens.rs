@@ -5,20 +5,19 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod};
+use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+            PrivKeyPolicyNotAllowed, UnexpectedDerivationMethod};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes, TaskId};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -38,6 +37,7 @@ pub type InitPlatformCoinWithTokensTaskManagerShared<Platform> =
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
+    protocol: Option<CoinProtocol>,
     #[serde(flatten)]
     request: Req,
 }
@@ -51,8 +51,10 @@ pub trait TokenOf: Into<MmCoinEnum> {
 
 pub struct TokenActivationParams<Req, Protocol> {
     pub(crate) ticker: String,
+    pub(crate) conf: Json,
     pub(crate) activation_request: Req,
     pub(crate) protocol: Protocol,
+    pub(crate) is_custom: bool,
 }
 
 #[async_trait]
@@ -81,21 +83,21 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 
     async fn enable_tokens_as_mm_coins(
         &self,
-        ctx: MmArc,
+        ctx: &MmArc,
         request: &Self::ActivationRequest,
     ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>>;
 }
 
 pub enum InitTokensAsMmCoinsError {
-    TokenAlreadyActivated(String),
     TokenConfigIsNotFound(String),
     CouldNotFetchBalance(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
-    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    UnexpectedTokenProtocol { ticker: String, protocol: Json },
     Transport(String),
     InvalidPayload(String),
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -111,6 +113,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }
@@ -124,30 +127,33 @@ impl<T> TokenAsMmCoinInitializer for T
 where
     T: TokenInitializer + Send + Sync,
     InitTokensAsMmCoinsError: From<T::InitTokensError>,
-    (T::InitTokensError, InitTokensAsMmCoinsError): NotEqual,
 {
     type PlatformCoin = <T::Token as TokenOf>::PlatformCoin;
     type ActivationRequest = <Self::PlatformCoin as PlatformCoinWithTokensActivationOps>::ActivationRequest;
 
     async fn enable_tokens_as_mm_coins(
         &self,
-        ctx: MmArc,
+        ctx: &MmArc,
         request: &Self::ActivationRequest,
     ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>> {
         let tokens_requests = T::tokens_requests_from_platform_request(request);
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (_, protocol): (_, T::TokenProtocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+                let (token_conf, protocol) =
+                    coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone()).map_mm_err()?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
+                    conf: token_conf,
                     activation_request: req.request,
                     protocol,
+                    is_custom: req.protocol.is_some(),
                 })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_mm_err()?;
 
-        let tokens = self.enable_tokens(token_params).await?;
+        let tokens = self.enable_tokens(token_params).await.map_mm_err()?;
         for token in tokens.iter() {
             self.platform_coin().register_token_info(token);
         }
@@ -164,16 +170,10 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
     type ActivationRequest: Clone + Send + Sync + TxHistory + ActivationRequestInfo;
     type PlatformProtocolInfo: TryFromCoinProtocol + Send;
     type ActivationResult: GetPlatformBalance + CurrentBlock + serde::Serialize + Send + Clone + Sync + 'static;
-    type ActivationError: NotMmError
-        + std::fmt::Debug
-        + NotEqual
-        + Into<EnablePlatformCoinWithTokensError>
-        + Clone
-        + Send
-        + Sync;
+    type ActivationError: NotMmError + std::fmt::Debug + Into<EnablePlatformCoinWithTokensError> + Clone + Send + Sync;
 
-    type InProgressStatus: InitPlatformCoinWithTokensInitialStatus + Clone + Send + Sync;
-    type AwaitingStatus: Clone + Send + Sync;
+    type InProgressStatus: InitPlatformCoinWithTokensInitialStatus + serde::Serialize + Clone + Send + Sync;
+    type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
 
     /// Initializes the platform coin itself
@@ -214,11 +214,6 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
         initial_balance: Option<BigDecimal>,
     );
 
-    async fn handle_balance_streaming(
-        &self,
-        config: &EventStreamConfiguration,
-    ) -> Result<(), MmError<Self::ActivationError>>;
-
     fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &InitPlatformCoinWithTokensTaskManagerShared<Self>
     where
         EnablePlatformCoinWithTokensError: From<Self::ActivationError>;
@@ -235,7 +230,6 @@ pub struct EnablePlatformCoinWithTokensReq<T: Clone> {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnablePlatformCoinWithTokensError {
     PlatformIsAlreadyActivated(String),
-    TokenIsAlreadyActivated(String),
     #[display(fmt = "Platform {} config is not found", _0)]
     PlatformConfigIsNotFound(String),
     #[display(fmt = "Platform coin {} protocol parsing failed: {}", ticker, error)]
@@ -243,10 +237,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
     UnexpectedPlatformProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
@@ -255,10 +249,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
     UnexpectedTokenProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     PlatformCoinCreationError {
@@ -283,6 +277,10 @@ pub enum EnablePlatformCoinWithTokensError {
     },
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
+    #[display(fmt = "WalletConnect Error: {}", _0)]
+    WalletConnectError(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -300,6 +298,7 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
                     error: err.to_string(),
                 }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -307,9 +306,6 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
 impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
     fn from(err: InitTokensAsMmCoinsError) -> Self {
         match err {
-            InitTokensAsMmCoinsError::TokenAlreadyActivated(ticker) => {
-                EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(ticker)
-            },
             InitTokensAsMmCoinsError::TokenConfigIsNotFound(ticker) => {
                 EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(ticker)
             },
@@ -327,6 +323,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e) => {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
+            InitTokensAsMmCoinsError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -362,9 +359,9 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Internal(_)
-            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. }
+            | EnablePlatformCoinWithTokensError::CustomTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
-            | EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
@@ -373,7 +370,8 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::NoSuchTask(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
-            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. }
+            | EnablePlatformCoinWithTokensError::WalletConnectError(_) => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
@@ -388,19 +386,23 @@ pub async fn re_enable_passive_platform_coin_with_tokens<Platform>(
 where
     Platform: PlatformCoinWithTokensActivationOps + Clone,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
-        let tokens = initializer.enable_tokens_as_mm_coins(ctx.clone(), &req.request).await?;
+        let tokens = initializer
+            .enable_tokens_as_mm_coins(&ctx, &req.request)
+            .await
+            .map_mm_err()?;
+
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await.map_mm_err()?;
 
     let activation_result = platform_coin
         .get_activation_result(task_handle, &req.request, &nft_global)
-        .await?;
+        .await
+        .map_mm_err()?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -419,7 +421,6 @@ pub async fn enable_platform_coin_with_tokens<Platform>(
 where
     Platform: PlatformCoinWithTokensActivationOps,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
     if req.request.is_hw_policy() {
         return MmError::err(EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy);
@@ -435,7 +436,6 @@ pub async fn enable_platform_coin_with_tokens_impl<Platform>(
 where
     Platform: PlatformCoinWithTokensActivationOps + Clone,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
     if let Ok(Some(coin)) = lp_coinfind_any(&ctx, &req.ticker).await {
         if !coin.is_available() {
@@ -449,7 +449,7 @@ where
         ));
     }
 
-    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker, None).map_mm_err()?;
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
@@ -458,31 +458,32 @@ where
         req.request.clone(),
         platform_protocol,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
-        let tokens = initializer.enable_tokens_as_mm_coins(ctx.clone(), &req.request).await?;
+        let tokens = initializer
+            .enable_tokens_as_mm_coins(&ctx, &req.request)
+            .await
+            .map_mm_err()?;
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin.enable_global_nft(&req.request).await?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await.map_mm_err()?;
 
     let activation_result = platform_coin
         .get_activation_result(task_handle, &req.request, &nft_global)
-        .await?;
+        .await
+        .map_mm_err()?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
         platform_coin.start_history_background_fetching(
             ctx.clone(),
-            TxHistoryStorageBuilder::new(&ctx).build()?,
+            TxHistoryStorageBuilder::new(&ctx).build().map_mm_err()?,
             activation_result.get_platform_balance(),
         );
-    }
-
-    if let Some(config) = &ctx.event_stream_configuration {
-        platform_coin.handle_balance_streaming(config).await?;
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -557,14 +558,14 @@ impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensInPro
 /// Implementation of the init platform coin with tokens RPC command.
 pub async fn init_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
-    request: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
+    request: RpcInitReq<EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>>,
 ) -> MmResult<EnablePlatformCoinWithTokensResponse, EnablePlatformCoinWithTokensError>
 where
     Platform: PlatformCoinWithTokensActivationOps + Send + Sync + 'static + Clone,
     Platform::InProgressStatus: InitPlatformCoinWithTokensInitialStatus,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
+    let (client_id, request) = (request.client_id, request.inner);
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(
             request.ticker,
@@ -577,7 +578,7 @@ where
     let task = InitPlatformCoinWithTokensTask::<Platform> { ctx, request };
     let task_manager = Platform::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task, client_id)
         .mm_err(|e| EnablePlatformCoinWithTokensError::Internal(e.to_string()))?;
 
     Ok(EnablePlatformCoinWithTokensResponse { task_id })
@@ -618,12 +619,14 @@ pub async fn init_platform_coin_with_tokens_user_action<Platform: PlatformCoinWi
 where
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
 {
-    let coins_act_ctx =
-        CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitPlatformCoinWithTokensUserActionError::Internal)?;
+    let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
+        .map_to_mm(InitPlatformCoinWithTokensUserActionError::Internal)
+        .map_mm_err()?;
     let mut task_manager = Platform::rpc_task_manager(&coins_act_ctx)
         .lock()
-        .map_to_mm(|poison| InitPlatformCoinWithTokensUserActionError::Internal(poison.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+        .map_to_mm(|poison| InitPlatformCoinWithTokensUserActionError::Internal(poison.to_string()))
+        .map_mm_err()?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -635,12 +638,14 @@ pub async fn cancel_init_platform_coin_with_tokens<Platform: PlatformCoinWithTok
 where
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
 {
-    let coins_act_ctx =
-        CoinsActivationContext::from_ctx(&ctx).map_to_mm(CancelInitPlatformCoinWithTokensError::Internal)?;
+    let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
+        .map_to_mm(CancelInitPlatformCoinWithTokensError::Internal)
+        .map_mm_err()?;
     let mut task_manager = Platform::rpc_task_manager(&coins_act_ctx)
         .lock()
-        .map_to_mm(|poison| CancelInitPlatformCoinWithTokensError::Internal(poison.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+        .map_to_mm(|poison| CancelInitPlatformCoinWithTokensError::Internal(poison.to_string()))
+        .map_mm_err()?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -661,11 +666,11 @@ pub mod for_tests {
     use common::{executor::Timer, now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
     use mm2_err_handle::prelude::MmResult;
-    use rpc_task::RpcTaskStatus;
+    use rpc_task::{RpcInitReq, RpcTaskStatus};
 
     use super::{init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
                 EnablePlatformCoinWithTokensError, EnablePlatformCoinWithTokensReq,
-                EnablePlatformCoinWithTokensStatusRequest, InitPlatformCoinWithTokensInitialStatus, NotEqual,
+                EnablePlatformCoinWithTokensStatusRequest, InitPlatformCoinWithTokensInitialStatus,
                 PlatformCoinWithTokensActivationOps};
 
     /// test helper to activate platform coin with waiting for the result
@@ -677,8 +682,11 @@ pub mod for_tests {
         Platform: PlatformCoinWithTokensActivationOps + Clone + Send + Sync + 'static,
         Platform::InProgressStatus: InitPlatformCoinWithTokensInitialStatus,
         EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-        (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
     {
+        let request = RpcInitReq {
+            client_id: 0,
+            inner: request,
+        };
         let init_result = init_platform_coin_with_tokens::<Platform>(ctx.clone(), request)
             .await
             .unwrap();

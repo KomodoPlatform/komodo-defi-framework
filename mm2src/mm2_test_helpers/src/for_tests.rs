@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::qtum_electrums;
+use crate::electrums::tqtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -186,6 +186,8 @@ pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
 ];
+
+/// NOTE: These are websocket servers.
 #[cfg(target_arch = "wasm32")]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:30020",
@@ -199,21 +201,21 @@ pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+#[cfg(not(target_arch = "wasm32"))]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:10033", "zombie.dragonhound.info:10133"];
+#[cfg(target_arch = "wasm32")]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:30058", "zombie.dragonhound.info:30059"];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://zombie.dragonhound.info:443",
+    "https://zombie.dragonhound.info:1443",
+];
 pub const ARRR: &str = "ARRR";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &[
+#[cfg(not(target_arch = "wasm32"))]
+pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10008",
     "electrum2.cipig.net:10008",
     "electrum3.cipig.net:10008",
 ];
-pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
-    "https://lightd1.pirate.black:443",
-    "https://piratelightd1.cryptoforge.cc:443",
-    "https://piratelightd2.cryptoforge.cc:443",
-    "https://piratelightd3.cryptoforge.cc:443",
-    "https://piratelightd4.cryptoforge.cc:443",
-];
-#[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:30008",
@@ -221,7 +223,13 @@ pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:30008",
 ];
 #[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://lightd1.pirate.black:443",
+    "https://piratelightd1.cryptoforge.cc:443",
+    "https://piratelightd2.cryptoforge.cc:443",
+    "https://piratelightd3.cryptoforge.cc:443",
+    "https://piratelightd4.cryptoforge.cc:443",
+];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["https://pirate.battlefield.earth:8581"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
@@ -231,17 +239,23 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:10071",
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
-pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum1.cipig.net:10068",
-    "electrum2.cipig.net:10068",
-    "electrum3.cipig.net:10068",
-];
+pub const TBTC_ELECTRUMS: &[&str] = &["electrum3.cipig.net:10068", "testnet.aranguren.org:51001"];
 
-pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
+pub const ETH_MAINNET_NODES: &[&str] = &[
+    "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.drpc.org",
+];
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_SEPOLIA_NODES: &[&str] = &["https://ethereum-sepolia-rpc.publicnode.com","https://rpc2.sepolia.org","https://1rpc.io/sepolia"];
+pub const ETH_SEPOLIA_NODES: &[&str] = &[
+    "https://sepolia.drpc.org",
+    "https://ethereum-sepolia-rpc.publicnode.com",
+    "https://rpc2.sepolia.org",
+    "https://1rpc.io/sepolia",
+    "https://sepolia.drpc.org",
+];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
@@ -263,6 +277,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -279,6 +294,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -294,6 +310,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "enable_hd": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -310,6 +327,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "enable_hd": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -325,6 +343,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "wallet_name": wallet_name,
                 "wallet_password": wallet_password,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -408,6 +427,11 @@ impl Mm2TestConf {
     }
 
     pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
+        assert!(
+            !seednodes.is_empty(),
+            "Invalid Test Setup: A no-login node requires at least one seednode."
+        );
+
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -461,14 +485,18 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json {
+pub fn zombie_conf() -> Json { zombie_conf_inner(None, 0) }
+
+pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10), 1) }
+
+pub fn zombie_conf_inner(custom_blocktime: Option<u8>, required_confirmations: u8) -> Json {
     json!({
         "coin":"ZOMBIE",
         "asset":"ZOMBIE",
         "txversion":4,
-        "overwintered":1,
+        "overwintered": 1,
         "mm2":1,
-        "avg_blocktime": 60,
+        "avg_blocktime": custom_blocktime.unwrap_or(60),
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
@@ -488,7 +516,7 @@ pub fn zombie_conf() -> Json {
                 "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0,
+        "required_confirmations": required_confirmations,
         "derivation_path": "m/44'/133'",
     })
 }
@@ -517,9 +545,11 @@ pub fn pirate_conf() -> Json {
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
                 },
+                "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/44'/133'",
     })
 }
 
@@ -531,6 +561,7 @@ pub fn rick_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "derivation_path": "m/44'/141'",
+        "sign_message_prefix": "Komodo Signed Message:\n",
         "protocol":{
             "type":"UTXO"
         }
@@ -804,26 +835,34 @@ pub fn eth_testnet_conf_trezor() -> Json {
         "coin": "ETH",
         "name": "ethereum",
         "mm2": 1,
-        "chain_id": 1337,
         "max_eth_tx_type": 2,
         "derivation_path": "m/44'/1'", // Trezor uses coin type 1 for testnet
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 1337,
+            }
         },
         "trezor_coin": "Ethereum"
     })
 }
 
 /// ETH configuration used for dockerized Geth dev node
-pub fn eth_dev_conf() -> Json {
+pub fn eth_dev_conf() -> Json { eth_conf("ETH") }
+
+pub fn eth1_dev_conf() -> Json { eth_conf("ETH1") }
+
+fn eth_conf(coin: &str) -> Json {
     json!({
-        "coin": "ETH",
+        "coin": coin,
         "name": "ethereum",
         "mm2": 1,
-        "chain_id": 1337,
         "derivation_path": "m/44'/60'",
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 1337,
+            }
         },
         "max_eth_tx_type": 2
     })
@@ -834,7 +873,6 @@ pub fn erc20_dev_conf(contract_address: &str) -> Json {
     json!({
         "coin": "ERC20DEV",
         "name": "erc20dev",
-        "chain_id": 1337,
         "mm2": 1,
         "derivation_path": "m/44'/60'",
         "protocol": {
@@ -860,7 +898,6 @@ pub fn nft_dev_conf() -> Json {
     json!({
         "coin": "NFT_ETH",
         "name": "nftdev",
-        "chain_id": 1337,
         "mm2": 1,
         "derivation_path": "m/44'/60'",
         "protocol": {
@@ -880,9 +917,11 @@ pub fn eth_sepolia_conf() -> Json {
         "coin": "ETH",
         "name": "ethereum",
         "derivation_path": "m/44'/60'",
-        "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": ETH_SEPOLIA_CHAIN_ID,
+            }
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "Ethereum"
@@ -894,9 +933,11 @@ pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
         "coin": "tETH",
         "name": "ethereum",
         "derivation_path": "m/44'/1'", // Note: trezor uses coin type 1' for eth for testnet (SLIP44_TESTNET)
-        "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": ETH_SEPOLIA_CHAIN_ID,
+            }
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "tETH"
@@ -907,7 +948,6 @@ pub fn eth_jst_testnet_conf() -> Json {
     json!({
         "coin": "JST",
         "name": "jst",
-        "chain_id": 1337,
         "derivation_path": "m/44'/60'",
         "protocol": {
             "type": "ERC20",
@@ -924,12 +964,10 @@ pub fn jst_sepolia_conf() -> Json {
     json!({
         "coin": "JST",
         "name": "jst",
-        "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "protocol": {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "chain_id": ETH_SEPOLIA_CHAIN_ID,
                 "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         },
@@ -941,14 +979,12 @@ pub fn jst_sepolia_trezor_conf() -> Json {
     json!({
         "coin": "tJST",
         "name": "tjst",
-        "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "derivation_path": "m/44'/1'", // Note: Trezor uses 1' coin type for all testnets
         "trezor_coin": "tETH",
         "protocol": {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "chain_id": ETH_SEPOLIA_CHAIN_ID,
                 "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         }
@@ -1073,11 +1109,13 @@ pub fn tbnb_conf() -> Json {
         "coin": "tBNB",
         "name": "binancesmartchaintest",
         "avg_blocktime": 0.25,
-        "chain_id": 97,
         "mm2": 1,
         "required_confirmations": 0,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 97
+            }
         }
     })
 }
@@ -1129,10 +1167,16 @@ pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
     let ctx = ctx_builder.into_mm_arc();
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .shared_sqlite_conn
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
@@ -1146,10 +1190,16 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let connection = AsyncConnection::open_in_memory().await.unwrap();
-    let _ = ctx.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(connection)));
+    let _ = ctx
+        .async_sqlite_connection
+        .set(Arc::new(AsyncMutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
+
+#[cfg(target_arch = "wasm32")]
+pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -1413,6 +1463,7 @@ impl MarketMakerIt {
         local: Option<LocalStart>,
         db_namespace_id: Option<u64>,
     ) -> Result<MarketMakerIt, String> {
+        conf["allow_weak_password"] = true.into();
         if conf["p2p_in_memory"].is_null() {
             conf["p2p_in_memory"] = Json::Bool(true);
         }
@@ -1428,8 +1479,7 @@ impl MarketMakerIt {
         }
 
         let ctx = {
-            let builder = MmCtxBuilder::new()
-                .with_conf(conf.clone());
+            let builder = MmCtxBuilder::new().with_conf(conf.clone());
 
             let builder = if let Some(ns) = db_namespace_id {
                 builder.with_test_db_namespace_with_id(ns)
@@ -1522,7 +1572,7 @@ impl MarketMakerIt {
         let wasm_rpc = self
             .ctx
             .wasm_rpc
-            .as_option()
+            .get()
             .expect("'MmCtx::rpc' must be initialized already");
         match wasm_rpc.request(payload.clone()).await {
             // Please note a new type of error will be introduced soon.
@@ -1829,6 +1879,7 @@ pub fn mm_spat() -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
             ],
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true,
         }),
         "pass".into(),
         None,
@@ -2026,6 +2077,56 @@ pub async fn enable_eth_coin(
         .await
         .unwrap();
     assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
+#[derive(Clone)]
+pub struct SwapV2TestContracts {
+    pub maker_swap_v2_contract: String,
+    pub taker_swap_v2_contract: String,
+    pub nft_maker_swap_v2_contract: String,
+}
+
+#[derive(Clone)]
+pub struct TestNode {
+    pub url: String,
+}
+
+pub async fn enable_eth_coin_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    swap_contract_address: &str,
+    swap_v2_contracts: SwapV2TestContracts,
+    fallback_swap_contract: Option<&str>,
+    nodes: &[TestNode],
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "mm2": 1,
+                "swap_contract_address": swap_contract_address,
+                "swap_v2_contracts": {
+                    "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                    "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                    "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+                },
+                "fallback_swap_contract": fallback_swap_contract,
+                "nodes": nodes.iter().map(|node| json!({ "url": node.url })).collect::<Vec<_>>(),
+                "erc20_tokens_requests": []
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
     json::from_str(&enable.1).unwrap()
 }
 
@@ -2649,7 +2750,7 @@ pub async fn withdraw_v1(
 
 pub async fn ibc_withdraw(
     mm: &MarketMakerIt,
-    source_channel: &str,
+    source_channel: u16,
     coin: &str,
     to: &str,
     amount: &str,
@@ -2789,7 +2890,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<HDAddressSelector>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2798,7 +2899,8 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
             "id": 0,
             "params":{
               "coin": coin,
-              "message":"test"
+              "message": "test",
+              "address": derivation_path
             }
         }))
         .await
@@ -2886,6 +2988,20 @@ pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
     assert_eq!(request.0, StatusCode::OK, "'get_wallet_names' failed: {}", request.1);
     let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
     res.result
+}
+
+pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str) -> (StatusCode, String, HeaderMap) {
+    mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "delete_wallet",
+        "mmrpc": "2.0",
+        "params": {
+            "wallet_name": wallet_name,
+            "password": password,
+        }
+    }))
+        .await
+        .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
@@ -3056,6 +3172,52 @@ pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit:
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn tendermint_delegations(mm: &MarketMakerIt, coin: &str) -> Json {
+    let rpc_endpoint = "experimental::staking::query::delegations";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "limit": 0,
+                "page_number": 1
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'{rpc_endpoint}' failed: {}", request.1);
+    log!("{rpc_endpoint} response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn tendermint_ongoing_undelegations(mm: &MarketMakerIt, coin: &str) -> Json {
+    let rpc_endpoint = "experimental::staking::query::ongoing_undelegations";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "limit": 0,
+                "page_number": 1
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'{rpc_endpoint}' failed: {}", request.1);
+    log!("{rpc_endpoint} response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = json!({
         "userpass": mm.userpass,
@@ -3079,6 +3241,106 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn tendermint_validators(
+    mm: &MarketMakerIt,
+    coin: &str,
+    filter_by_status: &str,
+    limit: usize,
+    page_number: usize,
+) -> Json {
+    let rpc_endpoint = "experimental::staking::query::validators";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "filter_by_status": filter_by_status,
+                "limit": limit,
+                "page_number": page_number
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+    json::from_str(&response.1).unwrap()
+}
+
+pub async fn tendermint_add_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "experimental::staking::delegate";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
+pub async fn tendermint_remove_delegation_raw(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> (StatusCode, String, HeaderMap) {
+    let rpc_endpoint = "experimental::staking::undelegate";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    mm.rpc(&request).await.unwrap()
+}
+
+pub async fn tendermint_remove_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "experimental::staking::undelegate";
+    let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
 pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3091,12 +3353,14 @@ pub async fn init_utxo_electrum(
             "rpc": "Electrum",
             "rpc_data": {
                 "servers": servers,
-                "path_to_address": path_to_address,
             }
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
         activation_params["priv_key_policy"] = priv_key_policy.into();
+    }
+    if let Some(path_to_address) = path_to_address {
+        activation_params["path_to_address"] = json!(path_to_address);
     }
     let request = mm
         .rpc(&json!({
@@ -3253,6 +3517,99 @@ pub async fn enable_eth_with_tokens_v2(
     }
 }
 
+async fn init_erc20_token(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<(StatusCode, Json), Json> {
+    let (status, response, _) = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::init",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "protocol": protocol,
+                "activation_params": {
+                    "path_to_address": path_to_address.unwrap_or_default(),
+                }
+            }
+        }))
+        .await
+        .unwrap();
+
+    if status.is_success() {
+        Ok((status, json::from_str(&response).unwrap()))
+    } else {
+        Err(json::from_str(&response).unwrap())
+    }
+}
+
+async fn init_erc20_token_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_erc20::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_erc20_token_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    timeout: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<InitTokenActivationResult, Json> {
+    let init = init_erc20_token(mm, ticker, protocol, path_to_address).await?.1;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_ms(timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", ticker);
+        }
+
+        let status = init_erc20_token_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitErc20TokenStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitErc20TokenStatus::Ok(result) => break Ok(result),
+            InitErc20TokenStatus::Error(e) => break Err(e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+pub async fn get_token_info(mm: &MarketMakerIt, protocol: Json) -> TokenInfoResponse {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_token_info",
+            "mmrpc": "2.0",
+            "params": {
+                "protocol": protocol,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'get_token_info' failed: {}", response.1);
+    let response_json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(response_json["result"].clone()).unwrap()
+}
+
 /// Note that mm2 ignores `volume` if `max` is true.
 pub async fn set_price(
     mm: &MarketMakerIt,
@@ -3261,6 +3618,7 @@ pub async fn set_price(
     price: &str,
     vol: &str,
     max: bool,
+    timeout_in_minutes: Option<u16>,
 ) -> SetPriceResponse {
     let request = mm
         .rpc(&json!({
@@ -3271,6 +3629,7 @@ pub async fn set_price(
             "price": price,
             "volume": vol,
             "max": max,
+            "timeout_in_minutes": timeout_in_minutes,
         }))
         .await
         .unwrap();
@@ -3399,6 +3758,8 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "coins": coins,
             "rpc_password": "pass",
             "metrics_interval": 30.,
+            "disable_p2p": true,
+            "p2p_in_memory": false
         }),
         "pass".into(),
         local_start,
@@ -3419,7 +3780,7 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": "QRC20",
-            "servers": qtum_electrums(),
+            "servers": tqtum_electrums(),
             "mm2": 1,
             "tx_history": true,
             "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",

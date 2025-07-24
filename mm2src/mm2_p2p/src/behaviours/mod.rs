@@ -5,7 +5,7 @@ mod ping;
 pub(crate) mod peers_exchange;
 pub(crate) mod request_response;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use async_std::task::spawn;
     use common::executor::abortable_queue::AbortableQueue;
@@ -16,7 +16,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
-    #[cfg(not(windows))] use std::sync::Mutex;
+    #[cfg(target_os = "linux")] use std::sync::Mutex;
     use std::time::Duration;
 
     use crate::behaviours::peers_exchange::{PeerIdSerde, PeersExchange};
@@ -106,17 +106,16 @@ mod tests {
 
         let node1_port = next_port();
         let node1 = Node::spawn(node1_port, vec![], move |mut cmd_tx, event| {
-            let (request, response_channel) = match event {
+            let response_channel = match event {
                 AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                     request,
                     response_channel,
                     ..
-                }) => (request.req, AdexResponseChannel(response_channel)),
+                }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                 _ => return,
             };
 
             request_received_cpy.store(true, Ordering::Relaxed);
-            assert_eq!(request, b"test request");
 
             let res = AdexResponse::Ok {
                 response: b"test response".to_vec(),
@@ -146,7 +145,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(not(windows))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
+    #[cfg(target_os = "linux")] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
     async fn test_request_response_ok_three_peers() {
         let _ = env_logger::try_init();
 
@@ -157,18 +156,16 @@ mod tests {
 
         impl RequestHandler {
             fn handle(&mut self, mut cmd_tx: mpsc::Sender<AdexBehaviourCmd>, event: AdexBehaviourEvent) {
-                let (request, response_channel) = match event {
+                let response_channel = match event {
                     AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                         request,
                         response_channel,
                         ..
-                    }) => (request.req, AdexResponseChannel(response_channel)),
+                    }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                     _ => return,
                 };
 
                 self.requests += 1;
-
-                assert_eq!(request, b"test request");
 
                 // the first time we should respond the none
                 if self.requests == 1 {
@@ -249,17 +246,16 @@ mod tests {
 
         let node1_port = next_port();
         let _node1 = Node::spawn(node1_port, vec![], move |mut cmd_tx, event| {
-            let (request, response_channel) = match event {
+            let response_channel = match event {
                 AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                     request,
                     response_channel,
                     ..
-                }) => (request.req, AdexResponseChannel(response_channel)),
+                }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                 _ => return,
             };
 
             request_received_cpy.store(true, Ordering::Relaxed);
-            assert_eq!(request, b"test request");
 
             let res = AdexResponse::None;
             cmd_tx
@@ -293,16 +289,14 @@ mod tests {
 
         let receiver1_port = next_port();
         let receiver1 = Node::spawn(receiver1_port, vec![], move |mut cmd_tx, event| {
-            let (request, response_channel) = match event {
+            let response_channel = match event {
                 AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                     request,
                     response_channel,
                     ..
-                }) => (request.req, AdexResponseChannel(response_channel)),
+                }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                 _ => return,
             };
-
-            assert_eq!(request, b"test request");
 
             let res = AdexResponse::None;
             cmd_tx
@@ -313,16 +307,14 @@ mod tests {
 
         let receiver2_port = next_port();
         let receiver2 = Node::spawn(receiver2_port, vec![], move |mut cmd_tx, event| {
-            let (request, response_channel) = match event {
+            let response_channel = match event {
                 AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                     request,
                     response_channel,
                     ..
-                }) => (request.req, AdexResponseChannel(response_channel)),
+                }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                 _ => return,
             };
-
-            assert_eq!(request, b"test request");
 
             let res = AdexResponse::Err {
                 error: "test error".into(),
@@ -335,16 +327,14 @@ mod tests {
 
         let receiver3_port = next_port();
         let receiver3 = Node::spawn(receiver3_port, vec![], move |mut cmd_tx, event| {
-            let (request, response_channel) = match event {
+            let response_channel = match event {
                 AdexBehaviourEvent::RequestResponse(RequestResponseBehaviourEvent::InboundRequest {
                     request,
                     response_channel,
                     ..
-                }) => (request.req, AdexResponseChannel(response_channel)),
+                }) if request.req == b"test request" => AdexResponseChannel(response_channel),
                 _ => return,
             };
-
-            assert_eq!(request, b"test request");
 
             let res = AdexResponse::Ok {
                 response: b"test response".to_vec(),

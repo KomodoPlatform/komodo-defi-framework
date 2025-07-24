@@ -463,7 +463,9 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<String>,
     },
-    TendermintIBCTransfer,
+    TendermintIBCTransfer {
+        token_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -716,6 +718,15 @@ pub enum InitEthWithTokensStatus {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitErc20TokenStatus {
+    Ok(InitTokenActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitLightningStatus {
     Ok(LightningActivationResult),
     Error(Json),
@@ -735,7 +746,7 @@ pub enum CreateNewAccountStatus {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
-pub enum WithdrawFrom {
+pub enum HDAddressSelector {
     AddressId(HDAccountAddressId),
     DerivationPath { derivation_path: String },
 }
@@ -913,6 +924,17 @@ pub enum EthWithTokensActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct InitTokenActivationResult {
+    pub ticker: String,
+    pub platform_coin: String,
+    pub token_contract_address: String,
+    pub current_block: u64,
+    pub required_confirmations: u64,
+    pub wallet_balance: EnableCoinBalanceMap,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
     pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
@@ -975,7 +997,6 @@ pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
-    AddressDerivationPath(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -1185,4 +1206,26 @@ pub struct CoinsNeededForKickstartResponse {
 pub struct ActiveSwapsResponse {
     pub uuids: Vec<Uuid>,
     pub statuses: Option<HashMap<Uuid, Json>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Erc20TokenInfo {
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "info")]
+pub enum TokenInfo {
+    ERC20(Erc20TokenInfo),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenInfoResponse {
+    pub config_ticker: Option<String>,
+    #[serde(flatten)]
+    pub info: TokenInfo,
 }

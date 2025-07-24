@@ -94,7 +94,7 @@ pub fn secp_privkey_from_hash(mut hash: Secp256k1Secret) -> Secp256k1Secret {
 }
 
 pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {
-    let private = private_from_seed(seed)?;
+    let private = private_from_seed(seed).map_mm_err()?;
     if !private.compressed {
         return MmError::err(PrivKeyError::ExpectedCompressedKeys);
     }
@@ -104,11 +104,7 @@ pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {
     Ok(pair)
 }
 
-pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
-    if secret.len() != 32 {
-        return MmError::err(PrivKeyError::InvalidPrivKey(KeysError::InvalidPrivate.to_string()));
-    }
-
+pub fn key_pair_from_secret(secret: &[u8; 32]) -> PrivKeyResult<KeyPair> {
     let private = Private {
         prefix: 0,
         secret: secret.into(),

@@ -1,8 +1,8 @@
 use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
-use coins::eth::display_eth_address;
 use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
+use coins::hd_wallet::DisplayAddress;
 use coins::nft::nft_structs::NftInfo;
 use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
                   valid_addr_from_str, EthCoin},
@@ -10,6 +10,7 @@ use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
@@ -43,6 +44,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             EthTokenActivationError::InvalidPayload(e) => EnableTokenError::InvalidPayload(e),
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
+            EthTokenActivationError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
         }
     }
 }
@@ -70,6 +72,7 @@ impl TryFromCoinProtocol for Erc20Protocol {
                 contract_address,
             } => {
                 let token_addr = valid_addr_from_str(&contract_address).map_err(|_| CoinProtocol::ERC20 {
+                    // TODO: maybe add error description to this err (we're losing 'Invalid address checksum' here)
                     platform: platform.clone(),
                     contract_address,
                 })?;
@@ -133,16 +136,30 @@ impl TokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         match activation_params {
             EthTokenActivationParams::Erc20(erc20_init_params) => match protocol_conf {
                 EthTokenProtocol::Erc20(erc20_protocol) => {
                     let token = platform_coin
-                        .initialize_erc20_token(erc20_init_params, erc20_protocol, ticker.clone())
-                        .await?;
+                        .initialize_erc20_token(
+                            ticker.clone(),
+                            erc20_init_params,
+                            token_conf,
+                            erc20_protocol,
+                            is_custom,
+                        )
+                        .await
+                        .map_mm_err()?;
 
-                    let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);
+                    let address = token
+                        .derivation_method()
+                        .single_addr_or_err()
+                        .await
+                        .map_mm_err()?
+                        .display_address();
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
                     })?;
@@ -176,9 +193,10 @@ impl TokenActivationOps for EthCoin {
                         ));
                     }
                     let nft_global = match &nft_init_params.provider {
-                        NftProviderEnum::Moralis { url, komodo_proxy } => {
-                            platform_coin.initialize_global_nft(url, *komodo_proxy).await?
-                        },
+                        NftProviderEnum::Moralis { url, komodo_proxy } => platform_coin
+                            .initialize_global_nft(url, *komodo_proxy)
+                            .await
+                            .map_mm_err()?,
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {

@@ -1,11 +1,13 @@
 use crate::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
+use crate::lp_swap::maker_swap_v2::{MakerSwapDbRepr, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
+use crate::lp_swap::taker_swap_v2::{TakerSwapDbRepr, TakerSwapStateMachine, TakerSwapStorage};
 use crate::lp_swap::{swap_v2_topic, SwapsContext};
-use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::{lp_coinfind, MmCoinEnum};
+use coins::{lp_coinfind, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{error, info, warn};
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_state_machine::storable_state_machine::{StateMachineDbRepr, StateMachineStorage, StorableStateMachine};
@@ -37,7 +39,7 @@ pub struct ActiveSwapV2Info {
 }
 
 /// DB representation of tx preimage with signature
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StoredTxPreimage {
     pub preimage: BytesJson,
     pub signature: BytesJson,
@@ -106,10 +108,10 @@ pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, S
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let maybe_item = table.get_item_by_unique_index("uuid", id).await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let maybe_item = table.get_item_by_unique_index("uuid", id).await.map_mm_err()?;
     Ok(maybe_item.is_some())
 }
 
@@ -142,11 +144,11 @@ pub(super) async fn store_swap_event<T: StateMachineDbRepr + DeserializeOwned + 
     event: T::Event,
 ) -> MmResult<(), SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
 
-    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await? {
+    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, SavedSwapTable { saved_swap, .. })) => saved_swap,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
@@ -158,18 +160,21 @@ pub(super) async fn store_swap_event<T: StateMachineDbRepr + DeserializeOwned + 
         uuid: id,
         saved_swap: serde_json::to_value(swap_repr)?,
     };
-    table.replace_item_by_unique_index("uuid", id, &new_item).await?;
+    table
+        .replace_item_by_unique_index("uuid", id, &new_item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn get_swap_repr<T: DeserializeOwned>(ctx: &MmArc, id: Uuid) -> MmResult<T, SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
 
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await? {
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, SavedSwapTable { saved_swap, .. })) => saved_swap,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
@@ -196,14 +201,16 @@ pub(super) async fn get_unfinished_swaps_uuids(
     swap_type: u8,
 ) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
     let index = MultiIndex::new(IS_FINISHED_SWAP_TYPE_INDEX)
-        .with_value(BoolAsInt::new(false))?
-        .with_value(swap_type)?;
+        .with_value(BoolAsInt::new(false))
+        .map_mm_err()?
+        .with_value(swap_type)
+        .map_mm_err()?;
 
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let table_items = table.get_items_by_multi_index(index).await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let table_items = table.get_items_by_multi_index(index).await.map_mm_err()?;
 
     Ok(table_items.into_iter().map(|(_item_id, item)| item.uuid).collect())
 }
@@ -216,15 +223,18 @@ pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), 
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let mut item = match table.get_item_by_unique_index("uuid", id).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let mut item = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
     item.is_finished = true.into();
-    table.replace_item_by_unique_index("uuid", id, &item).await?;
+    table
+        .replace_item_by_unique_index("uuid", id, &item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
@@ -258,7 +268,7 @@ pub(super) fn clean_up_context_impl(ctx: &MmArc, uuid: &Uuid, maker_coin: &str, 
 pub(super) async fn acquire_reentrancy_lock_impl(ctx: &MmArc, uuid: Uuid) -> MmResult<SwapLock, SwapStateMachineError> {
     let mut attempts = 0;
     loop {
-        match SwapLock::lock(ctx, uuid, 40.).await? {
+        match SwapLock::lock(ctx, uuid, 40.).await.map_mm_err()? {
             Some(l) => break Ok(l),
             None => {
                 if attempts >= 1 {
@@ -292,25 +302,18 @@ pub(super) trait GetSwapCoins {
     fn taker_coin(&self) -> &str;
 }
 
-/// Generic function for upgraded swaps kickstart handling.
-/// It is implemented only for UtxoStandardCoin/UtxoStandardCoin case temporary.
-pub(super) async fn swap_kickstart_handler<
-    T: StorableStateMachine<RecreateCtx = SwapRecreateCtx<UtxoStandardCoin, UtxoStandardCoin>>,
->(
-    ctx: MmArc,
-    swap_repr: <T::Storage as StateMachineStorage>::DbRepr,
-    storage: T::Storage,
-    uuid: <T::Storage as StateMachineStorage>::MachineId,
-) where
-    <T::Storage as StateMachineStorage>::MachineId: Copy + std::fmt::Display,
-    <T::Storage as StateMachineStorage>::DbRepr: GetSwapCoins,
-    T::Error: std::fmt::Display,
-    T::RecreateError: std::fmt::Display,
-{
+/// Attempts to find and return the maker and taker coins required for the swap to proceed.
+/// If a coin is not activated, it logs the information and retries until the coin is found.
+/// If an unexpected issue occurs, function logs the error and returns `None`.
+pub(super) async fn swap_kickstart_coins<T: GetSwapCoins>(
+    ctx: &MmArc,
+    swap_repr: &T,
+    uuid: &Uuid,
+) -> Option<(MmCoinEnum, MmCoinEnum)> {
     let taker_coin_ticker = swap_repr.taker_coin();
 
     let taker_coin = loop {
-        match lp_coinfind(&ctx, taker_coin_ticker).await {
+        match lp_coinfind(ctx, taker_coin_ticker).await {
             Ok(Some(c)) => break c,
             Ok(None) => {
                 info!(
@@ -321,7 +324,7 @@ pub(super) async fn swap_kickstart_handler<
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, taker_coin_ticker);
-                return;
+                return None;
             },
         };
     };
@@ -329,7 +332,7 @@ pub(super) async fn swap_kickstart_handler<
     let maker_coin_ticker = swap_repr.maker_coin();
 
     let maker_coin = loop {
-        match lp_coinfind(&ctx, maker_coin_ticker).await {
+        match lp_coinfind(ctx, maker_coin_ticker).await {
             Ok(Some(c)) => break c,
             Ok(None) => {
                 info!(
@@ -340,22 +343,30 @@ pub(super) async fn swap_kickstart_handler<
             },
             Err(e) => {
                 error!("Error {} on {} find attempt", e, maker_coin_ticker);
-                return;
+                return None;
             },
         };
     };
 
-    let (maker_coin, taker_coin) = match (maker_coin, taker_coin) {
-        (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => (m, t),
-        _ => {
-            error!(
-                "V2 swaps are not currently supported for {}/{} pair",
-                maker_coin_ticker, taker_coin_ticker
-            );
-            return;
-        },
-    };
+    Some((maker_coin, taker_coin))
+}
 
+/// Handles the recreation and kickstart of a swap state machine.
+pub(super) async fn swap_kickstart_handler<
+    T: StorableStateMachine<RecreateCtx = SwapRecreateCtx<MakerCoin, TakerCoin>>,
+    MakerCoin: MmCoin + MakerCoinSwapOpsV2,
+    TakerCoin: MmCoin + TakerCoinSwapOpsV2,
+>(
+    swap_repr: <T::Storage as StateMachineStorage>::DbRepr,
+    storage: T::Storage,
+    uuid: <T::Storage as StateMachineStorage>::MachineId,
+    maker_coin: MakerCoin,
+    taker_coin: TakerCoin,
+) where
+    <T::Storage as StateMachineStorage>::MachineId: Copy + std::fmt::Display,
+    T::Error: std::fmt::Display,
+    T::RecreateError: std::fmt::Display,
+{
     let recreate_context = SwapRecreateCtx { maker_coin, taker_coin };
 
     let (mut state_machine, state) = match T::recreate_machine(uuid, storage, swap_repr, recreate_context).await {
@@ -368,5 +379,67 @@ pub(super) async fn swap_kickstart_handler<
 
     if let Err(e) = state_machine.kickstart(state).await {
         error!("Error {} on trying to run the swap {}", e, uuid);
+    }
+}
+
+pub(super) async fn swap_kickstart_handler_for_maker(
+    ctx: MmArc,
+    swap_repr: MakerSwapDbRepr,
+    storage: MakerSwapStorage,
+    uuid: Uuid,
+) {
+    if let Some((maker_coin, taker_coin)) = swap_kickstart_coins(&ctx, &swap_repr, &uuid).await {
+        match (maker_coin, taker_coin) {
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+                swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+                swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            _ => {
+                error!(
+                    "V2 swaps are not currently supported for {}/{} pair",
+                    swap_repr.maker_coin(),
+                    swap_repr.taker_coin()
+                );
+            },
+        }
+    }
+}
+
+pub(super) async fn swap_kickstart_handler_for_taker(
+    ctx: MmArc,
+    swap_repr: TakerSwapDbRepr,
+    storage: TakerSwapStorage,
+    uuid: Uuid,
+) {
+    if let Some((maker_coin, taker_coin)) = swap_kickstart_coins(&ctx, &swap_repr, &uuid).await {
+        match (maker_coin, taker_coin) {
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+                swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+                swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
+            },
+            _ => {
+                error!(
+                    "V2 swaps are not currently supported for {}/{} pair",
+                    swap_repr.maker_coin(),
+                    swap_repr.taker_coin()
+                );
+            },
+        }
     }
 }

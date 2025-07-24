@@ -44,17 +44,22 @@ struct WebUsbLink {
 #[async_trait]
 impl Link for WebUsbLink {
     async fn write_chunk(&mut self, chunk: Vec<u8>) -> TrezorResult<()> {
-        if !self.device.is_open().await? {
+        if !self.device.is_open().await.map_mm_err()? {
             return MmError::err(TrezorError::DeviceDisconnected);
         }
-        Ok(self.device.write_chunk(self.endpoint_number, chunk).await?)
+
+        self.device.write_chunk(self.endpoint_number, chunk).await.map_mm_err()
     }
 
     async fn read_chunk(&mut self, chunk_len: u32) -> TrezorResult<Vec<u8>> {
-        if !self.device.is_open().await? {
+        if !self.device.is_open().await.map_mm_err()? {
             return MmError::err(TrezorError::DeviceDisconnected);
         }
-        Ok(self.device.read_chunk(self.endpoint_number, chunk_len).await?)
+
+        self.device
+            .read_chunk(self.endpoint_number, chunk_len)
+            .await
+            .map_mm_err()
     }
 }
 
@@ -66,15 +71,15 @@ impl WebUsbLink {
 
     /// Configure the WebUSB device.
     async fn establish_connection(&self, first: bool) -> TrezorResult<()> {
-        self.device.open().await?;
+        self.device.open().await.map_mm_err()?;
         if first {
-            self.device.select_configuration(CONFIGURATION_ID).await?;
+            self.device.select_configuration(CONFIGURATION_ID).await.map_mm_err()?;
             if let Err(e) = self.device.reset_device().await {
                 // Reset fails on ChromeOS and Windows.
                 warn!("{}", e);
             }
         }
-        self.device.claim_interface(self.interface_number).await?;
+        self.device.claim_interface(self.interface_number).await.map_mm_err()?;
         Ok(())
     }
 }
@@ -115,11 +120,12 @@ pub struct FoundDevices {
 ///
 /// This function **must** be called via a user gesture like a touch or mouse click.
 pub async fn find_devices() -> TrezorResult<FoundDevices> {
-    let wrapper = WebUsbWrapper::new()?;
+    let wrapper = WebUsbWrapper::new().map_mm_err()?;
     wrapper
         .request_device(TREZOR_DEVICES.iter().copied().map(DeviceFilter::from).collect())
-        .await?;
-    let devices_iter = wrapper.get_devices().await?.into_iter().filter(is_trezor);
+        .await
+        .map_mm_err()?;
+    let devices_iter = wrapper.get_devices().await.map_mm_err()?.into_iter().filter(is_trezor);
     let mut available = Vec::new();
     let mut not_supported = Vec::new();
     for device in devices_iter {

@@ -106,7 +106,7 @@ impl<'a> SqlUpdate<'a> {
 /// - [`SqlUpdate::or_where_in`]
 /// - [`SqlUpdate::or_where_in_quoted`]
 /// - [`SqlUpdate::or_where_in_params`]
-impl<'a> SqlCondition for SqlUpdate<'a> {
+impl SqlCondition for SqlUpdate<'_> {
     fn sql_builder(&mut self) -> &mut SqlBuilder { &mut self.sql_builder }
 
     fn sql_params(&mut self) -> &mut SqlParamsBuilder { &mut self.params }

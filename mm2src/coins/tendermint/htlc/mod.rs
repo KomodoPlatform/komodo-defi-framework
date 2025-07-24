@@ -33,8 +33,8 @@ impl FromStr for HtlcType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "iaa" => Ok(HtlcType::Iris),
-            "nuc" => Ok(HtlcType::Nucleus),
+            super::IRIS_PREFIX => Ok(HtlcType::Iris),
+            super::NUCLEUS_PREFIX => Ok(HtlcType::Nucleus),
             unsupported => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!("Account type '{unsupported}' is not supported for HTLCs"),

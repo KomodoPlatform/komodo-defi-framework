@@ -80,10 +80,10 @@ pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u
     use crate::lp_swap::swap_wasm_db::MySwapsFiltersTable;
 
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -108,6 +108,7 @@ pub(crate) struct MySwapForRpc<T> {
     maker_coin_nota: bool,
     taker_coin_confs: i64,
     taker_coin_nota: bool,
+    swap_version: u8,
 }
 
 impl<T: DeserializeOwned> MySwapForRpc<T> {
@@ -141,6 +142,7 @@ impl<T: DeserializeOwned> MySwapForRpc<T> {
             maker_coin_nota: row.get(12)?,
             taker_coin_confs: row.get(13)?,
             taker_coin_nota: row.get(14)?,
+            swap_version: row.get(15)?,
         })
     }
 }
@@ -187,16 +189,20 @@ pub(super) async fn get_maker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<MakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -218,6 +224,7 @@ pub(super) async fn get_maker_swap_data_for_rpc(
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
         taker_coin_confs: json_repr.conf_settings.taker_coin_confs as i64,
         taker_coin_nota: json_repr.conf_settings.taker_coin_nota,
+        swap_version: json_repr.swap_version,
     }))
 }
 
@@ -227,16 +234,20 @@ pub(super) async fn get_taker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<TakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -258,6 +269,7 @@ pub(super) async fn get_taker_swap_data_for_rpc(
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
         taker_coin_confs: json_repr.conf_settings.taker_coin_confs as i64,
         taker_coin_nota: json_repr.conf_settings.taker_coin_nota,
+        swap_version: json_repr.swap_version,
     }))
 }
 
@@ -297,18 +309,18 @@ async fn get_swap_data_by_uuid_and_type(
 ) -> MmResult<Option<SwapRpcData>, GetSwapDataErr> {
     match swap_type {
         LEGACY_SWAP_TYPE => {
-            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, uuid).await?;
+            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, None, uuid).await.map_mm_err()?;
             Ok(saved_swap.map(|swap| match swap {
                 SavedSwap::Maker(m) => SwapRpcData::MakerV1(m),
                 SavedSwap::Taker(t) => SwapRpcData::TakerV1(t),
             }))
         },
         MAKER_SWAP_V2_TYPE => {
-            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::MakerV2))
         },
         TAKER_SWAP_V2_TYPE => {
-            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::TakerV2))
         },
         unsupported => MmError::err(GetSwapDataErr::UnsupportedSwapType(unsupported)),
@@ -363,10 +375,12 @@ pub(crate) async fn my_swap_status_rpc(
     req: MySwapStatusRequest,
 ) -> MmResult<SwapRpcData, MySwapStatusError> {
     let swap_type = get_swap_type(&ctx, &req.uuid)
-        .await?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
     get_swap_data_by_uuid_and_type(&ctx, req.uuid, swap_type)
-        .await?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))
 }
 
@@ -425,7 +439,8 @@ pub(crate) async fn my_recent_swaps_rpc(
 ) -> MmResult<MyRecentSwapsResponse, MyRecentSwapsErr> {
     let db_result = MySwapsStorage::new(ctx.clone())
         .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
-        .await?;
+        .await
+        .map_mm_err()?;
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {

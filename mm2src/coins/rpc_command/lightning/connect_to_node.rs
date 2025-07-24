@@ -4,6 +4,7 @@ use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -68,7 +69,7 @@ pub struct ConnectToNodeRequest {
 
 /// Connect to a certain node on the lightning network.
 pub async fn connect_to_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ConnectToNodeError::UnsupportedCoin(e.ticker().to_string())),
     };

@@ -76,9 +76,6 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
     }
 }
 
-/// This is required for converting `MmError<HwProcessingError<E>>` into `MmError<InitHwCtxError<E>>`.
-impl<E> NotEqual for HwCtxInitError<E> {}
-
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug)]
 pub enum MetamaskCtxInitError {
@@ -265,7 +262,7 @@ impl CryptoCtx {
             *state = InitializationState::Initializing;
         }
 
-        let metamask_ctx = MetamaskCtx::init(project_name).await?;
+        let metamask_ctx = MetamaskCtx::init(project_name).await.map_mm_err()?;
         let metamask_arc = MetamaskArc::new(metamask_ctx);
 
         *self.metamask_ctx.write() = InitializationState::Ready(metamask_arc.clone());
@@ -302,7 +299,7 @@ impl CryptoCtx {
 
         let (secp256k1_key_pair, key_pair_policy) = policy_builder.build(passphrase)?;
         let rmd160 = secp256k1_key_pair.public().address_hash();
-        let shared_db_id = shared_db_id_from_seed(passphrase)?;
+        let shared_db_id = shared_db_id_from_seed(passphrase).map_mm_err()?;
 
         let crypto_ctx = CryptoCtx {
             secp256k1_key_pair,
@@ -316,10 +313,12 @@ impl CryptoCtx {
         *ctx_field = Some(result.clone());
         drop(ctx_field);
 
-        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
+        ctx.rmd160
+            .set(rmd160)
+            .map_to_mm(|_| CryptoInitError::Internal("Already Initialized".to_string()))?;
         ctx.shared_db_id
-            .pin(shared_db_id)
-            .map_to_mm(CryptoInitError::Internal)?;
+            .set(shared_db_id)
+            .map_to_mm(|_| CryptoInitError::Internal("Already Initialized".to_string()))?;
 
         info!("Public key hash: {rmd160}");
         info!("Shared Database ID: {shared_db_id}");
@@ -337,11 +336,11 @@ impl KeyPairPolicyBuilder {
     fn build(self, passphrase: &str) -> CryptoInitResult<(KeyPair, KeyPairPolicy)> {
         match self {
             KeyPairPolicyBuilder::Iguana => {
-                let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
+                let secp256k1_key_pair = key_pair_from_seed(passphrase).map_mm_err()?;
                 Ok((secp256k1_key_pair, KeyPairPolicy::Iguana))
             },
             KeyPairPolicyBuilder::GlobalHDAccount => {
-                let (mm2_internal_key_pair, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase)?;
+                let (mm2_internal_key_pair, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase).map_mm_err()?;
                 let key_pair_policy = KeyPairPolicy::GlobalHDAccount(global_hd_ctx.into_arc());
                 Ok((mm2_internal_key_pair, key_pair_policy))
             },
@@ -359,7 +358,7 @@ async fn init_check_hw_ctx_with_trezor(
     processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
     expected_pubkey: Option<HwPubkey>,
 ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<RpcTaskError>> {
-    let (hw_device_info, hw_ctx) = HardwareWalletCtx::init_with_trezor(processor).await?;
+    let (hw_device_info, hw_ctx) = HardwareWalletCtx::init_with_trezor(processor).await.map_mm_err()?;
     let expected_pubkey = match expected_pubkey {
         Some(expected) => expected,
         None => return Ok((hw_device_info, hw_ctx)),

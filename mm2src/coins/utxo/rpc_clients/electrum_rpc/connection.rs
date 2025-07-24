@@ -6,18 +6,19 @@ use crate::{RpcTransportEventHandler, SharableRpcTransportEventHandler};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, abortable_queue::WeakSpawner, AbortableSystem, SpawnFuture,
                        Timer};
-use common::expirable_map::ExpirableMap;
 use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
                              JsonRpcResponseEnum};
 use common::log::{error, info};
 use common::{now_float, now_ms};
 use mm2_rpc::data::legacy::ElectrumProtocol;
+use timed_map::{MapKind, TimedMap};
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use compatible_time::Instant;
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
 use futures::future::FutureExt;
@@ -27,7 +28,6 @@ use futures::stream::StreamExt;
 use futures01::sync::mpsc;
 use futures01::{Sink, Stream};
 use http::Uri;
-use instant::Instant;
 use serde::Serialize;
 
 cfg_native! {
@@ -48,7 +48,7 @@ cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
 
-pub type JsonRpcPendingRequests = ExpirableMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
+pub type JsonRpcPendingRequests = TimedMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 
 macro_rules! disconnect_and_return {
     ($typ:tt, $err:expr, $conn:expr, $handlers:expr) => {{
@@ -177,7 +177,7 @@ impl ElectrumConnection {
             settings,
             tx: Mutex::new(None),
             establishing_connection: AsyncMutex::new(()),
-            responses: Mutex::new(JsonRpcPendingRequests::new()),
+            responses: Mutex::new(JsonRpcPendingRequests::new_with_map_kind(MapKind::BTreeMap).expiration_tick_cap(50)),
             protocol_version: Mutex::new(None),
             last_error: Mutex::new(None),
             abortable_system,
@@ -235,23 +235,25 @@ impl ElectrumConnection {
     /// ## Important: This should always return [`JsonRpcErrorType::Transport`] error.
     pub async fn electrum_request(
         &self,
-        mut req_json: String,
+        req_json: String,
         rpc_id: JsonRpcId,
         timeout: f64,
     ) -> Result<JsonRpcResponseEnum, JsonRpcErrorType> {
-        #[cfg(not(target_arch = "wasm"))]
-        {
+        #[cfg(not(target_arch = "wasm32"))]
+        let req_json = {
             // Electrum request and responses must end with \n
             // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
+            let mut req_json = req_json;
             req_json.push('\n');
-        }
+            req_json
+        };
 
         // Create a oneshot channel to receive the response in.
         let (req_tx, res_rx) = async_oneshot::channel();
         self.responses
             .lock()
             .unwrap()
-            .insert(rpc_id, req_tx, Duration::from_secs_f64(timeout));
+            .insert_expirable(rpc_id, req_tx, Duration::from_secs_f64(timeout));
         let tx = self
             .tx
             .lock()
@@ -275,9 +277,9 @@ impl ElectrumConnection {
     }
 
     /// Process an incoming JSONRPC response from the electrum server.
-    fn process_electrum_response(&self, bytes: &[u8], event_handlers: &Vec<Box<SharableRpcTransportEventHandler>>) {
+    fn process_electrum_response(&self, bytes: &[u8], client: &ElectrumClient) {
         // Inform the event handlers.
-        event_handlers.on_incoming_response(bytes);
+        client.event_handlers().on_incoming_response(bytes);
 
         // detect if we got standard JSONRPC response or subscription response as JSONRPC request
         #[derive(Deserialize)]
@@ -308,8 +310,14 @@ impl ElectrumConnection {
             ElectrumRpcResponseEnum::BatchResponses(batch) => JsonRpcResponseEnum::Batch(batch),
             ElectrumRpcResponseEnum::SubscriptionNotification(req) => {
                 match req.method.as_str() {
-                    // NOTE: Sending a script hash notification is handled in it's own event handler.
-                    BLOCKCHAIN_SCRIPTHASH_SUB_ID | BLOCKCHAIN_HEADERS_SUB_ID => {},
+                    BLOCKCHAIN_SCRIPTHASH_SUB_ID => {
+                        if let Some(scripthash) = req.params.first().and_then(|s| s.as_str()) {
+                            client.notify_triggered_hash(scripthash.to_string()).ok();
+                        } else {
+                            error!("Notification must contain the script hash value, got: {req:?}");
+                        }
+                    },
+                    BLOCKCHAIN_HEADERS_SUB_ID => {},
                     _ => {
                         error!("Unexpected notification method: {}", req.method);
                     },
@@ -329,18 +337,14 @@ impl ElectrumConnection {
     /// Process a bulk response from the electrum server.
     ///
     /// A bulk response is a response that contains multiple JSONRPC responses.
-    fn process_electrum_bulk_response(
-        &self,
-        bulk_response: &[u8],
-        event_handlers: &Vec<Box<SharableRpcTransportEventHandler>>,
-    ) {
+    fn process_electrum_bulk_response(&self, bulk_response: &[u8], client: &ElectrumClient) {
         // We should split the received response because we can get several responses in bulk.
         let responses = bulk_response.split(|item| *item == b'\n');
 
         for response in responses {
             // `split` returns empty slice if it ends with separator which is our case.
             if !response.is_empty() {
-                self.process_electrum_response(response, event_handlers)
+                self.process_electrum_response(response, client)
             }
         }
     }
@@ -540,7 +544,7 @@ impl ElectrumConnection {
     #[cfg(not(target_arch = "wasm32"))]
     async fn recv_loop(
         connection: Arc<ElectrumConnection>,
-        event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        client: ElectrumClient,
         read: ReadHalf<ElectrumStream>,
         last_response: Arc<AtomicU64>,
     ) -> ElectrumConnectionErr {
@@ -559,7 +563,7 @@ impl ElectrumConnection {
             };
 
             last_response.store(now_ms(), AtomicOrdering::Relaxed);
-            connection.process_electrum_bulk_response(buffer.as_bytes(), &event_handlers);
+            connection.process_electrum_bulk_response(buffer.as_bytes(), &client);
             buffer.clear();
         }
     }
@@ -567,7 +571,7 @@ impl ElectrumConnection {
     #[cfg(target_arch = "wasm32")]
     async fn recv_loop(
         connection: Arc<ElectrumConnection>,
-        event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        client: ElectrumClient,
         mut read: WsIncomingReceiver,
         last_response: Arc<AtomicU64>,
     ) -> ElectrumConnectionErr {
@@ -576,7 +580,7 @@ impl ElectrumConnection {
             match response {
                 Ok(bytes) => {
                     last_response.store(now_ms(), AtomicOrdering::Relaxed);
-                    connection.process_electrum_response(&bytes, &event_handlers);
+                    connection.process_electrum_response(&bytes, &client);
                 },
                 Err(e) => {
                     error!("{address} error: {e:?}");
@@ -678,7 +682,7 @@ impl ElectrumConnection {
             let (read, write) = tokio::io::split(stream);
             #[cfg(target_arch = "wasm32")]
             let (read, write) = stream;
-            let recv_branch = Self::recv_loop(connection.clone(), event_handlers.clone(), read, last_response).boxed();
+            let recv_branch = Self::recv_loop(connection.clone(), client.clone(), read, last_response).boxed();
 
             // Branch 3: Send outgoing requests to the server.
             let (tx, rx) = mpsc::channel(0);

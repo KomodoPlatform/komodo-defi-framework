@@ -6,17 +6,16 @@ use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
 use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
-use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MarketCoinOps,
-            MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
-            WaitForHTLCTxSpendArgs};
-use common::log::debug;
+use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, DexFeeBurnDestination, FeeApproxStage,
+            FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs,
+            ValidatePaymentInput, WaitForHTLCTxSpendArgs};
 use common::{block_on_f01, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use ethereum_types::H160;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_main::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
+use mm2_main::lp_swap::max_taker_vol_from_available;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};
@@ -809,7 +808,8 @@ fn test_wait_for_tx_spend() {
     log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
-    // also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    /// Also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    #[allow(static_mut_refs)]
     static mut SPEND_TX: Option<TransactionEnum> = None;
 
     let maker_pub_c = maker_pub.to_vec();
@@ -889,6 +889,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -977,7 +978,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"txfee":0,"txfee_volatility_percent":0.1,
-        "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}},
+        "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}, "dust": 72800},
     ]);
     let mut mm = MarketMakerIt::start(
         json! ({
@@ -988,6 +989,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1013,13 +1015,13 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     ))
     .expect("!get_sender_trade_fee");
     let max_trade_fee = max_trade_fee.amount.to_decimal();
-    debug!("max_trade_fee: {}", max_trade_fee);
+    log!("max_trade_fee: {}", max_trade_fee);
 
     // - `max_possible_2 = balance - locked_amount - max_trade_fee`, where `locked_amount = 0`
     let max_possible_2 = &qtum_balance - &max_trade_fee;
     // - `max_dex_fee = dex_fee(max_possible_2)`
-    let max_dex_fee = dex_fee_amount("QTUM", "MYCOIN", &MmNumber::from(max_possible_2), &qtum_min_tx_amount);
-    debug!("max_dex_fee: {:?}", max_dex_fee.fee_amount().to_fraction());
+    let max_dex_fee = DexFee::new_from_taker_coin(&coin, "MYCOIN", &MmNumber::from(max_possible_2));
+    log!("max_dex_fee: {:?}", max_dex_fee.fee_amount().to_fraction());
 
     // - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
     // `taker_fee` is sent using general withdraw, and the fee get be obtained from withdraw result
@@ -1027,19 +1029,17 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimage))
             .expect("!get_fee_to_send_taker_fee");
     let max_fee_to_send_taker_fee = max_fee_to_send_taker_fee.amount.to_decimal();
-    debug!("max_fee_to_send_taker_fee: {}", max_fee_to_send_taker_fee);
+    log!("max_fee_to_send_taker_fee: {}", max_fee_to_send_taker_fee);
 
     // and then calculate `min_max_val = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee - dex_fee(max_val)` using `max_taker_vol_from_available()`
     // where `available = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee`
     let available = &qtum_balance - &max_trade_fee - &max_fee_to_send_taker_fee;
-    debug!("total_available: {}", available);
-    #[allow(clippy::redundant_clone)] // This is a false-possitive bug from clippy
-    let min_tx_amount = qtum_min_tx_amount.clone();
+    log!("total_available: {}", available);
     let expected_max_taker_vol =
-        max_taker_vol_from_available(MmNumber::from(available), "QTUM", "MYCOIN", &min_tx_amount)
+        max_taker_vol_from_available(MmNumber::from(available), "QTUM", "MYCOIN", &qtum_min_tx_amount)
             .expect("max_taker_vol_from_available");
-    let real_dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount).fee_amount();
-    debug!("real_max_dex_fee: {:?}", real_dex_fee.to_fraction());
+    let real_dex_fee = DexFee::new_from_taker_coin(&coin, "MYCOIN", &expected_max_taker_vol).fee_amount();
+    log!("real_max_dex_fee: {:?}", real_dex_fee.to_fraction());
 
     // check if the actual max_taker_vol equals to the expected
     let rc = block_on(mm.rpc(&json! ({
@@ -1071,9 +1071,8 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let timelock = now_sec() - 200;
     let secret_hash = &[0; 20];
 
-    let dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
-    let _taker_fee_tx =
-        block_on(coin.send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)).expect("!send_taker_fee");
+    let dex_fee = DexFee::new_from_taker_coin(&coin, "MYCOIN", &expected_max_taker_vol);
+    let _taker_fee_tx = block_on(coin.send_taker_fee(dex_fee, &[], timelock)).expect("!send_taker_fee");
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: timelock,
@@ -1100,7 +1099,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
 /// Generate the Qtum coin with a random balance and start the `test_get_max_taker_vol_and_trade_with_dynamic_trade_fee` test.
 #[test]
 fn test_max_taker_vol_dynamic_trade_fee() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
     let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 2.into(), Some(0));
     let my_address = coin.my_address().expect("!my_address");
@@ -1127,7 +1126,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
 /// This test checks if the fee returned from `get_sender_trade_fee` should include the change output anyway.
 #[test]
 fn test_trade_preimage_fee_includes_change_output_anyway() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
     let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 2.into(), Some(0));
     let my_address = coin.my_address().expect("!my_address");
@@ -1143,7 +1142,7 @@ fn test_trade_preimage_fee_includes_change_output_anyway() {
 }
 #[test]
 fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QRC20 coin(QICK) fill the wallet with 10 QICK
     // fill QTUM balance with 0.005 QTUM which is will be than expected transaction fee just to get our desired output for this test.
     let qick_balance = MmNumber::from("10").to_decimal();
@@ -1166,6 +1165,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1205,7 +1205,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
 
 #[test]
 fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
     let qtum_balance = MmNumber::from("0.5").to_decimal();
     let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", qtum_balance.clone(), Some(0));
@@ -1225,6 +1225,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1266,7 +1267,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
 /// so we have to receive the `NotSufficientBalance` error.
 #[test]
 fn test_trade_preimage_deduct_fee_from_output_failed() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.00073 Qtums (that is little greater than dust 0.000728)
     let qtum_balance = MmNumber::from("0.00073").to_decimal();
     let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", qtum_balance.clone(), Some(0));
@@ -1286,6 +1287,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1326,7 +1328,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
 
 #[test]
 fn test_segwit_native_balance() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
     let (_ctx, _coin, priv_key) =
         generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
@@ -1345,6 +1347,7 @@ fn test_segwit_native_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1372,7 +1375,7 @@ fn test_segwit_native_balance() {
 
 #[test]
 fn test_withdraw_and_send_from_segwit() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
     let (_ctx, _coin, priv_key) =
         generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.7).unwrap(), Some(0));
@@ -1391,6 +1394,7 @@ fn test_withdraw_and_send_from_segwit() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1420,7 +1424,7 @@ fn test_withdraw_and_send_from_segwit() {
 
 #[test]
 fn test_withdraw_and_send_legacy_to_segwit() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
     let (_ctx, _coin, priv_key) =
         generate_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.7).unwrap(), Some(0));
@@ -1439,6 +1443,7 @@ fn test_withdraw_and_send_legacy_to_segwit() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1465,7 +1470,7 @@ fn test_withdraw_and_send_legacy_to_segwit() {
 
 #[test]
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000u64.into(), Some(0));
     let my_public_key = coin.my_public_key().unwrap();
@@ -1533,7 +1538,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
 #[test]
 fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     let timeout = wait_until_sec(120); // timeout if test takes more than 120 seconds to run
     let (_ctx, coin, _) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 1000u64.into(), Some(0));
     let my_public_key = coin.my_public_key().unwrap();
@@ -1619,7 +1624,7 @@ pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
 #[test]
 #[ignore]
 fn segwit_address_in_the_orderbook() {
-    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    wait_for_estimate_smart_fee(60).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
     let (_ctx, coin, priv_key) =
         generate_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
@@ -1639,6 +1644,7 @@ fn segwit_address_in_the_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1699,15 +1705,39 @@ fn test_trade_qrc20_utxo() { trade_base_rel(("QICK", "MYCOIN")); }
 fn test_trade_utxo_qrc20() { trade_base_rel(("MYCOIN", "QICK")); }
 
 #[test]
-fn test_send_taker_fee_qtum() {
+fn test_send_standard_taker_fee_qtum() {
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
     let (_ctx, coin, _priv_key) =
         generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
 
     let amount = BigDecimal::from_str("0.01").unwrap();
+    let tx = block_on(coin.send_taker_fee(DexFee::Standard(amount.clone().into()), &[], 0)).expect("!send_taker_fee");
+    assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
+
+    block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: coin.my_public_key().unwrap(),
+        dex_fee: &DexFee::Standard(amount.into()),
+        min_block_number: 0,
+        uuid: &[],
+    }))
+    .expect("!validate_fee");
+}
+
+#[test]
+fn test_send_taker_fee_with_burn_qtum() {
+    // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
+    let (_ctx, coin, _priv_key) =
+        generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
+
+    let fee_amount = BigDecimal::from_str("0.0075").unwrap();
+    let burn_amount = BigDecimal::from_str("0.0025").unwrap();
     let tx = block_on(coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        DexFee::Standard(amount.clone().into()),
+        DexFee::WithBurn {
+            fee_amount: fee_amount.clone().into(),
+            burn_amount: burn_amount.clone().into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        },
         &[],
         0,
     ))
@@ -1717,8 +1747,11 @@ fn test_send_taker_fee_qtum() {
     block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-        dex_fee: &DexFee::Standard(amount.into()),
+        dex_fee: &DexFee::WithBurn {
+            fee_amount: fee_amount.into(),
+            burn_amount: burn_amount.into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        },
         min_block_number: 0,
         uuid: &[],
     }))
@@ -1734,19 +1767,12 @@ fn test_send_taker_fee_qrc20() {
     );
 
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = block_on(coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        DexFee::Standard(amount.clone().into()),
-        &[],
-        0,
-    ))
-    .expect("!send_taker_fee");
+    let tx = block_on(coin.send_taker_fee(DexFee::Standard(amount.clone().into()), &[], 0)).expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
     block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],

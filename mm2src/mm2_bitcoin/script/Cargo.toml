@@ -2,6 +2,7 @@
 name = "script"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
+edition = "2015"
 
 [lib]
 doctest = false
@@ -11,7 +12,7 @@ bitcrypto = { path = "../crypto" }
 chain = { path = "../chain" }
 keys = { path = "../keys" }
 primitives = { path = "../primitives" }
-serde = "1.0"
+serde.workspace = true
 serialization = { path = "../serialization" }
-log = "0.4.17"
-blake2b_simd = "0.5"
+log.workspace = true
+blake2b_simd.workspace = true

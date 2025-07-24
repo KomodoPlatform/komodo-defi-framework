@@ -55,8 +55,10 @@ impl HardwareWalletCtx {
 
         let (hw_device_info, hw_internal_pubkey) = {
             let processor = processor.as_base_shared();
-            let (device_info, mut session) = trezor.init_new_session(processor).await?;
-            let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session).await?;
+            let (device_info, mut session) = trezor.init_new_session(processor).await.map_mm_err()?;
+            let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session)
+                .await
+                .map_mm_err()?;
             (HwDeviceInfo::Trezor(device_info), hw_internal_pubkey)
         };
 
@@ -131,10 +133,14 @@ impl HardwareWalletCtx {
                 SHOW_PUBKEY_ON_DISPLAY,
                 IGNORE_XPUB_MAGIC,
             )
-            .await?
+            .await
+            .map_mm_err()?
             .process(processor)
-            .await?;
-        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&mm2_internal_xpub).map_to_mm(HwError::from)?;
+            .await
+            .map_mm_err()?;
+        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&mm2_internal_xpub)
+            .map_to_mm(HwError::from)
+            .map_mm_err()?;
         Ok(H264::from(extended_pubkey.public_key().serialize()))
     }
 
@@ -185,4 +191,4 @@ impl HardwareWalletCtx {
 fn h160_from_h264(h264: &H264) -> H160 { dhash160(h264.as_slice()) }
 
 /// Converts `H264` into a serializable/deserializable Hardware wallet pubkey.
-fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).as_slice()) }
+fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).take()) }

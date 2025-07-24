@@ -10,7 +10,6 @@ concurrency:
 
 env:
   BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-  MANUAL_MM_VERSION: true
   JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 jobs:
@@ -30,49 +29,38 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-linux-x86-64.zip"
-          zip $NAME target/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+        run: cargo build --release
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-linux-x86-64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -81,7 +69,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
       - name: Login to dockerhub
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
@@ -90,7 +80,7 @@ jobs:
       - name: Build and push container image
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
         run: |
-          CONTAINER_TAG="dev-$COMMIT_HASH"
+          CONTAINER_TAG="dev-$KDF_BUILD_TAG"
           docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:dev-latest -f .docker/Dockerfile.dev-release .
           docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
           docker push komodoofficial/komodo-defi-framework:dev-latest
@@ -102,8 +92,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -111,41 +101,30 @@ jobs:
         with:
           deps: ('protoc', 'python3', 'paramiko')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target x86_64-apple-darwin
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-mac-x86-64.zip"
-          zip $NAME target/x86_64-apple-darwin/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+        run: cargo build --release --target x86_64-apple-darwin
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-mac-x86-64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -154,7 +133,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-arm64:
     timeout-minutes: 60
@@ -163,8 +144,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add aarch64-apple-darwin
 
       - name: Install build deps
@@ -172,41 +153,30 @@ jobs:
         with:
           deps: ('protoc', 'python3', 'paramiko')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target aarch64-apple-darwin
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-mac-arm64.zip"
-          zip $NAME target/aarch64-apple-darwin/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+        run: cargo build --release --target aarch64-apple-darwin
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-mac-arm64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -215,7 +185,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   win-x86-64:
     timeout-minutes: 60
@@ -224,51 +196,38 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc', 'python3', 'paramiko')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $Env:GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $Env:GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $Env:GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $Env:GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          if (test-path "./MM_VERSION") {
-            remove-item "./MM_VERSION"
-          }
-          echo $Env:COMMIT_HASH > ./MM_VERSION
-          cargo build --release
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          $NAME="mm2_$Env:COMMIT_HASH-win-x86-64.zip"
-          7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
-          mkdir $Env:BRANCH_NAME
-          mv $NAME ./$Env:BRANCH_NAME/
+        run: cargo build --release
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          $NAME="kdf_$Env:COMMIT_HASH-win-x86-64.zip"
-          7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
-          mv $NAME ./$Env:BRANCH_NAME/
+          $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
+          7z a $NAME .\target\release\kdf.exe
+          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -277,7 +236,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          $SAFE_BRANCH_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-dylib-x86-64:
     timeout-minutes: 60
@@ -286,8 +247,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01-x86_64-apple-darwin --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01-x86_64-apple-darwin
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -295,43 +256,31 @@ jobs:
         with:
           deps: ('protoc', 'python3', 'paramiko')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-mac-dylib-x86-64.zip"
-          cp target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libmm2.a
-          zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+        run: cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-mac-dylib-x86-64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -340,7 +289,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   wasm:
     timeout-minutes: 60
@@ -363,39 +314,38 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add wasm32-unknown-unknown
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash -s -- -y
+        # TODO: Lock wasm-pack version
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
+        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
 
       - name: Compress build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-wasm.zip"
+          NAME="kdf_$KDF_BUILD_TAG-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -404,7 +354,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   ios-aarch64:
     timeout-minutes: 60
@@ -413,8 +365,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add aarch64-apple-ios
 
       - name: Install build deps
@@ -422,43 +374,31 @@ jobs:
         with:
           deps: ('protoc', 'python3', 'paramiko')
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-ios-aarch64.zip"
-          cp target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libmm2.a
-          zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
+        run: cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-ios-aarch64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-ios-aarch64.zip"
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -467,7 +407,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-aarch64:
     timeout-minutes: 60
@@ -485,8 +427,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add aarch64-linux-android
 
       - name: Install build deps
@@ -497,45 +439,33 @@ jobs:
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-
           export PATH=$PATH:/android-ndk/bin
           CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-android-aarch64.zip"
-          cp target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libmm2.a
-          zip $NAME target/aarch64-linux-android/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-android-aarch64.zip"
+          NAME="kdf_$KDF_BUILD_TAG-android-aarch64.zip"
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -544,7 +474,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-armv7:
     timeout-minutes: 60
@@ -562,8 +494,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add armv7-linux-androideabi
 
       - name: Install build deps
@@ -574,45 +506,33 @@ jobs:
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-
           export PATH=$PATH:/android-ndk/bin
           CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-android-armv7.zip"
-          cp target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libmm2.a
-          zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="kdf_$COMMIT_HASH-android-armv7.zip"
+          NAME="kdf_$KDF_BUILD_TAG-android-armv7.zip"
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
         env:
@@ -621,7 +541,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   deployment-commitment:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
@@ -639,13 +561,13 @@ jobs:
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Calculate commit hash for PR commit
+      - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
 
-      - name: Calculate commit hash for merge commit
+      - name: Calculate build tag (commit hash) for merge commit
         if: github.event_name != 'pull_request'
-        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
       - name: Activate SSH
         uses: webfactory/ssh-agent@v0.5.4
@@ -657,10 +579,10 @@ jobs:
           git clone git@github.com:KomodoPlatform/atomicdex-deployments.git
           if [ -d "atomicdex-deployments/atomicDEX-API" ]; then
             cd atomicdex-deployments/atomicDEX-API
-            sed -i "1s/^.*$/$COMMIT_HASH/" .commit
+            sed -i "1s/^.*$/$KDF_BUILD_TAG/" .commit
             git config --global user.email "linuxci@komodoplatform.com"
             git config --global user.name "linuxci"
             git add .commit
-            git commit -m "[atomicDEX-API] $COMMIT_HASH is committed for git & container registry"
+            git commit -m "[atomicDEX-API] $KDF_BUILD_TAG is committed for git & container registry"
             git push
           fi

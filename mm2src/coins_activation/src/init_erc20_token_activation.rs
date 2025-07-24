@@ -7,7 +7,7 @@ use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
 use coins::eth::EthCoin;
 use coins::hd_wallet::RpcTaskXPubExtractor;
-use coins::{MarketCoinOps, MmCoin, RegisterCoinError};
+use coins::{CustomTokenError, MarketCoinOps, MmCoin, RegisterCoinError};
 use common::Future01CompatExt;
 use crypto::HwRpcError;
 use derive_more::Display;
@@ -17,6 +17,7 @@ use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type Erc20TokenTaskManagerShared = InitTokenTaskManagerShared<EthCoin>;
@@ -38,6 +39,8 @@ pub enum InitErc20Error {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<InitErc20Error> for InitTokenError {
@@ -45,13 +48,16 @@ impl From<InitErc20Error> for InitTokenError {
         match e {
             InitErc20Error::HwError(hw) => InitTokenError::HwError(hw),
             InitErc20Error::TaskTimedOut { duration } => InitTokenError::TaskTimedOut { duration },
-            InitErc20Error::TokenIsAlreadyActivated { ticker } => InitTokenError::TokenIsAlreadyActivated { ticker },
+            InitErc20Error::TokenIsAlreadyActivated { ticker, .. } => {
+                InitTokenError::TokenIsAlreadyActivated { ticker }
+            },
             InitErc20Error::TokenCreationError { ticker, error } => {
                 InitTokenError::TokenCreationError { ticker, error }
             },
             InitErc20Error::CouldNotFetchBalance(error) => InitTokenError::CouldNotFetchBalance(error),
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
+            InitErc20Error::CustomTokenError(error) => InitTokenError::CustomTokenError(error),
         }
     }
 }
@@ -66,6 +72,7 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::CouldNotFetchBalance(_)
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
+            EthTokenActivationError::CustomTokenError(e) => InitErc20Error::CustomTokenError(e),
         }
     }
 }
@@ -118,12 +125,21 @@ impl InitTokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         _task_handle: InitTokenTaskHandleShared<Self>,
+        is_custom: bool,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let token = platform_coin
-            .initialize_erc20_token(activation_request.clone().into(), protocol_conf, ticker)
-            .await?;
+            .initialize_erc20_token(
+                ticker,
+                activation_request.clone().into(),
+                token_conf,
+                protocol_conf,
+                is_custom,
+            )
+            .await
+            .map_mm_err()?;
 
         Ok(token)
     }
@@ -141,7 +157,8 @@ impl InitTokenActivationOps for EthCoin {
             .current_block()
             .compat()
             .await
-            .map_to_mm(EthTokenActivationError::Transport)?;
+            .map_to_mm(EthTokenActivationError::Transport)
+            .map_mm_err()?;
 
         let xpub_extractor = if self.is_trezor() {
             Some(
@@ -157,15 +174,20 @@ impl InitTokenActivationOps for EthCoin {
             None
         };
 
-        task_handle.update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)?;
+        task_handle
+            .update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)
+            .map_mm_err()?;
         let wallet_balance = self
             .enable_coin_balance(
                 xpub_extractor,
                 activation_request.enable_params.clone(),
                 &activation_request.path_to_address,
             )
-            .await?;
-        task_handle.update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)?;
+            .await
+            .map_mm_err()?;
+        task_handle
+            .update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)
+            .map_mm_err()?;
 
         let token_contract_address = self
             .erc20_token_address()
