@@ -7,4 +7,4 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-hex = "0.4.2"
+hex.workspace = true

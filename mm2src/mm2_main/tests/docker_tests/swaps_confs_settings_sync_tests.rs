@@ -37,6 +37,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -202,6 +203,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,

@@ -6,7 +6,7 @@ use common::{APPLICATION_GRPC_WEB_PROTO, X_GRPC_WEB};
 use futures_util::Future;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{Request, Response};
-use mm2_err_handle::prelude::{MmError, MmResult};
+use mm2_err_handle::prelude::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::body::BoxBody;
@@ -48,6 +48,7 @@ async fn call(base_url: String, request: Request<BoxBody>) -> MmResult<Response<
         .header(ACCEPT.as_str(), APPLICATION_GRPC_WEB_PROTO)
         .header(X_GRPC_WEB, "1")
         .fetch_stream_response()
-        .await?
+        .await
+        .map_mm_err()?
         .1)
 }

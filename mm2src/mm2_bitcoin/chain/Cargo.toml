@@ -2,16 +2,17 @@
 name = "chain"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
+edition = "2015"
 
 [lib]
 doctest = false
 
 [dependencies]
-rustc-hex = "2"
+rustc-hex.workspace = true
 bitcrypto = { path = "../crypto" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }
 serialization_derive = { path = "../serialization_derive" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-bitcoin = "0.29"
+bitcoin.workspace = true

@@ -19,13 +19,13 @@ pub enum EstimationSource {
     Blocknative,
 }
 
-impl ToString for EstimationSource {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for EstimationSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EstimationSource::Empty => "empty".into(),
-            EstimationSource::Simple => "simple".into(),
-            EstimationSource::Infura => "infura".into(),
-            EstimationSource::Blocknative => "blocknative".into(),
+            EstimationSource::Empty => write!(f, "empty"),
+            EstimationSource::Simple => write!(f, "simple"),
+            EstimationSource::Infura => write!(f, "infura"),
+            EstimationSource::Blocknative => write!(f, "blocknative"),
         }
     }
 }

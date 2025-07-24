@@ -242,7 +242,7 @@ impl From<UtxoRpcError> for TxProviderError {
 #[async_trait]
 impl TxProvider for UtxoRpcClientEnum {
     async fn get_rpc_transaction(&self, tx_hash: &H256Json) -> Result<RpcTransaction, MmError<TxProviderError>> {
-        Ok(self.get_verbose_transaction(tx_hash).compat().await?)
+        Ok(self.get_verbose_transaction(tx_hash).compat().await.map_mm_err()?)
     }
 }
 
@@ -624,6 +624,7 @@ pub struct UtxoCoinFields {
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
+    // TODO: change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>` to better support HD wallets.
     pub recently_spent_outpoints: AsyncMutex<RecentlySpentOutPoints>,
     pub tx_hash_algo: TxHashAlgo,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.

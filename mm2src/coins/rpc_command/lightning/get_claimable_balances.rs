@@ -1,6 +1,7 @@
 use crate::lightning::ln_serialization::ClaimableBalance;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -44,7 +45,7 @@ pub async fn get_claimable_balances(
     ctx: MmArc,
     req: ClaimableBalancesReq,
 ) -> ClaimableBalancesResult<Vec<ClaimableBalance>> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ClaimableBalancesError::UnsupportedCoin(e.ticker().to_string())),
     };
