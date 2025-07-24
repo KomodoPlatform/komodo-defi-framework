@@ -330,11 +330,18 @@ impl PeersExchange {
     pub fn get_random_peers(
         &mut self,
         num: usize,
-        mut filter: impl FnMut(&PeerId) -> bool,
+        mut filter: impl FnMut(&PeerId, HashSet<Multiaddr>) -> bool,
     ) -> HashMap<PeerId, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = rand::thread_rng();
-        let peer_ids = self.known_peers.iter().filter(|peer| filter(peer)).collect::<Vec<_>>();
+        let peer_ids = self
+            .known_peers
+            .iter()
+            .filter(|peer| {
+                let addresses = self.request_response.addresses_of_peer(peer).into_iter().collect();
+                filter(peer, addresses)
+            })
+            .collect::<Vec<_>>();
 
         for peer_id in peer_ids.choose_multiple(&mut rng, num) {
             let addresses = self.request_response.addresses_of_peer(peer_id).into_iter().collect();

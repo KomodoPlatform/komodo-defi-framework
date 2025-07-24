@@ -2,6 +2,7 @@
 
 use bitcoin_hashes::{sha256d, Hash as ExtHash};
 use hex::{FromHex, FromHexError, ToHex};
+use std::convert::TryInto;
 use std::hash::{Hash, Hasher};
 use std::{cmp, fmt, ops, str};
 
@@ -24,11 +25,7 @@ macro_rules! impl_hash {
         }
 
         impl Clone for $name {
-            fn clone(&self) -> Self {
-                let mut result = Self::default();
-                result.copy_from_slice(&self.0);
-                result
-            }
+            fn clone(&self) -> Self { *self }
         }
 
         impl From<[u8; $size]> for $name {
@@ -39,10 +36,10 @@ macro_rules! impl_hash {
             fn from(h: $name) -> Self { h.0 }
         }
 
-        impl<'a> From<&'a [u8]> for $name {
-            fn from(slc: &[u8]) -> Self {
+        impl<'a> From<&'a [u8; $size]> for $name {
+            fn from(slc: &[u8; $size]) -> Self {
                 let mut inner = [0u8; $size];
-                inner[..].clone_from_slice(&slc[0..$size]);
+                inner.copy_from_slice(slc);
                 $name(inner)
             }
         }
@@ -61,17 +58,9 @@ macro_rules! impl_hash {
 
         impl str::FromStr for $name {
             type Err = FromHexError;
-
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 let vec: Vec<u8> = s.from_hex()?;
-                match vec.len() {
-                    $size => {
-                        let mut result = [0u8; $size];
-                        result.copy_from_slice(&vec);
-                        Ok($name(result))
-                    },
-                    _ => Err(FromHexError::InvalidHexLength),
-                }
+                Self::from_slice(&vec).map_err(|_| FromHexError::InvalidHexLength)
             }
         }
 
@@ -123,7 +112,7 @@ macro_rules! impl_hash {
                 H: Hasher,
             {
                 state.write(&self.0);
-                state.finish();
+                let _ = state.finish();
             }
         }
 
@@ -143,6 +132,14 @@ macro_rules! impl_hash {
             pub fn size() -> usize { $size }
 
             pub fn is_zero(&self) -> bool { self.0.iter().all(|b| *b == 0) }
+
+            /// Preferred method for constructing from a slice - checks length and returns Result
+            pub fn from_slice(slc: &[u8]) -> Result<Self, &'static str> {
+                let bytes: [u8; $size] = slc
+                    .try_into()
+                    .map_err(|_| "Slice length must be exactly 40 bytes")?;
+                Ok(bytes.into())
+            }
         }
     };
 }

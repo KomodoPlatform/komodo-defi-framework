@@ -12,6 +12,7 @@ pub mod hw_rpc_task;
 mod key_derivation;
 pub mod mnemonic;
 pub mod privkey;
+pub mod secret_hash_algo;
 mod shared_db_id;
 mod slip21;
 mod standard_hd_path;

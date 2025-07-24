@@ -153,11 +153,11 @@ where
         .uri(url)
         .header(CONTENT_TYPE, APPLICATION_GRPC_WEB)
         .header(ACCEPT, APPLICATION_GRPC_WEB)
-        .body(encode_body(req)?)?;
+        .body(encode_body(req).map_mm_err()?)?;
 
-    let response = slurp_req(request).await?;
+    let response = slurp_req(request).await.map_mm_err()?;
 
-    let reply = decode_body(response.2.into())?;
+    let reply = decode_body(response.2.into()).map_mm_err()?;
 
     Ok(reply)
 }
@@ -168,7 +168,7 @@ where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,
 {
-    let body = encode_body(req)?;
+    let body = encode_body(req).map_mm_err()?;
     let request = FetchRequest::post(url)
         .body_bytes(body)
         .header(CONTENT_TYPE.as_str(), APPLICATION_GRPC_WEB_PROTO)
@@ -176,9 +176,9 @@ where
         // https://github.com/grpc/grpc-web/issues/85#issue-217223001
         .header(X_GRPC_WEB, "1");
 
-    let response = request.request_array().await?;
+    let response = request.request_array().await.map_mm_err()?;
 
-    let reply = decode_body(response.1.into())?;
+    let reply = decode_body(response.1.into()).map_mm_err()?;
 
     Ok(reply)
 }

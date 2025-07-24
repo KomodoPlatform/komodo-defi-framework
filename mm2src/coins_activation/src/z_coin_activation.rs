@@ -16,6 +16,7 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc_task::RpcTaskError;
@@ -233,7 +234,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
     ) -> MmResult<Self, ZcoinInitError> {
         // When `ZCoin` supports Trezor, we'll need to check [`ZcoinActivationParams::priv_key_policy`]
         // instead of using [`PrivKeyBuildPolicy::detect_priv_key_policy`].
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err()?;
 
         let coin = z_coin_from_conf_and_params(
             &ctx,
@@ -247,7 +248,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
         loop {
-            let in_progress_status = match coin.sync_status().await? {
+            let in_progress_status = match coin.sync_status().await.map_mm_err()? {
                 SyncStatus::UpdatingBlocksCache {
                     current_scanned_block,
                     latest_block,
@@ -265,7 +266,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                 SyncStatus::TemporaryError(e) => ZcoinInProgressStatus::TemporaryError(e),
                 SyncStatus::Finished { .. } => break,
             };
-            task_handle.update_in_progress_status(in_progress_status)?;
+            task_handle.update_in_progress_status(in_progress_status).map_mm_err()?;
         }
 
         Ok(coin)
@@ -277,15 +278,17 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         task_handle: ZcoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, ZcoinInitError> {
-        task_handle.update_in_progress_status(ZcoinInProgressStatus::RequestingWalletBalance)?;
+        task_handle
+            .update_in_progress_status(ZcoinInProgressStatus::RequestingWalletBalance)
+            .map_mm_err()?;
         let current_block = self
             .current_block()
             .compat()
             .await
             .map_to_mm(ZcoinInitError::CouldNotGetBlockCount)?;
 
-        let balance = self.my_balance().compat().await?;
-        let first_sync_block = self.first_sync_block().await?;
+        let balance = self.my_balance().compat().await.map_mm_err()?;
+        let first_sync_block = self.first_sync_block().await.map_mm_err()?;
 
         Ok(ZcoinActivationResult {
             ticker: self.ticker().into(),
@@ -303,6 +306,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         &self,
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage,
+        _streaming_manager: StreamingManager,
         _current_balances: HashMap<String, BigDecimal>,
     ) {
     }

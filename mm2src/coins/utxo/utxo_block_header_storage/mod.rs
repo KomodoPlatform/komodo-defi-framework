@@ -27,8 +27,12 @@ impl Debug for BlockHeaderStorage {
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
-        let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
-            "sqlite_connection is not initialized".to_owned(),
+        #[cfg(not(feature = "new-db-arch"))]
+        let maybe_sqlite_connection = ctx.sqlite_connection.get();
+        #[cfg(feature = "new-db-arch")]
+        let maybe_sqlite_connection = ctx.global_db_conn.get();
+        let sqlite_connection = maybe_sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
+            "BlockHeaderStorage's SQL DB is not initialized".to_owned(),
         ))?;
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
@@ -50,8 +54,11 @@ impl BlockHeaderStorage {
         use db_common::sqlite::rusqlite::Connection;
         use std::sync::{Arc, Mutex};
 
-        let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
-        let conn = ctx.sqlite_connection.clone_or(conn);
+        let conn = ctx
+            .sqlite_connection
+            .get()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
 
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),

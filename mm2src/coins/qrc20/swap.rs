@@ -22,11 +22,12 @@ pub struct Erc20PaymentDetails {
 }
 
 /// `receiverSpend` call details consist of values obtained from [`TransactionOutput::script_pubkey`].
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct ReceiverSpendDetails {
     pub swap_id: Vec<u8>,
     pub value: U256,
-    pub secret: Vec<u8>,
+    pub secret: [u8; 32],
     pub token_address: H160,
     pub sender: H160,
 }
@@ -126,7 +127,8 @@ impl Qrc20Coin {
         let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
-            .await?;
+            .await
+            .map_mm_err()?;
         if status != U256::from(PaymentState::Sent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "Payment state is not PAYMENT_STATE_SENT, got {}",
@@ -135,8 +137,8 @@ impl Qrc20Coin {
         }
 
         let expected_call_bytes = {
-            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
-            let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
+            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals).map_mm_err()?;
+            let my_address = self.utxo.derivation_method.single_addr_or_err().await.map_mm_err()?;
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
                 .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
             self.erc20_payment_call_bytes(
@@ -145,7 +147,8 @@ impl Qrc20Coin {
                 time_lock,
                 &secret_hash,
                 expected_receiver,
-            )?
+            )
+            .map_mm_err()?
         };
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
@@ -298,11 +301,11 @@ impl Qrc20Coin {
         Ok(found)
     }
 
-    pub fn extract_secret_impl(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn extract_secret_impl(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let secret_hash = if secret_hash.len() == 32 {
             ripemd160(secret_hash)
         } else {
-            chain::hash::H160::from(secret_hash)
+            chain::hash::H160::from_slice(secret_hash)?
         };
 
         let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
@@ -454,21 +457,24 @@ impl Qrc20Coin {
         if allowance < value {
             if allowance > U256::zero() {
                 // first reset the allowance to the 0
-                outputs.push(self.approve_output(swap_contract_address, 0.into())?);
+                outputs.push(self.approve_output(swap_contract_address, 0.into()).map_mm_err()?);
             }
             // set the allowance from 0 to `my_balance` after the previous output is executed
-            outputs.push(self.approve_output(swap_contract_address, my_balance)?);
+            outputs.push(self.approve_output(swap_contract_address, my_balance).map_mm_err()?);
         }
 
         // when this output is executed, the allowance will be sufficient already
-        outputs.push(self.erc20_payment_output(
-            id,
-            value,
-            time_lock,
-            &secret_hash,
-            receiver_addr,
-            &swap_contract_address,
-        )?);
+        outputs.push(
+            self.erc20_payment_output(
+                id,
+                value,
+                time_lock,
+                &secret_hash,
+                receiver_addr,
+                &swap_contract_address,
+            )
+            .map_mm_err()?,
+        );
         Ok(outputs)
     }
 
@@ -936,7 +942,7 @@ pub fn receiver_spend_call_details_from_script_pubkey(script_pubkey: &Script) ->
     };
 
     let secret = match decoded.next() {
-        Some(Token::FixedBytes(hash)) => hash,
+        Some(Token::FixedBytes(hash)) => try_s!(hash.as_slice().try_into()),
         Some(token) => return ERR!("Payment tx 'secret_hash' arg is invalid, found {:?}", token),
         None => return ERR!("Couldn't find 'secret_hash' in erc20Payment call"),
     };
@@ -970,7 +976,7 @@ fn find_receiver_spend_with_swap_id_and_secret_hash(
     let expected_secret_hash = if expected_secret_hash.len() == 32 {
         ripemd160(expected_secret_hash)
     } else {
-        chain::hash::H160::from(expected_secret_hash)
+        chain::hash::H160::from_slice(expected_secret_hash).expect("this shouldn't fail")
     };
 
     for (output_idx, output) in tx.outputs.iter().enumerate() {

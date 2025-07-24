@@ -463,7 +463,9 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<String>,
     },
-    TendermintIBCTransfer,
+    TendermintIBCTransfer {
+        token_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -744,7 +746,7 @@ pub enum CreateNewAccountStatus {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
-pub enum WithdrawFrom {
+pub enum HDAddressSelector {
     AddressId(HDAccountAddressId),
     DerivationPath { derivation_path: String },
 }
@@ -995,7 +997,6 @@ pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
-    AddressDerivationPath(String),
 }
 
 #[derive(Debug, Deserialize)]

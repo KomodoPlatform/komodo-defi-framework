@@ -1,0 +1,32 @@
+[package]
+# integration with external trading api
+name = "trading_api"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+enum_derives = { path = "../derives/enum_derives" }
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_net = { path = "../mm2_net" }
+mm2_number = { path = "../mm2_number" }
+mocktopus = { workspace =  true, optional = true }
+derive_more.workspace = true
+ethereum-types.workspace = true
+futures = { workspace = true, features = ["async-await"], optional = true }
+lazy_static.workspace = true
+serde.workspace = true
+serde_derive.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+url.workspace = true
+
+[features]
+# use this to connect to external trading api in tests
+test-ext-api = [ 
+    "futures"
+]
+for-tests = ["dep:mocktopus"]
+
+[dev-dependencies]
+mocktopus.workspace = true

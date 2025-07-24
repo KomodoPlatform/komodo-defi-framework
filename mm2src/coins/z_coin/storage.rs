@@ -1,16 +1,19 @@
 use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
+use mm2_event_stream::StreamingManager;
 
-pub mod blockdb;
-pub use blockdb::*;
+pub(crate) mod blockdb;
+pub(crate) use blockdb::*;
 
-pub mod walletdb;
+pub(crate) mod walletdb;
+pub(crate) use walletdb::*;
+
+pub(crate) mod z_locked_notes;
+pub(crate) use z_locked_notes::{LockedNotesStorage, LockedNotesStorageError};
+
 #[cfg(target_arch = "wasm32")] mod z_params;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use z_params::ZcashParamsWasmImpl;
 
-pub use walletdb::*;
-
-use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
 use walletdb::wasm::storage::DataConnStmtCacheWasm;
@@ -60,7 +63,7 @@ pub struct CompactBlockRow {
 #[derive(Clone)]
 pub enum BlockProcessingMode {
     Validate,
-    Scan(DataConnStmtCacheWrapper, Option<ZBalanceEventSender>),
+    Scan(DataConnStmtCacheWrapper, StreamingManager),
 }
 
 /// Checks that the scanned blocks in the data database, when combined with the recent
@@ -118,8 +121,9 @@ pub async fn scan_cached_block(
     data: &DataConnStmtCacheWrapper,
     params: &ZcoinConsensusParams,
     block: &CompactBlock,
+    locked_notes_db: &LockedNotesStorage,
     last_height: &mut BlockHeight,
-) -> Result<usize, ValidateBlocksError> {
+) -> Result<Vec<WalletTx<Nullifier>>, ValidateBlocksError> {
     let mut data_guard = data.inner().clone();
     // Fetch the ExtendedFullViewingKeys we are tracking
     let extfvks = data_guard.get_extended_full_viewing_keys().await?;
@@ -159,7 +163,6 @@ pub async fn scan_cached_block(
 
     // To enforce that all roots match,
     // see -> https://github.com/KomodoPlatform/librustzcash/blob/e92443a7bbd1c5e92e00e6deb45b5a33af14cea4/zcash_client_backend/src/data_api/chain.rs#L304-L326
-
     let new_witnesses = data_guard
         .advance_by_block(
             &(PrunedBlock {
@@ -184,9 +187,17 @@ pub async fn scan_cached_block(
     );
 
     witnesses.extend(new_witnesses);
-
     *last_height = current_height;
 
-    // If there are any transactions in the block, return the transaction count
-    Ok(txs.len())
+    // TODO: Execute updates to `locked_notes_db` and `wallet_db` in a single transaction.
+    // This will be possible with a newer librustzcash that supports both spent notes and unconfirmed change tracking.
+    // See: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331#pullrequestreview-2883773336
+    for tx in &txs {
+        locked_notes_db
+            .remove_notes_for_txid(tx.txid.to_string())
+            .await
+            .map_err(|err| ValidateBlocksError::DbError(err.to_string()))?;
+    }
+
+    Ok(txs)
 }

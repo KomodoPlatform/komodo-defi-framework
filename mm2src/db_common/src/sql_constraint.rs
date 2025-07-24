@@ -237,7 +237,7 @@ pub mod foreign_key {
         action: &'a Action,
     }
 
-    impl<'a> fmt::Display for ActionOnEvent<'a> {
+    impl fmt::Display for ActionOnEvent<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{} {}", self.event, self.action) }
     }
 }

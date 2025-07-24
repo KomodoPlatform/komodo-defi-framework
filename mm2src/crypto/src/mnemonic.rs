@@ -29,10 +29,6 @@ impl From<bip39::Error> for MnemonicError {
     fn from(e: bip39::Error) -> Self { MnemonicError::BIP39Error(e.to_string()) }
 }
 
-impl From<argon2::password_hash::Error> for MnemonicError {
-    fn from(e: argon2::password_hash::Error) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
-}
-
 impl From<KeyDerivationError> for MnemonicError {
     fn from(e: KeyDerivationError) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
 }
@@ -84,7 +80,7 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
     };
 
     // Derive AES and HMAC keys
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &key_derivation_details).map_mm_err()?;
 
     encrypt_data(mnemonic.as_bytes(), key_derivation_details, &key_aes, &key_hmac)
         .mm_err(|e| MnemonicError::EncryptionError(e.to_string()))
@@ -104,30 +100,20 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
 ///
 /// # Errors
 /// This function can return various errors related to decoding, key derivation, encryption, and HMAC verification.
-pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmResult<Mnemonic, MnemonicError> {
-    // Re-create the salts from Base64-encoded strings
-    let (salt_aes, salt_hmac) = match &encrypted_data.key_derivation_details {
-        KeyDerivationDetails::Argon2 {
-            salt_aes, salt_hmac, ..
-        } => (SaltString::from_b64(salt_aes)?, SaltString::from_b64(salt_hmac)?),
-        _ => {
-            return MmError::err(MnemonicError::KeyDerivationError(
-                "Key derivation details should be Argon2!".to_string(),
-            ))
-        },
-    };
-
+pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmResult<String, MnemonicError> {
     // Re-create the keys from the password and salts
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) =
+        derive_keys_for_mnemonic(password, &encrypted_data.key_derivation_details).map_mm_err()?;
 
     // Decrypt the ciphertext
     let decrypted_data =
         decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| MnemonicError::DecryptionError(e.to_string()))?;
 
     // Convert decrypted data back to a string
-    let mnemonic_str = String::from_utf8(decrypted_data).map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))?;
-    let mnemonic = Mnemonic::parse_normalized(&mnemonic_str)?;
-    Ok(mnemonic)
+    let mnemonic_str = String::from_utf8(decrypted_data)
+        .map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))
+        .map_mm_err()?;
+    Ok(mnemonic_str)
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -144,10 +130,23 @@ mod tests {
         let mnemonic = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
         let password = "password";
 
-        // Verify that the mnemonic is valid
-        let parsed_mnemonic = Mnemonic::parse_normalized(mnemonic);
-        assert!(parsed_mnemonic.is_ok());
-        let parsed_mnemonic = parsed_mnemonic.unwrap();
+        // Encrypt the mnemonic
+        let encrypted_data = encrypt_mnemonic(mnemonic, password);
+        assert!(encrypted_data.is_ok());
+        let encrypted_data = encrypted_data.unwrap();
+
+        // Decrypt the mnemonic
+        let decrypted_mnemonic = decrypt_mnemonic(&encrypted_data, password);
+        assert!(decrypted_mnemonic.is_ok());
+        let decrypted_mnemonic = decrypted_mnemonic.unwrap();
+
+        // Verify if decrypted mnemonic matches the original
+        assert_eq!(decrypted_mnemonic, mnemonic);
+    });
+
+    cross_test!(test_encrypt_decrypt_non_bip39_mnemonic, {
+        let mnemonic = "Helloworld";
+        let password = "Helloworld";
 
         // Encrypt the mnemonic
         let encrypted_data = encrypt_mnemonic(mnemonic, password);
@@ -160,7 +159,7 @@ mod tests {
         let decrypted_mnemonic = decrypted_mnemonic.unwrap();
 
         // Verify if decrypted mnemonic matches the original
-        assert_eq!(decrypted_mnemonic, parsed_mnemonic);
+        assert_eq!(decrypted_mnemonic, mnemonic);
     });
 
     cross_test!(test_mnemonic_with_last_byte_zero, {
@@ -173,7 +172,9 @@ mod tests {
         let encrypted_data = encrypted_data.unwrap();
 
         // Decrypt the mnemonic
-        let decrypted_mnemonic = decrypt_mnemonic(&encrypted_data, password);
+        let decrypted_mnemonic_str = decrypt_mnemonic(&encrypted_data, password);
+        assert!(decrypted_mnemonic_str.is_ok());
+        let decrypted_mnemonic = Mnemonic::parse_normalized(&decrypted_mnemonic_str.unwrap());
         assert!(decrypted_mnemonic.is_err());
 
         // Verify that the error is due to parsing and not padding

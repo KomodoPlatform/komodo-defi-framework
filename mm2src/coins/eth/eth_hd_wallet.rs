@@ -11,6 +11,12 @@ pub type EthHDAddress = HDAddress<Address, Public>;
 pub type EthHDAccount = HDAccount<EthHDAddress, Secp256k1ExtendedPublicKey>;
 pub type EthHDWallet = HDWallet<EthHDAccount>;
 
+impl DisplayAddress for Address {
+    /// converts `Address` to mixed-case checksum form.
+    #[inline]
+    fn display_address(&self) -> String { checksum_address(&self.addr_to_string()) }
+}
+
 #[async_trait]
 impl ExtractExtendedPubkey for EthCoin {
     type ExtendedPublicKey = Secp256k1ExtendedPublicKey;
@@ -30,8 +36,6 @@ impl ExtractExtendedPubkey for EthCoin {
 #[async_trait]
 impl HDWalletCoinOps for EthCoin {
     type HDWallet = EthHDWallet;
-
-    fn address_formatter(&self) -> fn(&Address) -> String { display_eth_address }
 
     fn address_from_extended_pubkey(
         &self,
@@ -140,7 +144,7 @@ impl HDWalletBalanceOps for EthCoin {
     async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
         let balance = self
             .address_balance(*address)
-            .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
+            .and_then(move |result| u256_to_big_decimal(result, self.decimals()).map_mm_err())
             .compat()
             .await?;
 

@@ -1,17 +1,18 @@
 use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             ZcoinStorageRes};
+                             LockedNotesStorage, ZcoinStorageRes};
+use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
+use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 use crate::z_coin::ZcoinConsensusParams;
 
 use common::async_blocking;
 use db_common::sqlite::rusqlite::{params, Connection};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
-use futures_util::SinkExt;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use protobuf::Message;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use zcash_client_backend::data_api::error::Error as ChainError;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
@@ -45,14 +46,15 @@ impl From<ChainError<NoteId>> for ZcoinStorageError {
 
 impl BlockDbImpl {
     #[cfg(not(test))]
-    pub async fn new(_ctx: &MmArc, ticker: String, path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
+        let path = ctx.global_dir().join(format!("{}_cache.db", ticker));
         async_blocking(move || {
+            mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
             let conn = Arc::new(Mutex::new(conn));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -61,6 +63,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(Self { db: conn, ticker })
         })
@@ -68,16 +71,17 @@ impl BlockDbImpl {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub(crate) async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
         let ctx = ctx.clone();
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
-                .clone_or(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+                .get()
+                .cloned()
+                .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -86,6 +90,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(BlockDbImpl { db: conn, ticker })
         })
@@ -166,15 +171,12 @@ impl BlockDbImpl {
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             let rows = stmt_blocks
-                .query_map(
-                    params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
-                    |row| {
-                        Ok(CompactBlockRow {
-                            height: BlockHeight::from_u32(row.get(0)?),
-                            data: row.get(1)?,
-                        })
-                    },
-                )
+                .query_map(params![u32::from(from_height), limit.unwrap_or(u32::MAX),], |row| {
+                    Ok(CompactBlockRow {
+                        height: BlockHeight::from_u32(row.get(0)?),
+                        data: row.get(1)?,
+                    })
+                })
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             Ok(rows.collect_vec())
@@ -188,6 +190,7 @@ impl BlockDbImpl {
         mode: BlockProcessingMode,
         validate_from: Option<(BlockHeight, BlockHash)>,
         limit: Option<u32>,
+        locked_notes_db: &LockedNotesStorage,
     ) -> ZcoinStorageRes<()> {
         let ticker = self.ticker.to_owned();
         let mut from_height = match &mode {
@@ -225,14 +228,17 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
-                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
-                    // If there are transactions present in the current scanned block,
-                    // we send a `Triggered` event to update the balance change.
-                    if tx_size > 0 {
-                        if let Some(mut sender) = z_balance_change_sender.clone() {
-                            sender.send(()).await.expect("No receiver is available/dropped");
-                        };
+                BlockProcessingMode::Scan(data, streaming_manager) => {
+                    let txs = scan_cached_block(data, &params, &block, locked_notes_db, &mut from_height).await?;
+                    if !txs.is_empty() {
+                        // Stream out the new transactions.
+                        streaming_manager
+                            .send(&ZCoinTxHistoryEventStreamer::derive_streamer_id(&ticker), txs)
+                            .ok();
+                        // And also stream balance changes.
+                        streaming_manager
+                            .send(&ZCoinBalanceEventStreamer::derive_streamer_id(&ticker), ())
+                            .ok();
                     };
                 },
             }

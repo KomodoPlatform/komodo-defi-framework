@@ -24,5 +24,4 @@ cmake-build-debug
 /wasm-build.log
 
 # Opt out from history in order to speed the `COPY .` up.
-# Note that we should create and/or update the MM_VERSION file when using `COPY .` to build a custom version.
 /.git

@@ -7,7 +7,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatusAlias, RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatusAlias,
+               RpcTaskTypes};
 
 pub type WithdrawAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type WithdrawUserAction = HwRpcTaskUserAction;
@@ -32,8 +33,12 @@ pub trait CoinWithdrawInit {
     ) -> WithdrawInitResult<TransactionDetails>;
 }
 
-pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInitResult<InitWithdrawResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
+pub async fn init_withdraw(
+    ctx: MmArc,
+    request: RpcInitReq<WithdrawRequest>,
+) -> WithdrawInitResult<InitWithdrawResponse> {
+    let (client_id, request) = (request.client_id, request.inner);
+    let coin = lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let task = WithdrawTask {
         ctx: ctx.clone(),
@@ -41,7 +46,8 @@ pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInit
         request,
     };
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawError::InternalError)?;
-    let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, &spawner, task)?;
+    let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, &spawner, task, client_id)
+        .map_mm_err()?;
     Ok(InitWithdrawResponse { task_id })
 }
 
@@ -81,7 +87,7 @@ pub async fn withdraw_user_action(
         .withdraw_task_manager
         .lock()
         .map_to_mm(|e| WithdrawUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -91,7 +97,7 @@ pub async fn cancel_withdraw(ctx: MmArc, req: CancelRpcTaskRequest) -> MmResult<
         .withdraw_task_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 

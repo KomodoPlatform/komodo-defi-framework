@@ -1,12 +1,13 @@
-use super::{inner_impl, AccountUpdatingError, AddressDerivingError, ExtendedPublicKeyOps, HDAccountOps, HDCoinAddress,
-            HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
+use super::{inner_impl, AccountUpdatingError, AddressDerivingError, DisplayAddress, ExtendedPublicKeyOps,
+            HDAccountOps, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
             NewAddressDeriveConfirmError, NewAddressDerivingError};
-use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
+use crate::hd_wallet::{errors::SettingEnabledAddressError, HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
 use crypto::Bip44Chain;
 use itertools::Itertools;
-use mm2_err_handle::mm_error::{MmError, MmResult};
+use mm2_err_handle::{mm_error::{MmError, MmResult},
+                     prelude::MmResultExt};
 use std::collections::HashMap;
 
 type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
@@ -24,13 +25,6 @@ pub struct HDAddressId {
 pub trait HDWalletCoinOps {
     /// Any type that represents a Hierarchical Deterministic (HD) wallet.
     type HDWallet: HDWalletOps + HDWalletStorageOps + Send + Sync;
-
-    /// Returns a formatter function for address representation.
-    /// Useful when an address has multiple display formats.
-    /// For example, Ethereum addresses can be fully displayed or truncated.
-    /// By default, the formatter uses the Display trait of the address type, which truncates Ethereum addresses.
-    /// Implement this function if a different display format is required.
-    fn address_formatter(&self) -> fn(&HDCoinAddress<Self>) -> String { |address| address.to_string() }
 
     /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(
@@ -144,7 +138,7 @@ pub trait HDWalletCoinOps {
         hd_account: &HDCoinHDAccount<Self>,
         chain: Bip44Chain,
     ) -> AddressDerivingResult<Vec<HDCoinHDAddress<Self>>> {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         let address_ids = (0..known_addresses_number).map(|address_id| HDAddressId { chain, address_id });
         self.derive_addresses(hd_account, address_ids).await
     }
@@ -162,7 +156,8 @@ pub trait HDWalletCoinOps {
         } = inner_impl::generate_new_address_immutable(self, hd_account, chain).await?;
 
         self.set_known_addresses_number(hd_wallet, hd_account, chain, new_known_addresses_number)
-            .await?;
+            .await
+            .map_mm_err()?;
         Ok(address)
     }
 
@@ -185,22 +180,26 @@ pub trait HDWalletCoinOps {
         let inner_impl::NewAddress {
             hd_address,
             new_known_addresses_number,
-        } = inner_impl::generate_new_address_immutable(self, hd_account, chain).await?;
+        } = inner_impl::generate_new_address_immutable(self, hd_account, chain)
+            .await
+            .map_mm_err()?;
 
-        let trezor_coin = self.trezor_coin()?;
+        let trezor_coin = self.trezor_coin().map_mm_err()?;
         let derivation_path = hd_address.derivation_path().clone();
-        let expected_address = hd_address.address().to_string();
+        let expected_address = hd_address.address().display_address();
         // Ask the user to confirm if the given `expected_address` is the same as on the HW display.
         confirm_address
             .confirm_address(trezor_coin, derivation_path, expected_address)
-            .await?;
+            .await
+            .map_mm_err()?;
 
-        let actual_known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let actual_known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         // Check if the actual `known_addresses_number` hasn't been changed while we waited for the user confirmation.
         // If the actual value is greater than the new one, we don't need to update.
         if actual_known_addresses_number < new_known_addresses_number {
             self.set_known_addresses_number(hd_wallet, hd_account, chain, new_known_addresses_number)
-                .await?;
+                .await
+                .map_mm_err()?;
         }
 
         Ok(hd_address)
@@ -220,16 +219,14 @@ pub trait HDWalletCoinOps {
             return MmError::err(AccountUpdatingError::AddressLimitReached { max_addresses_number });
         }
         match chain {
-            Bip44Chain::External => {
-                hd_wallet
-                    .update_external_addresses_number(hd_account.account_id(), new_known_addresses_number)
-                    .await?
-            },
-            Bip44Chain::Internal => {
-                hd_wallet
-                    .update_internal_addresses_number(hd_account.account_id(), new_known_addresses_number)
-                    .await?
-            },
+            Bip44Chain::External => hd_wallet
+                .update_external_addresses_number(hd_account.account_id(), new_known_addresses_number)
+                .await
+                .map_mm_err()?,
+            Bip44Chain::Internal => hd_wallet
+                .update_internal_addresses_number(hd_account.account_id(), new_known_addresses_number)
+                .await
+                .map_mm_err()?,
         }
         hd_account.set_known_addresses_number(chain, new_known_addresses_number);
 
@@ -238,4 +235,14 @@ pub trait HDWalletCoinOps {
 
     /// Returns the Trezor coin name for this coin.
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError>;
+
+    /// Informs the coin of the enabled address provided/derived by the hardware wallet.
+    async fn received_enabled_address_from_hw_wallet(
+        &self,
+        _enabled_address: HDCoinHDAddress<Self>,
+    ) -> MmResult<(), SettingEnabledAddressError> {
+        // By default, the default implementation is doing nothing.
+        // Different coins can use this hook to perform additional actions if needed.
+        Ok(())
+    }
 }

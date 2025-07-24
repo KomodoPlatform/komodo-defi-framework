@@ -9,12 +9,13 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
+use mm2_net::ip_addr::ParseAddressError;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, ParseAddressError,
-                        PeerDecodedResponse};
+use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, PeerDecodedResponse};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -126,8 +127,6 @@ pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionRes
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    use crate::lp_network::addr_to_ipv4_string;
-
     let node_info: NodeInfo = json::from_value(req)?;
 
     // Check that the entered peer_id is valid
@@ -136,7 +135,7 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResul
         .parse::<PeerId>()
         .map_to_mm(|e| NodeVersionError::PeerIdParseError(node_info.peer_id.clone(), e.to_string()))?;
 
-    let ipv4_addr = addr_to_ipv4_string(&node_info.address)?;
+    let ipv4_addr = mm2_net::ip_addr::addr_to_ipv4_string(&node_info.address).map_mm_err()?;
     let node_info_with_ipv4_addr = NodeInfo {
         name: node_info.name,
         address: ipv4_addr,
@@ -170,16 +169,24 @@ struct Mm2VersionRes {
     nodes: HashMap<String, String>,
 }
 
-fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+fn process_get_version_request(ctx: MmArc) -> Result<Vec<u8>, String> {
     let response = ctx.mm_version().to_string();
-    let encoded = try_s!(encode_message(&response));
-    Ok(Some(encoded))
+    encode_message(&response).map_err(|e| e.to_string())
 }
 
-pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
-    log::debug!("Got stats request {:?}", request);
+fn process_get_peer_utc_timestamp_request() -> Result<Vec<u8>, String> {
+    let timestamp = common::get_utc_timestamp();
+    let timestamp: u64 = timestamp
+        .try_into()
+        .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {}", timestamp));
+
+    encode_message(&timestamp).map_err(|e| e.to_string())
+}
+
+pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Vec<u8>, String> {
     match request {
         NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
+        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(),
     }
 }
 
@@ -234,7 +241,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
     let network_info = if ctx.p2p_in_memory() {
         NetworkInfo::InMemory
     } else {
-        let network_ports = lp_network_ports(netid)?;
+        let network_ports = lp_network_ports(netid).map_mm_err()?;
         NetworkInfo::Distributed { network_ports }
     };
 

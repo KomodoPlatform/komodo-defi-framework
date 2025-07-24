@@ -26,6 +26,7 @@ pub(crate) fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<T
         posv: unsigned.posv,
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
+        v_extra_payload: None,
     }
 }
 

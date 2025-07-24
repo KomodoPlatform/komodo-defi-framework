@@ -25,16 +25,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -53,16 +53,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -81,16 +81,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -109,16 +109,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -138,8 +138,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -149,8 +149,8 @@ jobs:
       - name: Set loopback address
         run: ./scripts/ci/lo0_config.sh
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -170,16 +170,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Download wget64
         uses: ./.github/actions/download-and-verify
@@ -206,16 +206,16 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -235,8 +235,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
+          rustup default nightly-2025-01-03
           rustup target add wasm32-unknown-unknown
 
       - name: Install build deps
@@ -245,6 +245,9 @@ jobs:
           deps: ('protoc')
 
       - name: Install wasm-pack
+        # Use the latest wasm-pack for up-to-date compatibility coverage on KDF.
+        # As we don't share any build artifacts from this pipeline, we don't need
+        # to lock the version here.
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Download geckodriver
@@ -261,8 +264,8 @@ jobs:
           sudo tar -xzvf geckodriver-v0.32.2-linux64.tar.gz -C /bin
           sudo chmod +x /bin/geckodriver
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
-        run: WASM_BINDGEN_TEST_TIMEOUT=480 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
+        run: WASM_BINDGEN_TEST_TIMEOUT=1200 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main

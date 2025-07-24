@@ -1,11 +1,10 @@
 use async_std::prelude::FutureExt;
 use chrono::Utc;
 use common::executor::SpawnFuture;
-use common::expirable_map::ExpirableEntry;
 use common::{log, HttpStatusCode, StatusCode};
+use compatible_time::{Duration, Instant};
 use derive_more::Display;
 use futures::channel::oneshot::{self, Receiver, Sender};
-use instant::{Duration, Instant};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
@@ -80,35 +79,27 @@ impl HealthcheckMessage {
         const MIN_DURATION_FOR_REUSABLE_MSG: Duration = Duration::from_secs(5);
 
         lazy_static! {
-            static ref RECENTLY_GENERATED_MESSAGE: Mutex<ExpirableEntry<HealthcheckMessage>> =
-                Mutex::new(ExpirableEntry::new(
-                    // Using dummy values in order to initialize `HealthcheckMessage` context.
-                    HealthcheckMessage {
-                        signature: vec![],
-                        data: HealthcheckData {
-                            sender_public_key: vec![],
-                            expires_at_secs: 0,
-                            is_a_reply: false,
-                        },
-                    },
-                    Duration::from_secs(0)
-                ));
+            static ref RECENTLY_GENERATED_MESSAGE: Mutex<Option<(HealthcheckMessage, Instant)>> = Mutex::new(None);
         }
 
         // If recently generated message has longer life than `MIN_DURATION_FOR_REUSABLE_MSG`, we can reuse it to
         // reduce the message generation overhead under high pressure.
         let mut mutexed_msg = RECENTLY_GENERATED_MESSAGE.lock().unwrap();
 
-        if mutexed_msg.has_longer_life_than(MIN_DURATION_FOR_REUSABLE_MSG) {
-            Ok(mutexed_msg.get_element().clone())
-        } else {
-            let new_msg = HealthcheckMessage::generate_message(ctx, true)?;
-
-            mutexed_msg.update_value(new_msg.clone());
-            mutexed_msg.update_expiration(Instant::now() + Duration::from_secs(healthcheck_message_exp_secs()));
-
-            Ok(new_msg)
+        if let Some((ref msg, expiration)) = *mutexed_msg {
+            if expiration > Instant::now() + MIN_DURATION_FOR_REUSABLE_MSG {
+                return Ok(msg.clone());
+            }
         }
+
+        let new_msg = HealthcheckMessage::generate_message(ctx, true)?;
+
+        *mutexed_msg = Some((
+            new_msg.clone(),
+            Instant::now() + Duration::from_secs(healthcheck_message_exp_secs()),
+        ));
+
+        Ok(new_msg)
     }
 
     fn is_received_message_valid(&self) -> Result<PeerAddress, SignValidationError> {
@@ -266,7 +257,7 @@ pub async fn peer_connection_healthcheck_rpc(
 
     {
         let mut book = ctx.healthcheck_response_handler.lock().await;
-        book.insert(target_peer_address.into(), tx, address_record_exp);
+        book.insert_expirable(target_peer_address.into(), tx, address_record_exp);
     }
 
     broadcast_p2p_msg(

@@ -21,7 +21,6 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 
-#![feature(hash_raw_entry)]
 // `mockable` implementation uses these
 #![allow(
     forgetting_references,
@@ -42,30 +41,27 @@
 
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
+use common::executor::Timer;
 use common::log;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
-use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 
-#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+use common::log::warn;
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use lp_swap::PAYMENT_LOCKTIME;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
-use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
 
-use std::env;
-use std::ffi::OsString;
 use std::process::exit;
-use std::ptr::null;
 use std::str;
 
 pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
-use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod database;
@@ -81,12 +77,42 @@ pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
+mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
+
+use clap::Parser;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
+
+const EXTRA_HELP_MESSAGE: &str = r#"
+Environment variables:
+
+  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
+                     File must contain valid json with structure mentioned above.
+                     Defaults to `MM2.json`
+  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
+                     File must contain valid json.
+                     Recommended: https://github.com/komodoplatform/coins/blob/master/coins.
+                     Defaults to `coins`.
+  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
+
+See also the online documentation at
+https://komodoplatform.com/en/docs
+"#;
+
+#[derive(Parser, Debug)]
+#[command(about="Komodo DeFi Framework Daemon", long_about=None, after_help=EXTRA_HELP_MESSAGE)]
+pub struct Cli {
+    /// JSON configuration string - will be used instead of the json config file
+    pub config: Option<String>,
+
+    /// Print version
+    #[clap(short, long)]
+    pub version: bool,
+}
 
 pub struct LpMainParams {
     conf: Json,
@@ -102,7 +128,7 @@ impl LpMainParams {
     }
 }
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
@@ -124,7 +150,7 @@ pub async fn lp_main(
     ctx_cb: &dyn Fn(u32),
     version: String,
     datetime: String,
-) -> Result<(), String> {
+) -> Result<MmArc, String> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `kdf` is linked as a library, and `kdf` is restarted, `init_logger` returns an error.
@@ -150,7 +176,7 @@ pub async fn lp_main(
         }
     }
 
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     initialize_payment_locktime(&conf);
 
     let ctx = MmCtxBuilder::new()
@@ -164,15 +190,28 @@ pub async fn lp_main(
     #[cfg(not(target_arch = "wasm32"))]
     spawn_ctrl_c_handler(ctx.clone());
 
-    try_s!(lp_init(ctx, version, datetime).await);
-    Ok(())
+    try_s!(lp_init(ctx.clone(), version, datetime).await);
+    Ok(ctx)
+}
+
+pub async fn lp_run(ctx: MmArc) {
+    // In the mobile version we might depend on `lp_init` staying around until the context stops.
+    loop {
+        if ctx.is_stopping() {
+            break;
+        };
+        Timer::sleep(0.2).await
+    }
+
+    // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
+    lp_swap::clear_running_swaps(&ctx);
 }
 
 /// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
 ///
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
+fn spawn_ctrl_c_handler(ctx: MmArc) {
     use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 
     common::executor::spawn(async move {
@@ -187,138 +226,48 @@ fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
     });
 }
 
-fn help() {
-    const HELP_MSG: &str = r#"Command-line options.
-The first command-line argument is special and designates the mode.
-
-  help                       ..  Display this message.
-  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.
-  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.
-  vanity {substring}         ..  Tries to find an address with the given substring.
-  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.
-  {JSON configuration}       ..  Run the MarketMaker daemon.
-
-Some (but not all) of the JSON configuration parameters (* - required):
-
-                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,
-                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
-  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
-                     If the field isn't present on the command line then we try loading it from the 'coins' file.
-  dbdir          ..  MM database path. 'DB' by default.
-  gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
-                 ..  It's recommended to put essential info to this field (application name, OS, version, etc).
-                 ..  e.g. AtomicDEX iOS 1.0.1000.
-  myipaddr       ..  IP address to bind to for P2P networking.
-  netid          ..  Subnetwork. Affects ports and keys.
-  passphrase *   ..  Wallet seed.
-                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
-  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
-                     Default is currently 'http://localhost:3000'
-  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
-  rpc_password   ..  RPC password used to authorize non-public RPC calls
-                     MM generates password from passphrase if this field is not set
-  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.
-                     Defaults to `true`, set `false` to disable. `Use with caution`.
-  rpcport        ..  If > 1000 overrides the 7783 default.
-  i_am_seed      ..  Activate the seed node mode (acting as a relay for kdf clients).
-                     Defaults to `false`.
-  seednodes      ..  Seednode IPs that node will use.
-                     At least one seed IP must be present if the node is not a seed itself.
-  wif            ..  `1` to add WIFs to the information we provide about a coin.
-
-Environment variables:
-
-  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
-                     File must contain valid json with structure mentioned above.
-                     Defaults to `MM2.json`
-  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
-                     File must contain valid json.
-                     Recommended: https://github.com/jl777/coins/blob/master/coins.
-                     Defaults to `coins`.
-  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
-
-See also the online documentation at
-https://developers.atomicdex.io
-"#;
-
-    println!("{}", HELP_MSG);
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)] // Not used by mm2_lib.
 pub fn mm2_main(version: String, datetime: String) {
-    use libc::c_char;
-
     init_crash_reports();
 
-    // Temporarily simulate `argv[]` for the C version of the main method.
-    let args: Vec<String> = env::args()
-        .map(|mut arg| {
-            arg.push('\0');
-            arg
-        })
-        .collect();
-    let mut args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr() as *const c_char).collect();
-    args.push(null());
-
-    let args_os: Vec<OsString> = env::args_os().collect();
-
-    // NB: The first argument is special, being used as the mode switcher.
-    // The other arguments might be used to pass the data to the various MM modes,
-    // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
-    let first_arg = args_os.get(1).and_then(|arg| arg.to_str());
-
-    if first_arg == Some("update_config") {
-        match on_update_config(&args_os) {
-            Ok(_) => println!("Success"),
-            Err(e) => eprintln!("{}", e),
-        }
+    let cli = Cli::parse();
+    if cli.version {
+        println!("Komodo DeFi Framework: {version}");
         return;
     }
 
-    if first_arg == Some("--version") || first_arg == Some("-v") || first_arg == Some("version") {
-        println!("AtomicDEX API: {version}");
-        return;
-    }
+    let json_config = cli.config.as_deref();
 
-    if first_arg == Some("--help") || first_arg == Some("-h") || first_arg == Some("help") {
-        help();
-        return;
-    }
+    log!("Komodo DeFi Framework {} DT {}", version, datetime);
 
-    if cfg!(windows) && first_arg == Some("/?") {
-        help();
-        return;
-    }
-
-    log!("AtomicDEX API {} DT {}", version, datetime);
-
-    if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
+    if let Err(err) = run_lp_main(json_config, &|_| (), version, datetime) {
         log!("{}", err);
         exit(1);
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-/// Parses and returns the `first_arg` as JSON.
-/// Attempts to load the config from `MM2.json` file if `first_arg` is None
-pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
-    let conf_path = common::kdf_config_file();
-    let conf_from_file = slurp(&conf_path);
-    let conf = match first_arg {
-        Some(s) => s,
+/// Parses and returns the `json_config` as JSON.
+/// Attempts to load the config from `MM2.json` file if `json_config` is None
+pub fn get_mm2config(json_config: Option<&str>) -> Result<Json, String> {
+    let conf = match json_config {
+        Some(s) => s.to_owned(),
         None => {
+            let conf_path = common::kdf_config_file().map_err(|e| e.to_string())?;
+            let conf_from_file = slurp(&conf_path);
+
             if conf_from_file.is_empty() {
                 return ERR!(
                     "Config is not set from command line arg and {} file doesn't exist.",
                     conf_path.display()
                 );
             }
-            try_s!(std::str::from_utf8(&conf_from_file))
+            try_s!(String::from_utf8(conf_from_file))
         },
     };
 
-    let mut conf: Json = match json::from_str(conf) {
+    let mut conf: Json = match json::from_str(&conf) {
         Ok(json) => json,
         // Syntax or io errors may include the conf string in the error message so we don't want to take risks and show these errors internals in the log.
         // If new variants are added to the Error enum, there can be a risk of exposing the conf string in the error message when updating serde_json so
@@ -327,7 +276,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     };
 
     if conf["coins"].is_null() {
-        let coins_path = common::kdf_coins_file();
+        let coins_path = common::kdf_coins_file().map_err(|e| e.to_string())?;
 
         let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {
@@ -366,36 +315,8 @@ pub fn run_lp_main(
     let log_filter = LogLevel::from_env();
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
-    try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
-    Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn on_update_config(args: &[OsString]) -> Result<(), String> {
-    use mm2_io::fs::safe_slurp;
-
-    let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
-    let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;
-
-    let config = try_s!(safe_slurp(src_path));
-    let mut config: Json = try_s!(json::from_slice(&config));
-
-    let result = if config.is_array() {
-        try_s!(update_coins_config(config))
-    } else {
-        // try to get config["coins"] as array
-        let conf_obj = config.as_object_mut().ok_or(ERRL!("Expected coin list"))?;
-        let coins = conf_obj.remove("coins").ok_or(ERRL!("Expected coin list"))?;
-        let updated_coins = try_s!(update_coins_config(coins));
-        conf_obj.insert("coins".into(), updated_coins);
-        config
-    };
-
-    let buf = Vec::new();
-    let formatter = json::ser::PrettyFormatter::with_indent(b"\t");
-    let mut ser = json::Serializer::with_formatter(buf, formatter);
-    try_s!(result.serialize(&mut ser));
-    try_s!(std::fs::write(dst_path, ser.into_inner()));
+    let ctx = try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
+    block_on(lp_run(ctx));
     Ok(())
 }
 

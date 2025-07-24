@@ -32,7 +32,7 @@ impl<'de> Deserialize<'de> for BigIntStr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct BigIntStrVisitor;
 
-        impl<'de> de::Visitor<'de> for BigIntStrVisitor {
+        impl de::Visitor<'_> for BigIntStrVisitor {
             type Value = BigIntStr;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

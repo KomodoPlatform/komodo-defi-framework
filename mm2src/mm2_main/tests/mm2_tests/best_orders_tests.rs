@@ -30,6 +30,7 @@ fn test_best_orders_v2_exclude_mine() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -137,6 +138,7 @@ fn test_best_orders_no_duplicates_after_update() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -291,6 +293,7 @@ fn test_best_orders_address_and_confirmations() {
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -603,6 +606,7 @@ fn zhtlc_best_orders() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,

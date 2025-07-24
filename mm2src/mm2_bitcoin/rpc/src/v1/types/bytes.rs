@@ -51,7 +51,7 @@ impl<'a> Deserialize<'a> for Bytes {
 
 struct BytesVisitor;
 
-impl<'a> Visitor<'a> for BytesVisitor {
+impl Visitor<'_> for BytesVisitor {
     type Value = Bytes;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("a bytes") }
@@ -85,8 +85,8 @@ impl ops::Deref for Bytes {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-impl ::core::fmt::LowerHex for Bytes {
-    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+impl ::std::fmt::LowerHex for Bytes {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         for i in &self.0[..] {
             write!(f, "{:02x}", i)?;
         }

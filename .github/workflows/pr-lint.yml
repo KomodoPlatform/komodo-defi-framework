@@ -22,6 +22,7 @@ jobs:
           types: |
             feat
             fix
+            improvement
             chore
             docs
             deps
@@ -38,16 +39,18 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           title_length=${#TITLE}
-          if [ $title_length -gt 72 ]
+          if [ $title_length -gt 85 ]
           then
-            echo "PR title is too long (greater than 72 characters)"
+            echo "PR title is too long (greater than 85 characters)"
             exit 1
           fi
 
       - name: Check PR labels
         env:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        if: contains(env.LABEL_NAMES, 'under review') == contains(env.LABEL_NAMES, 'in progress')
+        if: "!((contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
+          || (!contains(env.LABEL_NAMES, 'pending review') && contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
+          || (!contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && contains(env.LABEL_NAMES, 'blocked')))"
         run: |
-          echo "PR must have "exactly one" of these labels: ['under review', 'in progress']."
+          echo "PR must have "exactly one" of these labels: ['status: pending review', 'status: in progress', 'status: blocked']."
           exit 1
