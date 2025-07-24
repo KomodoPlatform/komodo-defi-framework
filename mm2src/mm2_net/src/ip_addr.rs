@@ -1,5 +1,6 @@
 use crate::transport::slurp_url;
 use common::log;
+use derive_more::Display;
 use gstuff::try_s;
 use gstuff::{ERR, ERRL};
 use mm2_core::mm_ctx::MmArc;
@@ -9,6 +10,9 @@ use std::fs;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
+
+use mm2_err_handle::prelude::{MapToMmResult, MmError};
+use std::net::ToSocketAddrs;
 
 const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
 
@@ -27,7 +31,6 @@ const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ip
 /// Dropping or using that Sender will stop the HTTP fallback server.
 ///
 /// Also the port of the HTTP fallback server is returned.
-#[cfg(not(target_arch = "wasm32"))]
 fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
     let netid = ctx.netid();
 
@@ -66,7 +69,6 @@ fn simple_ip_extractor(ip: &str) -> Result<IpAddr, String> {
 }
 
 /// Detect the outer IP address, visible to the internet.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn fetch_external_ip() -> Result<IpAddr, String> {
     for url in IP_PROVIDERS.iter() {
         log::info!("Trying to fetch the real IP from '{}' ...", url);
@@ -105,7 +107,6 @@ pub async fn fetch_external_ip() -> Result<IpAddr, String> {
 /// Later we'll try to *bind* on this IP address,
 /// and this will break under NAT or forwarding because the internal IP address will be different.
 /// Which might be a good thing, allowing us to detect the likehoodness of NAT early.
-#[cfg(not(target_arch = "wasm32"))]
 async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     let ip = try_s!(fetch_external_ip().await);
 
@@ -148,7 +149,6 @@ async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     Ok(all_interfaces)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     let myipaddr: IpAddr = if Path::new("myipaddr").exists() {
         match fs::File::open("myipaddr") {
@@ -168,4 +168,53 @@ pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
         try_s!(detect_myipaddr(ctx).await)
     };
     Ok(myipaddr)
+}
+
+#[derive(Debug, Display)]
+pub enum ParseAddressError {
+    #[display(fmt = "Address '{address}' cannot be resolved to IPv4.")]
+    CannotResolveIPv4 { address: String },
+    #[display(fmt = "Couldn't resolve any IP on '{}' address. {}", address, reason)]
+    UnresolvedAddress { address: String, reason: String },
+}
+
+pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
+    // Remove "https:// or http://" etc.. from address str
+    let formated_address = address.split("://").last().unwrap_or(address);
+
+    let address_with_port = format!(
+        "{formated_address}{}",
+        if formated_address.contains(':') { "" } else { ":0" }
+    );
+
+    let iter = address_with_port.as_str().to_socket_addrs().map_to_mm(|e| {
+        log::error!("Couldn't resolve '{}' seed: {}", address, e);
+        ParseAddressError::UnresolvedAddress {
+            address: address.to_owned(),
+            reason: e.to_string(),
+        }
+    })?;
+
+    if iter.len() == 0 {
+        return MmError::err(ParseAddressError::UnresolvedAddress {
+            address: address.to_owned(),
+            reason: "Empty DNS result.".to_owned(),
+        });
+    }
+
+    for resolved in iter {
+        if resolved.is_ipv4() {
+            return Ok(resolved.ip().to_string());
+        } else {
+            log::warn!(
+                "Address/Seed {} resolved to IPv6 {} which is not supported",
+                address,
+                resolved
+            );
+        }
+    }
+
+    MmError::err(ParseAddressError::CannotResolveIPv4 {
+        address: address.to_owned(),
+    })
 }

@@ -1,8 +1,11 @@
 //! RPC activation and deactivation of the order status streamer.
-use super::{EnableStreamingRequest, EnableStreamingResponse};
 use crate::lp_ordermatch::order_events::OrderStatusStreamer;
+
+use super::{EnableStreamingRequest, EnableStreamingResponse};
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
+use mm2_event_stream::DeriveStreamerId;
 
 use common::HttpStatusCode;
 use http::StatusCode;
@@ -21,7 +24,7 @@ pub async fn enable_order_status(
     ctx: MmArc,
     req: EnableStreamingRequest<()>,
 ) -> MmResult<EnableStreamingResponse, OrderStatusStreamingRequestError> {
-    let order_status_streamer = OrderStatusStreamer::new();
+    let order_status_streamer = OrderStatusStreamer::new(());
     ctx.event_stream_manager
         .add(req.client_id, order_status_streamer, ctx.spawner())
         .await

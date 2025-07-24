@@ -2,11 +2,11 @@ use crate::task::RpcTaskTypes;
 use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
             TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
 use common::executor::SpawnFuture;
-use common::log::{debug, info, warn};
+use common::log::{debug, info, trace, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::{Event, StreamingManager};
+use mm2_event_stream::{Event, StreamerId, StreamingManager, StreamingManagerError};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -192,11 +192,17 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 // Note that this should really always be `Some`, since we updated the status *successfully*.
                 if let Some(new_status) = self.task_status(task_id, false) {
                     let event = Event::new(
-                        format!("TASK:{task_id}"),
+                        StreamerId::Task { task_id },
                         serde_json::to_value(new_status).expect("Serialization shouldn't fail."),
                     );
                     if let Err(e) = self.streaming_manager.broadcast_to(event, client_id) {
-                        warn!("Failed to send task status update to the client (ID={client_id}): {e:?}");
+                        match e {
+                            StreamingManagerError::UnknownClient => {
+                                // TODO: Set this log to warn level once we stop setting a default client ID in task managed requests (i.e. after migrating event streaming to WS).
+                                trace!("Failed to send task status update to the client (ID={client_id}): {e:?}")
+                            },
+                            _ => warn!("Failed to send task status update to the client (ID={client_id}): {e:?}"),
+                        }
                     }
                 };
             }

@@ -217,6 +217,7 @@ pub enum UpdateNftError {
     },
     #[display(fmt = "Private key policy is not allowed: {}", _0)]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
@@ -264,6 +265,10 @@ impl From<GenerateSignedMessageError> for UpdateNftError {
     }
 }
 
+impl From<UnexpectedDerivationMethod> for UpdateNftError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(e) }
+}
+
 impl HttpStatusCode for UpdateNftError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -283,7 +288,8 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::ProtectFromSpamError(_)
             | UpdateNftError::NoSuchCoin { .. }
             | UpdateNftError::CoinDoesntSupportNft { .. }
-            | UpdateNftError::PrivKeyPolicyNotAllowed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::PrivKeyPolicyNotAllowed(_)
+            | UpdateNftError::UnexpectedDerivationMethod(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

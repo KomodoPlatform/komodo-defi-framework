@@ -568,7 +568,7 @@ impl FeeEstimator for Platform {
             ConfirmationTarget::Normal => self.confirmations_targets.normal,
             ConfirmationTarget::HighPriority => self.confirmations_targets.high_priority,
         };
-        let fee_per_kb = tokio::task::block_in_place(move || {
+        let fee_rate = tokio::task::block_in_place(move || {
             block_on_f01(self.rpc_client().estimate_fee_sat(
                 platform_coin.decimals(),
                 // Todo: when implementing Native client detect_fee_method should be used for Native and
@@ -582,16 +582,16 @@ impl FeeEstimator for Platform {
 
         // Set default fee to last known fee for the corresponding confirmation target
         match confirmation_target {
-            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_per_kb),
-            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_per_kb),
-            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_per_kb),
+            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_rate),
+            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_rate),
+            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_rate),
         };
 
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
         // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
         // This has changed in rust-lightning v0.0.110 as LDK currently wraps get_est_sat_per_1000_weight to ensure that the value returned is
         // no smaller than 253. https://github.com/lightningdevkit/rust-lightning/pull/1552
-        (fee_per_kb as f64 / 4.0).ceil() as u32
+        (fee_rate as f64 / 4.0).ceil() as u32
     }
 }
 

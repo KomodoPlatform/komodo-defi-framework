@@ -8,4 +8,4 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-serde = "1.0"
+serde.workspace = true

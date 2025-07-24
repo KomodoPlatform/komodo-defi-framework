@@ -314,7 +314,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
     ) -> Result<(), BlockHeaderStorageError> {
         let coin = self.ticker.clone();
         let sql = remove_headers_from_to_height_sql(&coin)?;
-        let params = vec![from_height.to_string(), to_height.to_string()];
+        let params = [from_height.to_string(), to_height.to_string()];
         let selfi = self.clone();
 
         async_blocking(move || {

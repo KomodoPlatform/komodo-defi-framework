@@ -4,6 +4,8 @@ use gstuff::now_float;
 use mm2_err_handle::prelude::*;
 use std::path::{Path, PathBuf};
 
+use crate::fs::create_parents;
+
 pub type FileLockResult<T> = std::result::Result<T, MmError<FileLockError>>;
 
 #[derive(Debug, Display)]
@@ -45,6 +47,10 @@ fn read_timestamp(path: &dyn AsRef<Path>) -> FileLockResult<Option<u64>> {
 
 impl<T: AsRef<Path>> FileLock<T> {
     pub fn lock(lock_path: T, ttl_sec: f64) -> FileLockResult<Option<FileLock<T>>> {
+        create_parents(&lock_path.as_ref()).map_err(|e| FileLockError::ErrorCreatingLockFile {
+            path: lock_path.as_ref().to_path_buf(),
+            error: e.to_string(),
+        })?;
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

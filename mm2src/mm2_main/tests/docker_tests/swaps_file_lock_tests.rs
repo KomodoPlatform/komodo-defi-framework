@@ -45,6 +45,7 @@ fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
         "rpc_password": "pass",
         "i_am_seed": true,
         "dbdir": db_folder.to_str().unwrap(),
+        "is_bootstrap_node": true
     });
     let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -88,6 +89,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mut mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -211,6 +213,7 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
         "rpc_password": "pass",
         "i_am_seed": true,
         "dbdir": db_folder.to_str().unwrap(),
+        "is_bootstrap_node": true
     });
     let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);

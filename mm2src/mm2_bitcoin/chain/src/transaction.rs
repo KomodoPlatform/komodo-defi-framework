@@ -229,6 +229,8 @@ pub struct Transaction {
     /// https://github.com/navcoin/navcoin-core/blob/556250920fef9dc3eddd28996329ba316de5f909/src/primitives/transaction.h#L497
     pub str_d_zeel: Option<String>,
     pub tx_hash_algo: TxHashAlgo,
+    /// https://github.com/firoorg/firo/blob/bf7c7fa555bd00db970c5c3e64e7452ef20c800e/src/primitives/transaction.h#L389
+    pub v_extra_payload: Option<Vec<u8>>, // only available for special transaction types
 }
 
 impl From<&'static str> for Transaction {
@@ -417,6 +419,13 @@ impl Serializable for Transaction {
                     stream.append(&len);
                     stream.append_slice(string.as_bytes());
                 }
+                if let Some(ref payload) = self.v_extra_payload {
+                    if !payload.is_empty() {
+                        let len: CompactInteger = payload.len().into();
+                        stream.append(&len);
+                        stream.append_slice(payload);
+                    }
+                }
             },
             true => {
                 stream
@@ -454,6 +463,10 @@ where
     let overwintered: bool = (header >> 31) != 0;
     let version = if overwintered { header & 0x7FFFFFFF } else { header };
 
+    // Check if we might have a version 3 (Spark) transaction using the 0xFFFF mask
+    let spark_version = header & 0xFFFF;
+    let maybe_spark = spark_version == 3;
+
     let mut version_group_id = 0;
     if overwintered {
         version_group_id = reader.read()?;
@@ -489,7 +502,7 @@ where
     let lock_time = reader.read()?;
 
     let mut posv = false;
-    n_time = if tx_type == TxType::PosvWithNTime {
+    n_time = if tx_type == TxType::PosvWithNTime && !maybe_spark {
         posv = true;
         Some(reader.read()?)
     } else {
@@ -545,6 +558,16 @@ where
         None
     };
 
+    // Check for extra payload if it might be a Spark transaction
+    let v_extra_payload = if maybe_spark && !reader.is_finished() {
+        let len: CompactInteger = reader.read()?;
+        let mut buf = vec![0; len.into()];
+        reader.read_slice(&mut buf)?;
+        Some(buf)
+    } else {
+        None
+    };
+
     Ok(Transaction {
         version,
         n_time,
@@ -565,6 +588,7 @@ where
         posv,
         str_d_zeel,
         tx_hash_algo: TxHashAlgo::DSHA256,
+        v_extra_payload,
     })
 }
 
@@ -580,6 +604,7 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
+
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosvWithNTime) {
             return Ok(t);
         }
@@ -595,7 +620,8 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use super::{Bytes, ExtTransaction, OutPoint, Transaction, TransactionInput, TransactionOutput};
+    #[cfg(not(target_arch = "wasm32"))] use super::ExtTransaction;
+    use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;
     use ser::{deserialize, serialize, serialize_with_flags, Serializable, SERIALIZE_TRANSACTION_WITNESS};
@@ -877,6 +903,7 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
+            v_extra_payload: None,
 		};
         assert_eq!(actual, expected);
     }
@@ -982,6 +1009,15 @@ mod tests {
     }
 
     #[test]
+    fn firo_spark() {
+        let transaction =
+            include_str!("for_tests/firo_c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5");
+        let t: Transaction = transaction.into();
+        assert_eq!(2, t.outputs.len());
+        assert_eq!(serialize(&t).to_hex::<String>(), transaction);
+    }
+
+    #[test]
     // https://kmdexplorer.io/tx/687acd73ad23ce93e7ddabeece8eb228a0a0e15e4d265f7c717d7458ddce9bdd
     fn kmd_687acd73ad23ce93e7ddabeece8eb228a0a0e15e4d265f7c717d7458ddce9bdd() {
         let transaction = "02000000000202ecf451020000001976a9140eaccdb0d80773734ebd6deab0b2d8ac1eed1e9188ac83349800000000001976a9145177f8b427e5f47342a4b8ab5dac770815d4389e88ac00000000010000000000000000c5629c52020000005d45bfb8839a898af4d22c3569923cd2017e4f574fd425ed6a35c9d2f746be10fecf8072db89387c1ae4b6a131dcb60541e512375c9250801133a7f599350f11435b0705a0a7bb1712fb224fe8d750b2881771481b6276bd680e75361e86124579575403b75b3ff60ee7c08a43ecf2a1a67e156e1bd2dc7c247f1ec4a712958c0c7b4f88c3aaee1661a5c26ed119ce08b25b65030967d078b6ebd5202878d27d64ceeb51139a3f86f40184f659878f0692cd863f76e8a0c18af2c09e1973176b87821b2b32e033833d28b1cfcc8ba2486aea8991de4cbb6e2634295956e341c35143c133f28ca978d3115b63c24e642b9f08cc61728e63a2cd51832a97c9482dfefedd12ad549d6791d6ccc4bb196ec433780680d8f9d5938e4c09cfe3701038031fbdede7125e5f92531d3374cc59eefbbd021118d0d7c992a9fe95b0027331e602154164bcf599f93ec90357c27ab68723d56ba812c9c05d2b4f053d077807f0c20a07f5cdc652851786fd3a2b5f9342a14c8cdba7dbac3bdb31ff64884853c64da56faf00bbad0b5010eb62a65fc5738a3a9bef7f14e7ce14c093efc0bdf7eef728030e45b1bf0419f025fe06918452ace10cc63be5e08f64e326f27989eac30de1de030850bab2d19f5f91073b45cf9be99d46f9f233856c75dd9ef4b8cf608e7853220317956376c1c3533ddca185af1b5da30e8cc95a0cb28463be840e24cc64e517c3030a413f7f670279e55dc2dac5092190c339e0769a25b50beba74098b7dfd9b232020d59ac11b915c4deb3cd6cd8e103952133a0da027837f8f4b8a35db033152fb85f7d001a14f0487fd9bd52c32ff3369bf4cfa0e4b7330d6ec94ea958cf5fa6c3481011e4e2e459deef5021b6e0c277bf1e11fc8fc0c7a5d779e34402d8a917d952520bb2492b36c5939a9c71920a12014794c50164e16dc1fb0dd9b47fd10c759c1c4f990ae17f04eae205b86a94ae8755cf5ea68bf9ee4963e3acc4b7211c9250772b9ddcf9cee78b37b4d398606e0b61d66798dc1fd409821dbd6e318853c4c9b5e0daa896dd4fb09cfad8ed081b26f4599b6124171588979035bfead194bb607a7fba38528d7a5c20439ba74b2720e5e50b1d3f34649ad8736599a395a8af4c1014997ae8de5ef3e42fcf3511859283b98674bcc73b3defc8423f82cbed23bf7cfcb1019c15d144b44001a61ab10f527369c55255528957d6a38077fa974ed14139e71adb2a1b17d6a377029189cc2e9a7196e367f7cdbc9af18cfc52ca381895cbe194a672bf5b988cec8fc53fc1eb6c357305e2f5aa43485408a3bfc0353ed8f277f0365af9acd0de3a6ab9e0eefc49d0edac4ac4e9aa42b19d38d9149d36c9cb7e5438d86c2df399ff91222fc7725b1868aa06bc2e109e4cedb2e4b071a667abc2e4c974edecac6626c14485dd36f6e53bb0ddb6bcbb7013310965de93302cc196aa26ab06c988cdc751eab3f621fb77316682a058dcd101b70d30fc5c12fc09ec356c6c25b9cda8d65dabc02f3760b90a48f3ffb16e54c1a98aebaccbf7cf20ba0df37c5480e475a1c451d41c63a1d9a59a11a35a92b9e6990ba0813103fc87efbecec6010f82d66ea25a5f9a52e3212c03e3ed9828acd1bdcf3d6aa6bc554cdb203acc2de30fdb27aa01b340a2bf59e85da1e031a5cb54b26854a5d9ecfb79f6b6f7c4835e11b9f8193c50030a3595965125cdbe8e0b07a7705b4afc5b839598c885b3adbbe66993ee13df0132150f647cbbe752d646088ad6cc0b5cc3cf19596edc6919baa8ee9f99c14af63f55c834542d48560d1d73f68edfb36df56ba129427fe17c11c813b072dda7453354746ff94c6616a5397fb5c6bfcf5b0b1c1daa81c97f6a6b9a2bb2e83a864860df321791b2aa8b0657f90e691d182233a049f1a1a8f3e353b9289a781fcc8a497772ca3fc0abc41bb38cbdba69752d9330d282d9a8d19449c2090139c00f4aaadef83cf4554ff8d0c0091ec424f4a5f82154ef12234e33581e0af30ed6752b40a799067771956d5471b2943d26cbbd6dedb612752547486648a0ee304ccd5c18a7ec7c096792f656988d07d8e0efdb9bda9ae6b0e7c2aba617261f464c95565bb9bd8f89d608371872b2dfe96fb5cadea12ef7aa5703342ade7f307efbbaed094357e4915e3e48bc03f99ae77c6b3f660aedf584915aa37f428751bda0c2e7faf4f1f4da43907ca716917c57502f72988dc2ac443e78aa0045c211e616a5c625632535ba6126ab0131e5a795edc35ef76730b08d3faecd3ddd4f588919dbcd984a8c8e97615a8d4d63e999536e8075acb90c2b36b2e57aa7eb12ec97a8d967468639a5ee651ab7d7328ba334915580c8960fcca335a6633e196beefb8e4cef53ac77814590a3d47486611e50adca3758d881b8cdef37d69b70c503d856389b7c1071db97a5b6bb66271f8229534b47a50e3aa2bf58bdef29e5ddc526ffbc400c09fbd5c3bf4bbd29027b6fe9bede49ccdb3588f52daeed648524dd1e9ae237b74eda79ef42a807ffa33a99a2a2ba237385f1fa997b09073945b87a6babef9e544d384fee7ed2068687ef4325358fc0e4dc47923f3f4f391650a3cf008d75a823a6e754bf8c8764462c6e7f9880d49997f8c6bd67792131604c5a8ca83ead333006";
@@ -1063,10 +1099,12 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
+            v_extra_payload: None,
 		};
         assert_eq!(actual, expected);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_tx_to_ext_tx() {
         // https://live.blockcypher.com/btc-testnet/tx/2be90e03abb4d5328bf7e9467ca9c571aef575837b55f1253119b87e85ccb94f/

@@ -1,9 +1,10 @@
 use common::PagingOptions;
 use cosmrs::staking::{Commission, Description, Validator};
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::{MmError, MmResultExt};
 use mm2_number::BigDecimal;
 
-use crate::{hd_wallet::WithdrawFrom, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
+use crate::{hd_wallet::HDAddressSelector, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError,
+            WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Debug, Default, Deserialize)]
@@ -18,13 +19,13 @@ pub(crate) enum ValidatorStatus {
     Unbonded,
 }
 
-impl ToString for ValidatorStatus {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for ValidatorStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // An empty string doesn't filter any validators and we get an unfiltered result.
-            ValidatorStatus::All => String::default(),
-            ValidatorStatus::Bonded => "BOND_STATUS_BONDED".into(),
-            ValidatorStatus::Unbonded => "BOND_STATUS_UNBONDED".into(),
+            ValidatorStatus::All => write!(f, ""),
+            ValidatorStatus::Bonded => write!(f, "BOND_STATUS_BONDED"),
+            ValidatorStatus::Unbonded => write!(f, "BOND_STATUS_UNBONDED"),
         }
     }
 }
@@ -47,7 +48,8 @@ impl From<TendermintCoinRpcError> for StakingInfoError {
         match e {
             TendermintCoinRpcError::InvalidResponse(e)
             | TendermintCoinRpcError::PerformError(e)
-            | TendermintCoinRpcError::RpcClientError(e) => StakingInfoError::Transport(e),
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => StakingInfoError::Transport(e),
             TendermintCoinRpcError::Prost(e) | TendermintCoinRpcError::InternalError(e) => StakingInfoError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { .. } => StakingInfoError::Internal(
                 "RPC client got an unexpected error 'TendermintCoinRpcError::UnexpectedAccountType', this isn't normal."
@@ -107,13 +109,15 @@ pub async fn validators_rpc(
     }
 
     let validators = match coin {
-        MmCoinEnum::Tendermint(coin) => coin.validators_list(req.filter_by_status, req.paging).await?,
-        MmCoinEnum::TendermintToken(token) => {
-            token
-                .platform_coin
-                .validators_list(req.filter_by_status, req.paging)
-                .await?
-        },
+        MmCoinEnum::Tendermint(coin) => coin
+            .validators_list(req.filter_by_status, req.paging)
+            .await
+            .map_mm_err()?,
+        MmCoinEnum::TendermintToken(token) => token
+            .platform_coin
+            .validators_list(req.filter_by_status, req.paging)
+            .await
+            .map_mm_err()?,
         other => {
             return MmError::err(StakingInfoError::InvalidPayload {
                 reason: format!("{} is not a Cosmos coin", other.ticker()),
@@ -130,7 +134,7 @@ pub async fn validators_rpc(
 pub struct DelegationPayload {
     pub validator_address: String,
     pub fee: Option<WithdrawFee>,
-    pub withdraw_from: Option<WithdrawFrom>,
+    pub withdraw_from: Option<HDAddressSelector>,
     #[serde(default)]
     pub memo: String,
     #[serde(default)]

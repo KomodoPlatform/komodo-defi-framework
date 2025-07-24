@@ -5,7 +5,6 @@
 // taker payment spend - https://zombie.explorer.lordofthechains.com/tx/af6bb0f99f9a5a070a0c1f53d69e4189b0e9b68f9d66e69f201a6b6d9f93897e
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
-use super::storage::store_change_output;
 use super::{GenTxError, ZCoin};
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
@@ -57,7 +56,7 @@ pub async fn z_send_htlc(
     .build()
     .map_to_mm(SendOutputsErr::InternalError)?;
 
-    let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
+    let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals).map_mm_err()?;
     let address = htlc_address.to_string();
     if let UtxoRpcClientEnum::Native(native) = coin.utxo_rpc_client() {
         native.import_address(&address, &address, false).compat().await.unwrap();
@@ -92,7 +91,8 @@ pub async fn z_send_dex_fee(
     if matches!(dex_fee, DexFee::NoFee) {
         return MmError::err(SendOutputsErr::InternalError("unexpected DexFee::NoFee".to_string()));
     }
-    let dex_fee_amount_sat = sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals)?;
+    let dex_fee_amount_sat =
+        sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
     // add dex fee output
     let dex_fee_out = ZOutput {
         to_addr: coin.z_fields.dex_fee_addr.clone(),
@@ -103,7 +103,8 @@ pub async fn z_send_dex_fee(
     };
     let mut outputs = vec![dex_fee_out];
     if let Some(dex_burn_amount) = dex_fee.burn_amount() {
-        let dex_burn_amount_sat = sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals)?;
+        let dex_burn_amount_sat =
+            sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
         // add output to the dex burn address:
         let dex_burn_out = ZOutput {
             to_addr: coin.z_fields.dex_burn_addr.clone(),
@@ -167,7 +168,7 @@ pub async fn z_p2sh_spend(
     script_data: Script,
     htlc_keypair: &KeyPair,
 ) -> Result<ZTransaction, MmError<ZP2SHSpendError>> {
-    let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
+    let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await.map_mm_err()? as u32;
     let mut tx_builder = ZTxBuilder::new(coin.consensus_params(), current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 
@@ -207,12 +208,6 @@ pub async fn z_p2sh_spend(
 
     let mut tx_buffer = Vec::with_capacity(1024);
     zcash_tx.write(&mut tx_buffer)?;
-
-    // Store any change outputs we created in this transaction by decrypting them with our keys
-    // and saving them to the wallet database for future spends
-    store_change_output(coin.consensus_params_ref(), &coin.z_fields.light_wallet_db, &zcash_tx)
-        .await
-        .map_to_mm(|err| ZP2SHSpendError::GenTxError(GenTxError::SaveChangeNotesError(err)))?;
 
     coin.utxo_rpc_client()
         .send_raw_transaction(tx_buffer.into())

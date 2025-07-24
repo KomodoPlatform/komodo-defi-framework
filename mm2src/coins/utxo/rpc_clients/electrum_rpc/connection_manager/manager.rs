@@ -9,9 +9,10 @@ use super::connection_context::ConnectionContext;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
-use common::log::{debug, error};
+use common::log::{debug, error, LogOnError};
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
+use derive_more::Display;
 use keys::Address;
 
 use futures::compat::Future01CompatExt;
@@ -277,7 +278,7 @@ impl ConnectionManager {
         let abandoned_subs = connection_ctx.disconnected();
         // Re-subscribe the abandoned addresses using the client.
         let client = unwrap_or_return!(self.get_client());
-        client.subscribe_addresses(abandoned_subs).ok();
+        client.subscribe_addresses(abandoned_subs).error_log();
     }
 
     /// A method that should be called after using a specific server for some request.
@@ -374,9 +375,8 @@ impl ConnectionManager {
         // The connections that we can consider (all connections - candidate connections).
         let all_candidate_connections: Vec<_> = all_connections
             .iter()
-            .filter_map(|(_, conn_ctx)| {
-                (!maintained_connections.contains_key(&conn_ctx.id)).then(|| (conn_ctx.connection.clone(), conn_ctx.id))
-            })
+            .filter(|&(_, conn_ctx)| (!maintained_connections.contains_key(&conn_ctx.id)))
+            .map(|(_, conn_ctx)| (conn_ctx.connection.clone(), conn_ctx.id))
             .collect();
         // The candidate connections from above, but further filtered by whether they are suspended or not.
         let non_suspended_candidate_connections: Vec<_> = all_candidate_connections
@@ -384,7 +384,7 @@ impl ConnectionManager {
             .filter(|(connection, _)| {
                 all_connections
                     .get(connection.address())
-                    .map_or(false, |conn_ctx| now_ms() > conn_ctx.suspended_till())
+                    .is_some_and(|conn_ctx| now_ms() > conn_ctx.suspended_till())
             })
             .cloned()
             .collect();

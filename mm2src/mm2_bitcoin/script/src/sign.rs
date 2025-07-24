@@ -42,7 +42,6 @@ impl From<SighashBase> for u32 {
     fn from(s: SighashBase) -> Self { s as u32 }
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::doc_markdown))]
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
@@ -82,7 +81,7 @@ impl Sighash {
         };
 
         // Only exact All | None | Single values are passing this check
-        matches!(u, 1 | 2 | 3)
+        matches!(u, 1..=3)
     }
 
     /// Creates Sighash from any u, even if is_defined() == false
@@ -163,6 +162,7 @@ pub struct TransactionInputSigner {
     pub posv: bool,
     pub str_d_zeel: Option<String>,
     pub hash_algo: SignerHashAlgo,
+    pub v_extra_payload: Option<Vec<u8>>,
 }
 
 /// Used for resigning and loading test transactions
@@ -186,6 +186,7 @@ impl From<Transaction> for TransactionInputSigner {
             posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
@@ -223,6 +224,7 @@ impl From<TransactionInputSigner> for Transaction {
             join_split_sig: H512::default(),
             str_d_zeel: t.str_d_zeel,
             tx_hash_algo: t.hash_algo.into(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
@@ -371,6 +373,7 @@ impl TransactionInputSigner {
             posv: self.posv,
             str_d_zeel: self.str_d_zeel.clone(),
             tx_hash_algo: self.hash_algo.into(),
+            v_extra_payload: None,
         };
 
         let mut stream = Stream::default();
@@ -691,6 +694,7 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             hash_algo: SignerHashAlgo::DSHA256,
+            v_extra_payload: None,
         };
 
         let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
@@ -743,6 +747,7 @@ mod tests {
             posv: true,
             str_d_zeel: None,
             hash_algo: SignerHashAlgo::DSHA256,
+            v_extra_payload: None,
         };
 
         let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
