@@ -113,7 +113,7 @@ impl From<hyper::header::InvalidHeaderValue> for GetInfoFromUriError {
 ///
 /// Returns an error if the HTTP status code of the response is not in the 2xx range.
 pub async fn send_post_request_to_uri(uri: &str, body: String) -> MmResult<Vec<u8>, GetInfoFromUriError> {
-    let (status, _header, body) = slurp_post_json(uri, body).await?;
+    let (status, _header, body) = slurp_post_json(uri, body).await.map_mm_err()?;
     if !status.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(format!(
             "Status code not in 2xx range from {}: {}",

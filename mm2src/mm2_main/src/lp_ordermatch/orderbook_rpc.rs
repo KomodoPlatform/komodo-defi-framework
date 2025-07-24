@@ -239,9 +239,9 @@ pub async fn orderbook_rpc_v2(
     if req.base == req.rel {
         return MmError::err(OrderbookRpcError::BaseRelSame);
     }
-    let base_coin_conf = get_tradeable_coin_conf(&ctx, &req.base)?;
+    let base_coin_conf = get_tradeable_coin_conf(&ctx, &req.base).map_mm_err()?;
 
-    let rel_coin_conf = get_tradeable_coin_conf(&ctx, &req.rel)?;
+    let rel_coin_conf = get_tradeable_coin_conf(&ctx, &req.rel).map_mm_err()?;
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ctx is available");
     let base_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.base);

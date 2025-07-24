@@ -108,7 +108,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     };
 
     let rc = thread::Builder::new().name("lp_run".into()).spawn(move || {
-        match catch_unwind(move || {
+        let c = catch_unwind(move || {
             let ctx = match MmArc::from_ffi_handle(ctx_id) {
                 Ok(ctx) => ctx,
                 Err(err) => {
@@ -116,7 +116,8 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
                 },
             };
             block_on(mm2_main::lp_run(ctx));
-        }) {
+        });
+        match c {
             Ok(_) => log!("MM2 thread completed normally"),
             Err(err) => {
                 log!("MM2 thread panicked: {:?}", any_to_str(&*err));

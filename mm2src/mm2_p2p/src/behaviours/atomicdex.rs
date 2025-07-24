@@ -22,7 +22,6 @@ use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::iter;
 use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
@@ -34,7 +33,6 @@ use super::request_response::{build_request_response_behaviour, PeerRequest, Pee
                               RequestResponseSender};
 use crate::application::request_response::network_info::NetworkInfoRequest;
 use crate::application::request_response::P2PRequest;
-use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
@@ -54,6 +52,7 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
+const DEFAULT_NETID: u16 = 8762;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
@@ -714,23 +713,12 @@ fn start_gossipsub(
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
         // build a gossipsub network behaviour
-        let mut gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
+        let gossipsub = Gossipsub::new(MessageAuthenticity::Author(local_peer_id), gossipsub_config)
             .map_err(|e| AdexBehaviourError::InitializationError(e.to_owned()))?;
 
         let floodsub = Floodsub::new(local_peer_id, config.netid != DEFAULT_NETID);
 
-        let mut peers_exchange = PeersExchange::new(network_info);
-        if !network_info.in_memory() {
-            // Please note WASM nodes don't support `PeersExchange` currently,
-            // so `get_all_network_seednodes` returns an empty list.
-            for (peer_id, addr, _domain) in get_all_network_seednodes(config.netid) {
-                let multiaddr = addr.try_to_multiaddr(network_info)?;
-                peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
-                if peer_id != local_peer_id {
-                    gossipsub.add_explicit_relay(peer_id);
-                }
-            }
-        }
+        let peers_exchange = PeersExchange::new(network_info);
 
         // build a request-response network behaviour
         let request_response = build_request_response_behaviour();
@@ -795,6 +783,14 @@ fn start_gossipsub(
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
     }
+
+    // All currently connected peers come from the config file (because we didn't connect any other
+    // ones yet), so it's safe to treat them as trusted nodes.
+    let peers: Vec<_> = libp2p::Swarm::connected_peers(&swarm).cloned().collect();
+    for peer in peers {
+        swarm.behaviour_mut().core.gossipsub.add_explicit_peer(&peer);
+    }
+
     drop(recently_dialed_peers);
 
     let mut check_connected_relays_interval =
@@ -817,6 +813,7 @@ fn start_gossipsub(
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
             }
+            swarm.behaviour_mut().core.gossipsub.remove_explicit_peer(&peer_id);
         }
 
         loop {

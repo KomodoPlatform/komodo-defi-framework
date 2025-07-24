@@ -1,5 +1,6 @@
 use db_common::{async_sql_conn::AsyncConnError,
                 sqlite::{query_single_row, rusqlite::params}};
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use uuid::Uuid;
 

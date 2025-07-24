@@ -19,6 +19,7 @@ fn test_start_and_stop_simple_market_maker_bot() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
