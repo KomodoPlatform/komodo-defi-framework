@@ -3,8 +3,7 @@ use super::{ChainSpec, EthCoin, EthPrivKeyPolicy};
 
 use crate::common::Future01CompatExt;
 use crate::hd_wallet::AddrToString;
-use crate::Eip1559Ops;
-use crate::{BytesJson, MarketCoinOps, TransactionErr};
+use crate::{BytesJson, MarketCoinOps, SwapPriorityFeeOps, TransactionErr};
 
 use common::log::info;
 use common::u256_to_hex;

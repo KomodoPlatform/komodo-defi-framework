@@ -16,16 +16,16 @@ use crate::utxo::{qtum, ActualFeeRate, AddrFromStrError, BroadcastTxErr, FeePoli
                   HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard, UnsupportedAddr,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, Eip1559Ops,
+use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
             RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
-            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionResult, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
-            ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
+            SwapPriorityFeeOps, SwapTxFeePolicy, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs,
+            WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -1533,7 +1533,7 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
     })
 }
 
-impl Eip1559Ops for Qrc20Coin {
+impl SwapPriorityFeeOps for Qrc20Coin {
     fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy { SwapTxFeePolicy::Unsupported }
 
     fn set_swap_transaction_fee_policy(&self, _swap_txfee_policy: SwapTxFeePolicy) {}

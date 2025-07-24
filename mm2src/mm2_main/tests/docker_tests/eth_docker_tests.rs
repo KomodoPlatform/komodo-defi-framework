@@ -21,10 +21,10 @@ use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSp
             SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
 use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
-            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
+            FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes, ParseNftAssocTypes,
+            PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, SearchForSwapTxSpendInput,
+            SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapPriorityFeeOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
             ValidateNftMakerPaymentArgs};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
