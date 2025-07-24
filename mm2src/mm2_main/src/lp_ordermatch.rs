@@ -25,7 +25,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MarketCoinOps, MmCoinEnum};
+            FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
@@ -40,6 +40,7 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::{DeriveStreamerId, StreamingManager};
 use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
@@ -54,11 +55,14 @@ use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
                         MyOrdersHistory, MyOrdersStorage};
 use num_traits::identities::Zero;
+use order_events::{OrderStatusEvent, OrderStatusStreamer};
+use orderbook_events::{OrderbookItemChangeEvent, OrderbookStreamer};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::H256 as H256Json;
+use secp256k1::PublicKey as Secp256k1Pubkey;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
-use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
@@ -74,17 +78,22 @@ use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, 
 use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
 use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                     check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
-                     generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                     check_other_coin_balance_for_swap, detect_secret_hash_algo_v2, generate_secret,
+                     get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
                      p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
                      run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
                      CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings,
                      TakerSwap, LEGACY_SWAP_TYPE};
+use crate::swap_versioning::{legacy_swap_version, SwapVersion};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
 use crate::lp_swap::taker_swap::FailAt;
 
+#[cfg(feature = "ibc-routing-for-swaps")]
+use coins::rpc_command::tendermint::ibc::ChannelId;
+
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
+use crypto::secret_hash_algo::SecretHashAlgo;
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
 
@@ -99,11 +108,14 @@ mod best_orders;
 mod lp_bot;
 pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
                  TradingBotEvent};
+use primitives::hash::{H256, H264};
 
 mod my_orders_storage;
 mod new_protocol;
+pub(crate) mod order_events;
 mod order_requests_tracker;
 mod orderbook_depth;
+pub(crate) mod orderbook_events;
 mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
@@ -131,6 +143,8 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
+/// Current swap protocol version
+const SWAP_VERSION_DEFAULT: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -307,7 +321,8 @@ async fn process_orders_keep_alive(
         P2PRequest::Ordermatch(req),
         propagated_from_peer.clone(),
     )
-    .await?
+    .await
+    .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
             "No response was received from peer {} for SyncPubkeyOrderbookState request!",
@@ -410,6 +425,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         rel: rel.to_string(),
     };
 
+    let i_am_seed = ctx.is_seed_node();
     let response = try_s!(request_any_relay::<GetOrderbookRes>(ctx.clone(), P2PRequest::Ordermatch(request)).await);
     let (pubkey_orders, protocol_infos, conf_infos) = match response {
         Some((
@@ -420,7 +436,14 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
             _peer_id,
         )) => (pubkey_orders, protocol_infos, conf_infos),
-        None => return Ok(()),
+        None => {
+            if i_am_seed {
+                warn!("No response received from any peer for GetOrderbook request");
+                return Ok(());
+            } else {
+                return Err("No response received from any peer for GetOrderbook request".to_string());
+            }
+        },
     };
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
@@ -438,11 +461,19 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
         };
 
+        let pubkey_without_prefix: [u8; 32] = match pubkey_bytes.get(1..).map(|slice| slice.try_into()) {
+            Some(Ok(arr)) => arr,
+            _ => {
+                warn!("Invalid pubkey length (not 32 bytes) for {}", pubkey);
+                continue;
+            },
+        };
+
         if is_my_order(&pubkey, &my_pubsecp, &orderbook.my_p2p_pubkeys) {
             continue;
         }
 
-        if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
+        if is_pubkey_banned(ctx, &pubkey_without_prefix.into()) {
             warn!("Pubkey {} is banned", pubkey);
             continue;
         }
@@ -508,7 +539,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         None => return,
     };
 
-    if pubkey_state.trie_roots.get(alb_pair).is_none() {
+    if !pubkey_state.trie_roots.contains_key(alb_pair) {
         return;
     }
 
@@ -602,6 +633,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct TryFromBytesError(String);
 
@@ -799,6 +831,7 @@ impl<Key: Eq + std::hash::Hash, V1> DeltaOrFullTrie<Key, V1> {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum TrieDiffHistoryError {
     TrieDbError(Box<trie_db::TrieError<H64, sp_trie::Error>>),
@@ -973,11 +1006,11 @@ fn test_alb_ordered_pair() {
 
 #[allow(dead_code)]
 pub fn parse_orderbook_pair_from_topic(topic: &str) -> Option<(&str, &str)> {
-    let mut split = topic.split(|maybe_sep| maybe_sep == TOPIC_SEPARATOR);
+    let mut split = topic.split(TOPIC_SEPARATOR);
     match split.next() {
         Some(ORDERBOOK_PREFIX) => match split.next() {
             Some(maybe_pair) => {
-                let colon = maybe_pair.find(|maybe_colon| maybe_colon == ':');
+                let colon = maybe_pair.find(':');
                 match colon {
                     Some(index) => {
                         if index + 1 < maybe_pair.len() {
@@ -1162,12 +1195,14 @@ pub struct TakerRequest {
     #[serde(default)]
     match_by: MatchBy,
     conf_settings: Option<OrderConfirmationsSettings>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
+    pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 impl TakerRequest {
@@ -1188,6 +1223,10 @@ impl TakerRequest {
             conf_settings: Some(message.conf_settings),
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
+            swap_version: message.swap_version,
+            // TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1233,6 +1272,7 @@ impl From<TakerOrder> for new_protocol::OrdermatchMessage {
             conf_settings: taker_order.request.conf_settings.unwrap(),
             base_protocol_info: taker_order.request.base_protocol_info,
             rel_protocol_info: taker_order.request.rel_protocol_info,
+            swap_version: taker_order.request.swap_version,
         })
     }
 }
@@ -1258,6 +1298,9 @@ pub struct TakerOrderBuilder<'a> {
     min_volume: Option<MmNumber>,
     timeout: u64,
     save_in_history: bool,
+    swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 pub enum TakerOrderBuildError {
@@ -1337,6 +1380,9 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: OrderType::GoodTillCancelled,
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
+            swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1399,6 +1445,12 @@ impl<'a> TakerOrderBuilder<'a> {
         self.rel_orderbook_ticker = ticker;
         self
     }
+
+    /// When a new [TakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
+    /// However, if user has not specified in the config to use TPU V2,
+    /// the TakerOrderBuilder's swap_version is changed to legacy.
+    /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
+    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
 
     /// Validate fields and build
     #[allow(clippy::result_large_err)]
@@ -1488,6 +1540,9 @@ impl<'a> TakerOrderBuilder<'a> {
                 conf_settings: self.conf_settings,
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
+                swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: self.order_metadata,
             },
             matches: Default::default(),
             min_volume,
@@ -1528,6 +1583,9 @@ impl<'a> TakerOrderBuilder<'a> {
                 conf_settings: self.conf_settings,
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
+                swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: self.order_metadata,
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -1689,6 +1747,13 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// TODO: Move this into the `OrderMetadata` type when we are doing BC
+    /// on orders already.
+    #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
+    pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
+    timeout_in_minutes: Option<u16>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1701,6 +1766,20 @@ pub struct MakerOrderBuilder<'a> {
     rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
+    swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
+    timeout_in_minutes: Option<u16>,
+}
+
+/// Contains extra and/or optional metadata (e.g., protocol-specific information) that can
+/// be used for both taker and maker orders.
+///
+/// TODO: `swap_version` should likely be moved into this type.
+#[cfg(feature = "ibc-routing-for-swaps")]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+struct OrderMetadata {
+    channel_id_if_ibc_routing: Option<ChannelId>,
 }
 
 pub enum MakerOrderBuildError {
@@ -1850,6 +1929,10 @@ impl<'a> MakerOrderBuilder<'a> {
             price: 0.into(),
             conf_settings: None,
             save_in_history: true,
+            swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
+            timeout_in_minutes: None,
         }
     }
 
@@ -1887,6 +1970,14 @@ impl<'a> MakerOrderBuilder<'a> {
         self.rel_orderbook_ticker = rel_orderbook_ticker;
         self
     }
+
+    pub fn set_timeout(&mut self, timeout_in_minutes: u16) { self.timeout_in_minutes = Some(timeout_in_minutes); }
+
+    /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
+    /// However, if user has not specified in the config to use TPU V2,
+    /// the MakerOrderBuilder's swap_version is changed to legacy.
+    /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
+    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
@@ -1944,6 +2035,10 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: self.order_metadata,
+            timeout_in_minutes: self.timeout_in_minutes,
         })
     }
 
@@ -1968,6 +2063,10 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: self.order_metadata,
+            timeout_in_minutes: self.timeout_in_minutes,
         }
     }
 }
@@ -2098,6 +2197,11 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
+                swap_version: taker_order.request.swap_version,
+                // TODO: Add test coverage for this once we have an integration test for this feature.
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: taker_order.request.order_metadata,
+                timeout_in_minutes: None,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2120,6 +2224,11 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
+                    swap_version: taker_order.request.swap_version,
+                    // TODO: Add test coverage for this once we have an integration test for this feature.
+                    #[cfg(feature = "ibc-routing-for-swaps")]
+                    order_metadata: taker_order.request.order_metadata,
+                    timeout_in_minutes: None,
                 }
             },
         }
@@ -2166,12 +2275,14 @@ pub struct MakerReserved {
     sender_pubkey: H256Json,
     dest_pub_key: H256Json,
     conf_settings: Option<OrderConfirmationsSettings>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
+    pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 impl MakerReserved {
@@ -2199,6 +2310,10 @@ impl MakerReserved {
             conf_settings: Some(message.conf_settings),
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
+            swap_version: message.swap_version,
+            // TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 }
@@ -2215,6 +2330,7 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             conf_settings: maker_reserved.conf_settings.unwrap(),
             base_protocol_info: maker_reserved.base_protocol_info,
             rel_protocol_info: maker_reserved.rel_protocol_info,
+            swap_version: maker_reserved.swap_version,
         })
     }
 }
@@ -2423,20 +2539,14 @@ fn pubkey_state_mut<'a>(
     state: &'a mut HashMap<String, OrderbookPubkeyState>,
     from_pubkey: &str,
 ) -> &'a mut OrderbookPubkeyState {
-    match state.raw_entry_mut().from_key(from_pubkey) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::new();
-            e.insert(from_pubkey.to_string(), state).1
-        },
-    }
+    state
+        .entry(from_pubkey.to_owned())
+        .or_insert_with(OrderbookPubkeyState::new)
 }
 
 fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>, pair: &str) -> &'a mut H64 {
-    match state.raw_entry_mut().from_key(pair) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => e.insert(pair.to_string(), Default::default()).1,
-    }
+    #[allow(clippy::unwrap_or_default)]
+    state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2473,6 +2583,8 @@ struct Orderbook {
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
     my_p2p_pubkeys: HashSet<String>,
+    /// A copy of the streaming manager to stream orderbook events out.
+    streaming_manager: StreamingManager,
 }
 
 impl Default for Orderbook {
@@ -2488,6 +2600,7 @@ impl Default for Orderbook {
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
+            streaming_manager: Default::default(),
         }
     }
 }
@@ -2495,6 +2608,13 @@ impl Default for Orderbook {
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
 
 impl Orderbook {
+    fn new(streaming_manager: StreamingManager) -> Orderbook {
+        Orderbook {
+            streaming_manager,
+            ..Default::default()
+        }
+    }
+
     fn find_order_by_uuid_and_pubkey(&self, uuid: &Uuid, from_pubkey: &str) -> Option<OrderbookItem> {
         self.order_set.get(uuid).and_then(|order| {
             if order.pubkey == from_pubkey {
@@ -2591,7 +2711,7 @@ impl Orderbook {
 
         let base_rel = (order.base.clone(), order.rel.clone());
 
-        let ordered = self.ordered.entry(base_rel.clone()).or_insert_with(BTreeSet::new);
+        let ordered = self.ordered.entry(base_rel.clone()).or_default();
 
         // have to clone to drop immutable ordered borrow
         let existing = ordered
@@ -2609,27 +2729,27 @@ impl Orderbook {
 
         self.pairs_existing_for_base
             .entry(order.base.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.rel.clone());
 
         self.pairs_existing_for_rel
             .entry(order.rel.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.base.clone());
 
-        self.unordered
-            .entry(base_rel)
-            .or_insert_with(HashSet::new)
-            .insert(order.uuid);
+        self.unordered.entry(base_rel).or_default().insert(order.uuid);
 
+        self.streaming_manager
+            .send_fn(
+                &OrderbookStreamer::derive_streamer_id((&order.base, &order.rel)),
+                || OrderbookItemChangeEvent::NewOrUpdatedItem(Box::new(order.clone().into())),
+            )
+            .ok();
         self.order_set.insert(order.uuid, order);
     }
 
     fn remove_order_trie_update(&mut self, uuid: Uuid) -> Option<OrderbookItem> {
-        let order = match self.order_set.remove(&uuid) {
-            Some(order) => order,
-            None => return None,
-        };
+        let order = self.order_set.remove(&uuid)?;
         let base_rel = (order.base.clone(), order.rel.clone());
 
         // create an `order_to_delete` that allows to find and remove an element from `self.ordered` by hash
@@ -2684,8 +2804,14 @@ impl Orderbook {
                 delta: vec![(uuid, None)],
                 next_root: *pair_state,
             });
-        };
+        }
 
+        self.streaming_manager
+            .send_fn(
+                &OrderbookStreamer::derive_streamer_id((&order.base, &order.rel)),
+                || OrderbookItemChangeEvent::RemovedItem(order.uuid),
+            )
+            .ok();
         Some(order)
     }
 
@@ -2787,7 +2913,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     let ordermatch_context = OrdermatchContext {
         maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)?),
         my_taker_orders: Default::default(),
-        orderbook: Default::default(),
+        orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
         pending_maker_reserved: Default::default(),
         orderbook_tickers,
         original_tickers,
@@ -2817,7 +2943,7 @@ impl OrdermatchContext {
             Ok(OrdermatchContext {
                 maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
-                orderbook: Default::default(),
+                orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
@@ -2847,7 +2973,7 @@ impl OrdermatchContext {
 }
 
 pub struct MakerOrdersContext {
-    orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
+    orders: TimedMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
     /// The `check_balance_update_loop` future abort handles associated stored by corresponding tickers.
@@ -2861,7 +2987,7 @@ impl MakerOrdersContext {
         let balance_loops = ctx.abortable_system.create_subsystem()?;
 
         Ok(MakerOrdersContext {
-            orders: HashMap::new(),
+            orders: TimedMap::new_with_map_kind(timed_map::MapKind::FxHashMap),
             order_tickers: HashMap::new(),
             count_by_tickers: HashMap::new(),
             balance_loops,
@@ -2873,7 +2999,21 @@ impl MakerOrdersContext {
 
         self.order_tickers.insert(order.uuid, order.base.clone());
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
-        self.orders.insert(order.uuid, Arc::new(AsyncMutex::new(order)));
+
+        if let Some(t) = order.timeout_in_minutes {
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
+            self.orders.insert_expirable_unchecked(
+                order.uuid,
+                Arc::new(AsyncMutex::new(order)),
+                Duration::from_secs(t as u64 * 60),
+            );
+        } else {
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
+            self.orders
+                .insert_constant_unchecked(order.uuid, Arc::new(AsyncMutex::new(order)));
+        }
     }
 
     fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> { self.orders.get(uuid) }
@@ -2914,6 +3054,26 @@ impl MakerOrdersContext {
     fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker).unwrap() }
 }
 
+struct LegacySwapParams<'a> {
+    maker_coin: &'a MmCoinEnum,
+    taker_coin: &'a MmCoinEnum,
+    uuid: &'a Uuid,
+    my_conf_settings: &'a SwapConfirmationsSettings,
+    my_persistent_pub: &'a H264,
+    maker_amount: &'a MmNumber,
+    taker_amount: &'a MmNumber,
+    locktime: &'a u64,
+}
+struct StateMachineParams<'a> {
+    secret_hash_algo: &'a SecretHashAlgo,
+    uuid: &'a Uuid,
+    my_conf_settings: &'a SwapConfirmationsSettings,
+    locktime: &'a u64,
+    maker_amount: &'a MmNumber,
+    taker_amount: &'a MmNumber,
+}
+
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder, taker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
@@ -2944,14 +3104,26 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 return;
             },
         };
-        let alice = bits256::from(maker_match.request.sender_pubkey.0);
+        let taker_pubkey = bits256::from(maker_match.request.sender_pubkey.0);
         let maker_amount = maker_match.reserved.get_base_amount().clone();
         let taker_amount = maker_match.reserved.get_rel_amount().clone();
+
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &maker_match.request.order_metadata;
+            let _maker_order_metadata = &maker_order.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connected_alice`.
+            unreachable!();
+        }
 
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
         let my_conf_settings = choose_maker_confs_and_notas(
             maker_order.conf_settings.clone(),
@@ -2989,8 +3161,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             uuid
         );
 
-        let now = now_sec();
-
         let secret = match generate_secret() {
             Ok(s) => s.into(),
             Err(e) => {
@@ -2999,72 +3169,65 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        if ctx.use_trading_proto_v2() {
-            let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
-            match (maker_coin, taker_coin) {
-                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
-                    let mut maker_swap_state_machine = MakerSwapStateMachine {
-                        storage: MakerSwapStorage::new(ctx.clone()),
-                        abortable_system: ctx
-                            .abortable_system
-                            .create_subsystem()
-                            .expect("create_subsystem should not fail"),
-                        ctx,
-                        started_at: now_sec(),
-                        maker_coin: m.clone(),
-                        maker_volume: maker_amount,
-                        secret,
-                        taker_coin: t.clone(),
-                        dex_fee: dex_fee_amount_from_taker_coin(&t, m.ticker(), &taker_amount),
-                        taker_volume: taker_amount,
-                        taker_premium: Default::default(),
-                        conf_settings: my_conf_settings,
-                        p2p_topic: swap_v2_topic(&uuid),
-                        uuid,
-                        p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                        secret_hash_algo,
-                        lock_duration: lock_time,
-                        taker_p2p_pubkey: match taker_p2p_pubkey {
-                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
-                        },
-                    };
-                    #[allow(clippy::box_default)]
-                    maker_swap_state_machine
-                        .run(Box::new(maker_swap_v2::Initialize::default()))
-                        .await
-                        .error_log();
-                },
-                _ => todo!("implement fallback to the old protocol here"),
-            }
-        } else {
-            if let Err(e) = insert_new_swap_to_db(
-                ctx.clone(),
-                maker_coin.ticker(),
-                taker_coin.ticker(),
-                uuid,
-                now,
-                LEGACY_SWAP_TYPE,
-            )
-            .await
-            {
-                error!("Error {} on new swap insertion", e);
-            }
-            let maker_swap = MakerSwap::new(
-                ctx.clone(),
-                alice,
-                maker_amount.to_decimal(),
-                taker_amount.to_decimal(),
-                my_persistent_pub,
-                uuid,
-                Some(maker_order.uuid),
-                my_conf_settings,
-                maker_coin,
-                taker_coin,
-                lock_time,
-                maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                secret,
-            );
-            run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+        let alice_swap_v = maker_match.request.swap_version;
+        let bob_swap_v = maker_order.swap_version;
+
+        // Start a legacy swap if either the taker or maker uses the legacy swap protocol (version 1)
+        if alice_swap_v.is_legacy() || bob_swap_v.is_legacy() {
+            let params = LegacySwapParams {
+                maker_coin: &maker_coin,
+                taker_coin: &taker_coin,
+                uuid: &uuid,
+                my_conf_settings: &my_conf_settings,
+                my_persistent_pub: &my_persistent_pub,
+                maker_amount: &maker_amount,
+                taker_amount: &taker_amount,
+                locktime: &lock_time,
+            };
+            start_maker_legacy_swap(&ctx, maker_order, taker_pubkey, secret, params).await;
+            return;
+        }
+
+        // Ensure detect_secret_hash_algo_v2 returns the correct secret hash algorithm when adding new coin support in TPU.
+        let params = StateMachineParams {
+            secret_hash_algo: &detect_secret_hash_algo_v2(&maker_coin, &taker_coin),
+            uuid: &uuid,
+            my_conf_settings: &my_conf_settings,
+            locktime: &lock_time,
+            maker_amount: &maker_amount,
+            taker_amount: &taker_amount,
+        };
+        let taker_p2p_pubkey = match taker_p2p_pubkey {
+            PublicKey::Secp256k1(pubkey) => pubkey.into(),
+        };
+
+        // TODO try to handle it more gracefully during project redesign
+        match (&maker_coin, &taker_coin) {
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+                start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
+            },
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+                start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
+            },
+            _ => {
+                let params = LegacySwapParams {
+                    maker_coin: &maker_coin,
+                    taker_coin: &taker_coin,
+                    uuid: &uuid,
+                    my_conf_settings: &my_conf_settings,
+                    my_persistent_pub: &my_persistent_pub,
+                    maker_amount: &maker_amount,
+                    taker_amount: &taker_amount,
+                    locktime: &lock_time,
+                };
+                start_maker_legacy_swap(&ctx, maker_order, taker_pubkey, secret, params).await
+            },
         }
     };
 
@@ -3072,13 +3235,95 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
     spawner.spawn_with_settings(fut, settings);
 }
 
+async fn start_maker_legacy_swap(
+    ctx: &MmArc,
+    maker_order: MakerOrder,
+    taker_pubkey: bits256,
+    secret: H256,
+    params: LegacySwapParams<'_>,
+) {
+    if let Err(e) = insert_new_swap_to_db(
+        ctx.clone(),
+        params.maker_coin.ticker(),
+        params.taker_coin.ticker(),
+        *params.uuid,
+        now_sec(),
+        LEGACY_SWAP_TYPE,
+    )
+    .await
+    {
+        error!("Error {} on new swap insertion", e);
+    }
+
+    let maker_swap = MakerSwap::new(
+        ctx.clone(),
+        taker_pubkey,
+        params.maker_amount.to_decimal(),
+        params.taker_amount.to_decimal(),
+        *params.my_persistent_pub,
+        *params.uuid,
+        Some(maker_order.uuid),
+        *params.my_conf_settings,
+        params.maker_coin.clone(),
+        params.taker_coin.clone(),
+        *params.locktime,
+        maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        secret,
+    );
+    run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx.clone()).await;
+}
+
+async fn start_maker_swap_state_machine<
+    MakerCoin: MmCoin + MakerCoinSwapOpsV2 + Clone,
+    TakerCoin: MmCoin + TakerCoinSwapOpsV2 + Clone,
+>(
+    ctx: &MmArc,
+    maker_order: &MakerOrder,
+    taker_p2p_pubkey: &Secp256k1Pubkey,
+    secret: &H256,
+    maker_coin: &MakerCoin,
+    taker_coin: &TakerCoin,
+    params: &StateMachineParams<'_>,
+) {
+    let mut maker_swap_state_machine = MakerSwapStateMachine {
+        storage: MakerSwapStorage::new(ctx.clone()),
+        abortable_system: ctx
+            .abortable_system
+            .create_subsystem()
+            .expect("create_subsystem should not fail"),
+        ctx: ctx.clone(),
+        started_at: now_sec(),
+        maker_coin: maker_coin.clone(),
+        maker_volume: params.maker_amount.clone(),
+        secret: *secret,
+        taker_coin: taker_coin.clone(),
+        taker_volume: params.taker_amount.clone(),
+        taker_premium: Default::default(),
+        conf_settings: *params.my_conf_settings,
+        p2p_topic: swap_v2_topic(params.uuid),
+        uuid: *params.uuid,
+        p2p_keypair: maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        secret_hash_algo: *params.secret_hash_algo,
+        lock_duration: *params.locktime,
+        taker_p2p_pubkey: *taker_p2p_pubkey,
+        require_taker_payment_spend_confirm: true,
+        swap_version: maker_order.swap_version.version,
+    };
+    #[allow(clippy::box_default)]
+    maker_swap_state_machine
+        .run(Box::new(maker_swap_v2::Initialize::default()))
+        .await
+        .error_log();
+}
+
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch, maker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
     let uuid = taker_match.reserved.taker_order_uuid;
 
     let fut = async move {
         // aka "taker_loop"
-        let maker = bits256::from(taker_match.reserved.sender_pubkey.0);
+        let maker_pubkey = bits256::from(taker_match.reserved.sender_pubkey.0);
         let taker_coin_ticker = taker_order.taker_coin_ticker();
         let taker_coin = match lp_coinfind(&ctx, taker_coin_ticker).await {
             Ok(Some(c)) => c,
@@ -3108,8 +3353,21 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &taker_order.request.order_metadata;
+            let _maker_order_metadata = &taker_match.reserved.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connect_start_bob`.
+            unreachable!();
+        }
+
+        #[allow(unreachable_code)]
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
@@ -3149,91 +3407,167 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             uuid
         );
 
-        let now = now_sec();
-        if ctx.use_trading_proto_v2() {
-            let taker_secret = match generate_secret() {
-                Ok(s) => s.into(),
-                Err(e) => {
-                    error!("Error {} on secret generation", e);
-                    return;
-                },
+        let bob_swap_v = taker_match.reserved.swap_version;
+        let alice_swap_v = taker_order.request.swap_version;
+
+        // Start a legacy swap if either the maker or taker uses the legacy swap protocol (version 1)
+        if bob_swap_v.is_legacy() || alice_swap_v.is_legacy() {
+            let params = LegacySwapParams {
+                maker_coin: &maker_coin,
+                taker_coin: &taker_coin,
+                uuid: &uuid,
+                my_conf_settings: &my_conf_settings,
+                my_persistent_pub: &my_persistent_pub,
+                maker_amount: &maker_amount,
+                taker_amount: &taker_amount,
+                locktime: &locktime,
             };
-            let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
-            match (maker_coin, taker_coin) {
-                (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
-                    let mut taker_swap_state_machine = TakerSwapStateMachine {
-                        storage: TakerSwapStorage::new(ctx.clone()),
-                        abortable_system: ctx
-                            .abortable_system
-                            .create_subsystem()
-                            .expect("create_subsystem should not fail"),
-                        ctx,
-                        started_at: now,
-                        lock_duration: locktime,
-                        maker_coin: m.clone(),
-                        maker_volume: maker_amount,
-                        taker_coin: t.clone(),
-                        dex_fee: dex_fee_amount_from_taker_coin(&t, maker_coin_ticker, &taker_amount),
-                        taker_volume: taker_amount,
-                        taker_premium: Default::default(),
-                        secret_hash_algo,
-                        conf_settings: my_conf_settings,
-                        p2p_topic: swap_v2_topic(&uuid),
-                        uuid,
-                        p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                        taker_secret,
-                        maker_p2p_pubkey: match maker_p2p_pubkey {
-                            PublicKey::Secp256k1(pubkey) => pubkey.into(),
-                        },
-                        require_maker_payment_confirm_before_funding_spend: true,
-                    };
-                    #[allow(clippy::box_default)]
-                    taker_swap_state_machine
-                        .run(Box::new(taker_swap_v2::Initialize::default()))
-                        .await
-                        .error_log();
-                },
-                _ => todo!("implement fallback to the old protocol here"),
-            }
-        } else {
-            #[cfg(any(test, feature = "run-docker-tests"))]
-            let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+            start_taker_legacy_swap(&ctx, taker_order, maker_pubkey, params).await;
+            return;
+        }
 
-            if let Err(e) = insert_new_swap_to_db(
-                ctx.clone(),
-                taker_coin.ticker(),
-                maker_coin.ticker(),
-                uuid,
-                now,
-                LEGACY_SWAP_TYPE,
-            )
-            .await
-            {
-                error!("Error {} on new swap insertion", e);
-            }
+        let taker_secret = match generate_secret() {
+            Ok(s) => s.into(),
+            Err(e) => {
+                error!("Error {} on secret generation", e);
+                return;
+            },
+        };
 
-            let taker_swap = TakerSwap::new(
-                ctx.clone(),
-                maker,
-                maker_amount,
-                taker_amount,
-                my_persistent_pub,
-                uuid,
-                Some(uuid),
-                my_conf_settings,
-                maker_coin,
-                taker_coin,
-                locktime,
-                taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                #[cfg(any(test, feature = "run-docker-tests"))]
-                fail_at,
-            );
-            run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+        // Ensure detect_secret_hash_algo_v2 returns the correct secret hash algorithm when adding new coin support in TPU.
+        let params = StateMachineParams {
+            secret_hash_algo: &detect_secret_hash_algo_v2(&maker_coin, &taker_coin),
+            uuid: &uuid,
+            my_conf_settings: &my_conf_settings,
+            locktime: &locktime,
+            maker_amount: &maker_amount,
+            taker_amount: &taker_amount,
+        };
+        let maker_p2p_pubkey = match maker_p2p_pubkey {
+            PublicKey::Secp256k1(pubkey) => pubkey.into(),
+        };
+
+        // TODO try to handle it more gracefully during project redesign
+        match (&maker_coin, &taker_coin) {
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
+                    .await;
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+                start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
+                    .await;
+            },
+            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+                start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
+                    .await;
+            },
+            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+                start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
+                    .await;
+            },
+            _ => {
+                let params = LegacySwapParams {
+                    maker_coin: &maker_coin,
+                    taker_coin: &taker_coin,
+                    uuid: &uuid,
+                    my_conf_settings: &my_conf_settings,
+                    my_persistent_pub: &my_persistent_pub,
+                    maker_amount: &maker_amount,
+                    taker_amount: &taker_amount,
+                    locktime: &locktime,
+                };
+                start_taker_legacy_swap(&ctx, taker_order, maker_pubkey, params).await;
+            },
         }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
     spawner.spawn_with_settings(fut, settings)
+}
+
+async fn start_taker_legacy_swap(
+    ctx: &MmArc,
+    taker_order: TakerOrder,
+    maker_pubkey: bits256,
+    params: LegacySwapParams<'_>,
+) {
+    #[cfg(any(test, feature = "run-docker-tests"))]
+    let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
+    if let Err(e) = insert_new_swap_to_db(
+        ctx.clone(),
+        params.taker_coin.ticker(),
+        params.maker_coin.ticker(),
+        *params.uuid,
+        now_sec(),
+        LEGACY_SWAP_TYPE,
+    )
+    .await
+    {
+        error!("Error {} on new swap insertion", e);
+    }
+
+    let taker_swap = TakerSwap::new(
+        ctx.clone(),
+        maker_pubkey,
+        params.maker_amount.clone(),
+        params.taker_amount.clone(),
+        *params.my_persistent_pub,
+        *params.uuid,
+        Some(*params.uuid),
+        *params.my_conf_settings,
+        params.maker_coin.clone(),
+        params.taker_coin.clone(),
+        *params.locktime,
+        taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        #[cfg(any(test, feature = "run-docker-tests"))]
+        fail_at,
+    );
+    run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx.clone()).await
+}
+
+async fn start_taker_swap_state_machine<
+    MakerCoin: MmCoin + MakerCoinSwapOpsV2 + Clone,
+    TakerCoin: MmCoin + TakerCoinSwapOpsV2 + Clone,
+>(
+    ctx: &MmArc,
+    taker_order: &TakerOrder,
+    maker_p2p_pubkey: &Secp256k1Pubkey,
+    taker_secret: &H256,
+    maker_coin: &MakerCoin,
+    taker_coin: &TakerCoin,
+    params: &StateMachineParams<'_>,
+) {
+    let mut taker_swap_state_machine = TakerSwapStateMachine {
+        storage: TakerSwapStorage::new(ctx.clone()),
+        abortable_system: ctx
+            .abortable_system
+            .create_subsystem()
+            .expect("create_subsystem should not fail"),
+        ctx: ctx.clone(),
+        started_at: now_sec(),
+        lock_duration: *params.locktime,
+        maker_coin: maker_coin.clone(),
+        maker_volume: params.maker_amount.clone(),
+        taker_coin: taker_coin.clone(),
+        taker_volume: params.taker_amount.clone(),
+        taker_premium: Default::default(),
+        secret_hash_algo: *params.secret_hash_algo,
+        conf_settings: *params.my_conf_settings,
+        p2p_topic: swap_v2_topic(params.uuid),
+        uuid: *params.uuid,
+        p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        taker_secret: *taker_secret,
+        maker_p2p_pubkey: *maker_p2p_pubkey,
+        require_maker_payment_confirm_before_funding_spend: true,
+        require_maker_payment_spend_confirm: true,
+        swap_version: taker_order.request.swap_version.version,
+    };
+    #[allow(clippy::box_default)]
+    taker_swap_state_machine
+        .run(Box::new(taker_swap_v2::Initialize::default()))
+        .await
+        .error_log();
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
@@ -3252,6 +3586,19 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         handle_timed_out_taker_orders(ctx.clone(), &ordermatch_ctx).await;
         handle_timed_out_maker_matches(ctx.clone(), &ordermatch_ctx).await;
         check_balance_for_maker_orders(ctx.clone(), &ordermatch_ctx).await;
+
+        let expired_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.drop_expired_entries();
+
+        for (uuid, order_mutex) in expired_orders {
+            log::info!("Order '{uuid}' is expired, cancelling");
+
+            let order = order_mutex.lock().await;
+            maker_order_cancelled_p2p_notify(&ctx, &order);
+            delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Expired)
+                .compat()
+                .await
+                .ok();
+        }
 
         {
             // remove "timed out" pubkeys states with their orders from orderbook
@@ -3283,9 +3630,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut to_cancel = Vec::new();
             {
                 let orderbook = ordermatch_ctx.orderbook.lock();
-                for (uuid, _) in ordermatch_ctx.maker_orders_ctx.lock().orders.iter() {
-                    if !orderbook.order_set.contains_key(uuid) {
-                        missing_uuids.push(*uuid);
+                for uuid in ordermatch_ctx.maker_orders_ctx.lock().orders.keys() {
+                    if !orderbook.order_set.contains_key(&uuid) {
+                        missing_uuids.push(uuid);
                     }
                 }
             }
@@ -3591,6 +3938,13 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     connected: None,
                     last_updated: now_ms(),
                 };
+
+                ctx.event_stream_manager
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
+                        OrderStatusEvent::TakerMatch(taker_match.clone())
+                    })
+                    .ok();
+
                 my_order
                     .matches
                     .insert(taker_match.reserved.maker_order_uuid, taker_match);
@@ -3639,6 +3993,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
+
+    ctx.event_stream_manager
+        .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
+            OrderStatusEvent::TakerConnected(order_match.clone())
+        })
+        .ok();
+
     // alice
     lp_connected_alice(
         ctx.clone(),
@@ -3734,6 +4095,9 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     }),
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
+                    swap_version: order.swap_version,
+                    #[cfg(feature = "ibc-routing-for-swaps")]
+                    order_metadata: order.order_metadata.clone(),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -3745,6 +4109,13 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     connected: None,
                     last_updated: now_ms(),
                 };
+
+                ctx.event_stream_manager
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
+                        OrderStatusEvent::MakerMatch(maker_match.clone())
+                    })
+                    .ok();
+
                 order.matches.insert(maker_match.request.uuid, maker_match);
                 storage
                     .update_active_maker_order(&order)
@@ -3809,6 +4180,13 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
         order_match.connect = Some(connect_msg);
         order_match.connected = Some(connected.clone());
         let order_match = order_match.clone();
+
+        ctx.event_stream_manager
+            .send_fn(&OrderStatusStreamer::derive_streamer_id(()), || {
+                OrderStatusEvent::MakerConnected(order_match.clone())
+            })
+            .ok();
+
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match, my_order.clone(), sender_pubkey);
         let topic = my_order.orderbook_topic();
@@ -3836,12 +4214,9 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     let my_amount = &input.volume * &input.price;
     try_s!(
         check_balance_for_taker_swap(
@@ -3868,12 +4243,9 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
@@ -3886,13 +4258,14 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
         )
         .await
     );
+
     let res = try_s!(lp_auto_buy(&ctx, &base_coin, &rel_coin, input).await);
     Ok(try_s!(Response::builder().body(res)))
 }
 
 /// Created when maker order is matched with taker request
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct MakerMatch {
+pub struct MakerMatch {
     request: TakerRequest,
     reserved: MakerReserved,
     connect: Option<TakerConnect>,
@@ -3902,7 +4275,7 @@ struct MakerMatch {
 
 /// Created upon taker request broadcast
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct TakerMatch {
+pub struct TakerMatch {
     reserved: MakerReserved,
     connect: TakerConnect,
     connected: Option<MakerConnected>,
@@ -3955,6 +4328,7 @@ pub async fn lp_auto_buy(
         rel_confs: input.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
+
     let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
@@ -3967,6 +4341,21 @@ pub async fn lp_auto_buy(
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+
+    if !ctx.use_trading_proto_v2() {
+        order_builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            order_builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
+    }
+
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
@@ -4003,7 +4392,7 @@ pub async fn lp_auto_buy(
 /// Orderbook Item P2P message
 /// DO NOT CHANGE - it will break backwards compatibility
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct OrderbookP2PItem {
+pub struct OrderbookP2PItem {
     pubkey: String,
     base: String,
     rel: String,
@@ -4444,6 +4833,7 @@ pub struct SetPriceReq {
     rel_nota: Option<bool>,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    timeout_in_minutes: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -4485,7 +4875,7 @@ pub struct TakerConnectForRpc<'a> {
 }
 
 impl<'a> From<&'a TakerConnect> for TakerConnectForRpc<'a> {
-    fn from(connect: &'a TakerConnect) -> TakerConnectForRpc {
+    fn from(connect: &'a TakerConnect) -> TakerConnectForRpc<'a> {
         TakerConnectForRpc {
             taker_order_uuid: &connect.taker_order_uuid,
             maker_order_uuid: &connect.maker_order_uuid,
@@ -4506,7 +4896,7 @@ pub struct MakerConnectedForRpc<'a> {
 }
 
 impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc<'a> {
-    fn from(connected: &'a MakerConnected) -> MakerConnectedForRpc {
+    fn from(connected: &'a MakerConnected) -> MakerConnectedForRpc<'a> {
         MakerConnectedForRpc {
             taker_order_uuid: &connected.taker_order_uuid,
             maker_order_uuid: &connected.maker_order_uuid,
@@ -4518,7 +4908,7 @@ impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc<'a> {
 }
 
 impl<'a> From<&'a MakerReserved> for MakerReservedForRpc<'a> {
-    fn from(reserved: &MakerReserved) -> MakerReservedForRpc {
+    fn from(reserved: &'a MakerReserved) -> MakerReservedForRpc<'a> {
         MakerReservedForRpc {
             base: &reserved.base,
             rel: &reserved.rel,
@@ -4547,7 +4937,7 @@ struct MakerMatchForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a MakerMatch> for MakerMatchForRpc<'a> {
-    fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc {
+    fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc<'a> {
         MakerMatchForRpc {
             request: (&maker_match.request).into(),
             reserved: (&maker_match.reserved).into(),
@@ -4661,12 +5051,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
 
-    if base_coin.wallet_only(ctx) {
-        return ERR!("Base coin {} is wallet only", req.base);
-    }
-    if rel_coin.wallet_only(ctx) {
-        return ERR!("Rel coin {} is wallet only", req.rel);
-    }
+    try_s!(base_coin.pre_check_for_order_creation(ctx, &rel_coin).await);
 
     let (volume, balance) = if req.max {
         let CoinVolumeInfo { volume, balance, .. } = try_s!(
@@ -4704,7 +5089,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_confs: req.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
-    let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
+
+    let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
         .with_price(req.price.clone())
@@ -4712,6 +5098,24 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+
+    if let Some(t) = req.timeout_in_minutes {
+        builder.set_timeout(t);
+    }
+
+    if !ctx.use_trading_proto_v2() {
+        builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
+    }
 
     let new_order = try_s!(builder.build());
 
@@ -4989,6 +5393,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
+    Expired,
 }
 
 #[derive(Display)]
@@ -5025,7 +5430,7 @@ pub enum Order {
 }
 
 impl<'a> From<&'a Order> for OrderForRpc<'a> {
-    fn from(order: &'a Order) -> OrderForRpc {
+    fn from(order: &'a Order) -> OrderForRpc<'a> {
         match order {
             Order::Maker(o) => OrderForRpc::Maker(MakerOrderForRpc::from(o)),
             Order::Taker(o) => OrderForRpc::Taker(TakerOrderForRpc::from(o)),
@@ -5275,7 +5680,7 @@ struct MakerOrderForMyOrdersRpc<'a> {
 }
 
 impl<'a> From<&'a MakerOrder> for MakerOrderForMyOrdersRpc<'a> {
-    fn from(order: &'a MakerOrder) -> MakerOrderForMyOrdersRpc {
+    fn from(order: &'a MakerOrder) -> MakerOrderForMyOrdersRpc<'a> {
         MakerOrderForMyOrdersRpc {
             order: order.into(),
             cancellable: order.is_cancellable(),
@@ -5294,7 +5699,7 @@ struct TakerMatchForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerMatch> for TakerMatchForRpc<'a> {
-    fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc {
+    fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc<'a> {
         TakerMatchForRpc {
             reserved: (&taker_match.reserved).into(),
             connect: (&taker_match.connect).into(),
@@ -5317,7 +5722,7 @@ struct TakerOrderForRpc<'a> {
 
 #[allow(clippy::needless_borrow)]
 impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
-    fn from(order: &'a TakerOrder) -> TakerOrderForRpc {
+    fn from(order: &'a TakerOrder) -> TakerOrderForRpc<'a> {
         TakerOrderForRpc {
             created_at: order.created_at,
             request: (&order.request).into(),
@@ -5668,19 +6073,19 @@ async fn subscribe_to_orderbook_topic(
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcOrderbookEntryV2 {
-    coin: String,
-    address: OrderbookAddress,
-    price: MmNumberMultiRepr,
-    pubkey: String,
-    uuid: Uuid,
-    is_mine: bool,
-    base_max_volume: MmNumberMultiRepr,
-    base_min_volume: MmNumberMultiRepr,
-    rel_max_volume: MmNumberMultiRepr,
-    rel_min_volume: MmNumberMultiRepr,
-    conf_settings: Option<OrderConfirmationsSettings>,
+    pub coin: String,
+    pub address: OrderbookAddress,
+    pub price: MmNumberMultiRepr,
+    pub pubkey: String,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume: MmNumberMultiRepr,
+    pub base_min_volume: MmNumberMultiRepr,
+    pub rel_max_volume: MmNumberMultiRepr,
+    pub rel_min_volume: MmNumberMultiRepr,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
 }
 
 fn choose_maker_confs_and_notas(
@@ -5793,7 +6198,7 @@ fn choose_taker_confs_and_notas(
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),
@@ -5803,7 +6208,6 @@ pub enum OrderbookAddress {
 #[derive(Debug, Display)]
 enum OrderbookAddrErr {
     AddrFromPubkeyError(String),
-    #[cfg(feature = "enable-sia")]
     CoinIsNotSupported(String),
     DeserializationError(json::Error),
     InvalidPlatformCoinProtocol(String),
@@ -5829,11 +6233,13 @@ fn orderbook_address(
 ) -> Result<OrderbookAddress, MmError<OrderbookAddrErr>> {
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => {
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             coins::eth::addr_from_pubkey_str(pubkey)
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
         },
+        // Todo: implement TRX address generation
+        CoinProtocol::TRX { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)

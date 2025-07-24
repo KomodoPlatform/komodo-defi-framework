@@ -27,7 +27,7 @@ impl<'de> de::Deserialize<'de> for NodeAddress {
     fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct NodeAddressVisitor;
 
-        impl<'de> de::Visitor<'de> for NodeAddressVisitor {
+        impl de::Visitor<'_> for NodeAddressVisitor {
             type Value = NodeAddress;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { write!(formatter, "pubkey@host:port") }
@@ -82,7 +82,7 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
     fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct PublicKeyForRPCVisitor;
 
-        impl<'de> de::Visitor<'de> for PublicKeyForRPCVisitor {
+        impl de::Visitor<'_> for PublicKeyForRPCVisitor {
             type Value = PublicKeyForRPC;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { write!(formatter, "a public key") }

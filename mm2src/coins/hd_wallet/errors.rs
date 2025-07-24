@@ -2,6 +2,7 @@ use super::{HDConfirmAddressError, HDWalletStorageError};
 use bip32::Error as Bip32Error;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{Bip32DerPathError, Bip44Chain, CryptoCtxError, HwError, HwProcessingError, StandardHDPathError, XpubError};
+use derive_more::Display;
 use rpc_task::RpcTaskError;
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
@@ -241,4 +242,9 @@ impl From<TrezorCoinError> for NewAddressDeriveConfirmError {
     fn from(e: TrezorCoinError) -> Self {
         NewAddressDeriveConfirmError::DeriveError(NewAddressDerivingError::Internal(e.to_string()))
     }
+}
+
+#[derive(Display)]
+pub enum SettingEnabledAddressError {
+    Internal(String),
 }

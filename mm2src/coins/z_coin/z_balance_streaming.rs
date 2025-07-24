@@ -1,114 +1,69 @@
 use crate::common::Future01CompatExt;
 use crate::z_coin::ZCoin;
-use crate::{MarketCoinOps, MmCoin};
+use crate::MarketCoinOps;
 
 use async_trait::async_trait;
-use common::executor::{AbortSettings, SpawnAbortable};
-use common::log::{error, info};
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use common::log::error;
 use futures::channel::oneshot;
-use futures::channel::oneshot::{Receiver, Sender};
-use futures::lock::Mutex as AsyncMutex;
 use futures_util::StreamExt;
-use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_event_stream::{ErrorEventName, Event, EventName, EventStreamConfiguration};
-use std::sync::Arc;
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
-pub type ZBalanceEventSender = UnboundedSender<()>;
-pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<()>>>;
+pub struct ZCoinBalanceEventStreamer {
+    coin: ZCoin,
+}
+
+impl<'a> DeriveStreamerId<'a> for ZCoinBalanceEventStreamer {
+    type InitParam = ZCoin;
+    type DeriveParam = &'a str;
+
+    fn new(coin: Self::InitParam) -> Self { Self { coin } }
+
+    #[inline(always)]
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
+}
 
 #[async_trait]
-impl EventBehaviour for ZCoin {
-    fn event_name() -> EventName { EventName::CoinBalance }
+impl EventStreamer for ZCoinBalanceEventStreamer {
+    type DataInType = ();
 
-    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
-
-    async fn handle(self, _interval: f64, tx: Sender<EventInitStatus>) {
-        const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
-
-        macro_rules! send_status_on_err {
-            ($match: expr, $sender: tt, $msg: literal) => {
-                match $match {
-                    Some(t) => t,
-                    None => {
-                        $sender
-                            .send(EventInitStatus::Failed($msg.to_owned()))
-                            .expect(RECEIVER_DROPPED_MSG);
-                        panic!("{}", $msg);
-                    },
-                }
-            };
-        }
-
-        let ctx = send_status_on_err!(
-            MmArc::from_weak(&self.as_ref().ctx),
-            tx,
-            "MM context must have been initialized already."
-        );
-        let z_balance_change_handler = send_status_on_err!(
-            self.z_fields.z_balance_event_handler.as_ref(),
-            tx,
-            "Z balance change receiver can not be empty."
-        );
-
-        tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
-
-        // Locks the balance change handler, iterates through received events, and updates balance changes accordingly.
-        let mut bal = z_balance_change_handler.lock().await;
-        while (bal.next().await).is_some() {
-            match self.my_balance().compat().await {
-                Ok(balance) => {
-                    let payload = json!({
-                        "ticker": self.ticker(),
-                        "address": self.my_z_address_encoded(),
-                        "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
-                    });
-
-                    ctx.stream_channel_controller
-                        .broadcast(Event::new(Self::event_name().to_string(), payload.to_string()))
-                        .await;
-                },
-                Err(err) => {
-                    let ticker = self.ticker();
-                    error!("Failed getting balance for '{ticker}'. Error: {err}");
-                    let e = serde_json::to_value(err).expect("Serialization should't fail.");
-                    return ctx
-                        .stream_channel_controller
-                        .broadcast(Event::new(
-                            format!("{}:{}", Self::error_event_name(), ticker),
-                            e.to_string(),
-                        ))
-                        .await;
-                },
-            };
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker().to_string(),
         }
     }
 
-    async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(&Self::event_name()) {
-            info!(
-                "{} event is activated for {} address {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::event_name(),
-                self.ticker(),
-                self.my_z_address_encoded(),
-                event.stream_interval_seconds
-            );
+    async fn handle(
+        self,
+        broadcaster: Broadcaster,
+        ready_tx: oneshot::Sender<Result<(), String>>,
+        mut data_rx: impl StreamHandlerInput<()>,
+    ) {
+        let streamer_id = self.streamer_id();
+        let coin = self.coin;
 
-            let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
-            let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings = AbortSettings::info_on_abort(format!(
-                "{} event is stopped for {}.",
-                Self::event_name(),
-                self.ticker()
-            ));
-            self.spawner().spawn_with_settings(fut, settings);
+        ready_tx
+            .send(Ok(()))
+            .expect("Receiver is dropped, which should never happen.");
 
-            rx.await.unwrap_or_else(|e| {
-                EventInitStatus::Failed(format!("Event initialization status must be received: {}", e))
-            })
-        } else {
-            EventInitStatus::Inactive
+        // Iterates through received events, and updates balance changes accordingly.
+        while (data_rx.next().await).is_some() {
+            match coin.my_balance().compat().await {
+                Ok(balance) => {
+                    let payload = json!({
+                        "ticker": coin.ticker(),
+                        "address": coin.my_z_address_encoded(),
+                        "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
+                    });
+
+                    broadcaster.broadcast(Event::new(streamer_id.clone(), payload));
+                },
+                Err(err) => {
+                    let ticker = coin.ticker();
+                    error!("Failed getting balance for '{ticker}'. Error: {err}");
+                    let e = serde_json::to_value(err).expect("Serialization should't fail.");
+                    return broadcaster.broadcast(Event::err(streamer_id.clone(), e));
+                },
+            };
         }
     }
 }

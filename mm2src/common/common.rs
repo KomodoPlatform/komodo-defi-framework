@@ -11,10 +11,7 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics, panic_info_message)]
-#![feature(async_closure)]
 #![feature(hash_raw_entry)]
-#![feature(drain_filter)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate gstuff;
@@ -106,9 +103,15 @@ macro_rules! some_or_return_ok_none {
 #[macro_export]
 macro_rules! cross_test {
     ($test_name:ident, $test_code:block) => {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[tokio::test(flavor = "multi_thread")]
-        async fn $test_name() { $test_code }
+        cross_test!($test_name, $test_code, not(target_arch = "wasm32"));
+    };
+
+    ($test_name:ident, $test_code:block, $($cfgs:meta),+) => {
+        $(
+            #[cfg($cfgs)]
+            #[tokio::test(flavor = "multi_thread")]
+            async fn $test_name() { $test_code }
+        )+
 
         #[cfg(target_arch = "wasm32")]
         #[wasm_bindgen_test]
@@ -130,6 +133,7 @@ pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
 pub mod notifier;
 pub mod number_type_casting;
+pub mod on_drop_callback;
 pub mod password_policy;
 pub mod seri;
 
@@ -151,6 +155,7 @@ use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 pub use paste::paste;
+use primitive_types::U256;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -166,7 +171,7 @@ use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
-use std::panic::{set_hook, PanicInfo};
+use std::panic::{set_hook, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
@@ -182,6 +187,7 @@ cfg_native! {
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
     use std::sync::Mutex;
+    use std::str::FromStr;
 }
 
 cfg_wasm32! {
@@ -202,13 +208,18 @@ pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+pro
 
 pub const SATOSHIS: u64 = 100_000_000;
 
+/// Dex fee public key for chains where SECP256K1 is supported
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+/// Public key to collect the burn part of dex fee, for chains where SECP256K1 is supported
+pub const DEX_BURN_ADDR_PUBKEY: &str = "0369aa10c061cd9e085f4adb7399375ba001b54136145cb748eb4c48657be13153";
 
 pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+    pub static ref DEX_BURN_ADDR_RAW_PUBKEY: Vec<u8> =
+        hex::decode(DEX_BURN_ADDR_PUBKEY).expect("DEX_BURN_ADDR_PUBKEY is expected to be a hexadecimal string");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -342,7 +353,7 @@ pub fn filename(path: &str) -> &str {
     // whereas the error trace might be coming from another operating system.
     // In particular, I see `file_name` failing with WASM.
 
-    let name = match path.rfind(|ch| ch == '/' || ch == '\\') {
+    let name = match path.rfind(['/', '\\']) {
         Some(ofs) => &path[ofs + 1..],
         None => path,
     };
@@ -480,7 +491,7 @@ fn output_pc_mem_addr(output: &mut dyn FnMut(&str)) {
 /// (The default Rust handler doesn't have the means to print the message).
 #[cfg(target_arch = "wasm32")]
 pub fn set_panic_hook() {
-    set_hook(Box::new(|info: &PanicInfo| {
+    set_hook(Box::new(|info: &PanicHookInfo| {
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
         console_err!("{}", info);
@@ -496,9 +507,9 @@ pub fn set_panic_hook() {
 pub fn set_panic_hook() {
     use std::sync::atomic::AtomicBool;
 
-    thread_local! {static ENTERED: AtomicBool = AtomicBool::new(false);}
+    thread_local! {static ENTERED: AtomicBool = const { AtomicBool::new(false) };}
 
-    set_hook(Box::new(|info: &PanicInfo| {
+    set_hook(Box::new(|info: &PanicHookInfo| {
         // Stack tracing and logging might panic (in `println!` for example).
         // Let us detect this and do nothing on second panic.
         // We'll likely still get a crash after the hook is finished
@@ -616,6 +627,17 @@ pub fn var(name: &str) -> Result<String, String> {
         Err(_err) => ERR!("No {}", name),
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn env_var_as_bool(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => FromStr::from_str(&v).unwrap_or_default(),
+        Err(_err) => false,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn env_var_as_bool(_name: &str) -> bool { false }
 
 /// TODO make it wasm32 only
 #[cfg(target_arch = "wasm32")]
@@ -749,6 +771,7 @@ static mut PROCESS_LOG_TAIL: [u8; 0x10000] = [0; 0x10000];
 static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
 
 /// Keep a tail of the log in RAM for the integration tests.
+#[allow(static_mut_refs)] // TODO: Refactor PROCESS_LOG_TAIL to use lazystatic
 #[cfg(target_arch = "wasm32")]
 pub fn append_log_tail(line: &str) {
     unsafe {
@@ -1162,6 +1185,10 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 
     format!("{}{}{}{}", address_prefix, host_address, port, path)
 }
+
+/// Converts a U256 value to a lowercase hexadecimal string with "0x" prefix
+#[inline]
+pub fn u256_to_hex(value: U256) -> String { format!("0x{:x}", value) }
 
 /// If 0x prefix exists in an str strip it or return the str as-is  
 #[macro_export]

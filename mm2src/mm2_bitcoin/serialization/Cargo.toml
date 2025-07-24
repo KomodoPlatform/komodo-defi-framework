@@ -2,12 +2,13 @@
 name = "serialization"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
+edition = "2015"
 
 [lib]
 doctest = false
 
 [dependencies]
-byteorder = "1.0"
+byteorder.workspace = true
 primitives = { path = "../primitives" }
-derive_more = "0.99"
+derive_more.workspace = true
 test_helpers = { path = "../test_helpers" }

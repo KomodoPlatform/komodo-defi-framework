@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
+                                               SET_BURN_PUBKEY_TO_ALICE};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
 use crate::integration_tests_common::*;
@@ -404,6 +405,7 @@ fn order_should_be_cancelled_when_entire_balance_is_withdrawn() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -520,6 +522,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_upda
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -653,6 +656,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_upd
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -800,6 +804,7 @@ fn test_order_should_be_updated_when_matched_partially() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -905,6 +910,7 @@ fn test_match_and_trade_setprice_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1004,6 +1010,7 @@ fn test_max_taker_vol_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1124,6 +1131,7 @@ fn test_buy_when_coins_locked_by_other_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1217,6 +1225,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1309,6 +1318,7 @@ fn test_buy_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1373,6 +1383,7 @@ fn test_maker_trade_preimage() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1510,6 +1521,7 @@ fn test_taker_trade_preimage() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1651,6 +1663,7 @@ fn test_trade_preimage_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1770,6 +1783,7 @@ fn test_trade_preimage_additional_validation() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1909,6 +1923,7 @@ fn test_trade_preimage_legacy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1979,6 +1994,7 @@ fn test_get_max_taker_vol() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2031,6 +2047,7 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2092,6 +2109,7 @@ fn test_get_max_taker_vol_dust_threshold() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2143,6 +2161,7 @@ fn test_get_max_taker_vol_with_kmd() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2210,7 +2229,7 @@ fn test_get_max_maker_vol() {
     let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
     assert_eq!(actual, expected);
 
-    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
 }
 
@@ -2249,6 +2268,7 @@ fn test_set_price_max() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2304,6 +2324,7 @@ fn swaps_should_stop_on_stop_rpc() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2394,6 +2415,7 @@ fn test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2451,6 +2473,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2546,6 +2569,7 @@ fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let relay = MarketMakerIt::start(relay_conf, "pass".to_string(), None).unwrap();
     let (_relay_dump_log, _relay_dump_dashboard) = mm_dump(&relay.log_path);
@@ -2558,7 +2582,6 @@ fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
         "coins": coins,
         "rpc_password": "pass",
         "seednodes": vec![format!("{}", relay.ip)],
-        "i_am_seed": false,
     });
     let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
@@ -2637,6 +2660,7 @@ fn test_orders_should_match_on_both_nodes_with_same_priv() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2740,6 +2764,7 @@ fn test_maker_and_taker_order_created_with_same_priv_should_not_match() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2811,6 +2836,7 @@ fn test_taker_order_converted_to_maker_should_cancel_properly_when_matched() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2934,6 +2960,7 @@ fn test_utxo_merge() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -2987,6 +3014,7 @@ fn test_utxo_merge_max_merge_at_once() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3035,6 +3063,7 @@ fn test_withdraw_not_sufficient_balance() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3121,6 +3150,7 @@ fn test_taker_should_match_with_best_price_buy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3254,6 +3284,7 @@ fn test_taker_should_match_with_best_price_sell() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3392,6 +3423,7 @@ fn test_match_utxo_with_eth_taker_sell() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3468,6 +3500,7 @@ fn test_match_utxo_with_eth_taker_buy() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -3892,6 +3925,13 @@ fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); 
 #[test]
 fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
 
+// run swap with burn pubkey set to alice (no dex fee)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
+
 fn withdraw_and_send(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3964,6 +4004,7 @@ fn test_withdraw_and_send_eth_erc20() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -4084,7 +4125,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
@@ -4537,7 +4578,7 @@ fn test_set_price_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4610,7 +4651,7 @@ fn test_buy_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4683,7 +4724,7 @@ fn test_sell_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();

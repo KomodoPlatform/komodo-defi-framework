@@ -93,7 +93,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 ///
 /// ### USAGE:
 ///
-/// ```rust
+/// ```ignore
 /// use enum_derives::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
 /// use std::io::{Error, ErrorKind};

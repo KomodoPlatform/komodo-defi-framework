@@ -23,15 +23,15 @@ mod tx_history_v2_tests;
 #[inline]
 pub fn token_id_from_tx_type(tx_type: &TransactionType) -> String {
     match tx_type {
-        TransactionType::TokenTransfer(token_id) => {
+        TransactionType::TokenTransfer(token_id)
+        | TransactionType::TendermintIBCTransfer {
+            token_id: Some(token_id),
+        }
+        | TransactionType::CustomTendermintMsg {
+            token_id: Some(token_id),
+            ..
+        } => {
             format!("{:02x}", token_id)
-        },
-        TransactionType::CustomTendermintMsg { token_id, .. } => {
-            if let Some(token_id) = token_id {
-                format!("{:02x}", token_id)
-            } else {
-                String::new()
-            }
         },
         _ => String::new(),
     }
@@ -47,7 +47,7 @@ pub struct TxHistoryStorageBuilder<'a> {
     ctx: &'a MmArc,
 }
 
-impl<'a> TxHistoryStorageBuilder<'a> {
+impl TxHistoryStorageBuilder<'_> {
     #[inline]
     pub fn new(ctx: &MmArc) -> TxHistoryStorageBuilder<'_> { TxHistoryStorageBuilder { ctx } }
 

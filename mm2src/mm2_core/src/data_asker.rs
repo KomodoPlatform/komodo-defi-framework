@@ -1,10 +1,11 @@
+use common::custom_futures::timeout::FutureTimerExt;
 use common::{HttpStatusCode, StatusCode};
+use compatible_time::Duration;
 use derive_more::Display;
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
-use instant::Duration;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::Event;
+use mm2_event_stream::{Event, StreamerId};
 use ser_error_derive::SerializeErrorType;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -14,8 +15,6 @@ use std::sync::Arc;
 use timed_map::{MapKind, TimedMap};
 
 use crate::mm_ctx::{MmArc, MmCtx};
-
-const EVENT_NAME: &str = "DATA_NEEDED";
 
 #[derive(Clone, Debug)]
 pub struct DataAsker {
@@ -37,11 +36,12 @@ impl Default for DataAsker {
 #[derive(Debug, Display)]
 pub enum AskForDataError {
     #[display(
-        fmt = "Expected JSON data, but given(from data provider) one was not deserializable: {:?}",
+        fmt = "Expected JSON data, but the received data (from data provider) was not deserializable: {:?}",
         _0
     )]
     DeserializationError(serde_json::Error),
     Internal(String),
+    Timeout,
 }
 
 impl MmCtx {
@@ -79,18 +79,22 @@ impl MmCtx {
             "data": data
         });
 
-        self.stream_channel_controller
-            .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), input.to_string()))
-            .await;
+        self.event_stream_manager.broadcast_all(Event::new(
+            StreamerId::DataNeeded {
+                data_type: data_type.to_string(),
+            },
+            input,
+        ));
 
-        match receiver.await {
-            Ok(response) => match serde_json::from_value::<Output>(response) {
+        match receiver.timeout(timeout).await {
+            Ok(Ok(response)) => match serde_json::from_value::<Output>(response) {
                 Ok(value) => Ok(value),
                 Err(error) => MmError::err(AskForDataError::DeserializationError(error)),
             },
-            Err(error) => MmError::err(AskForDataError::Internal(format!(
-                "Sender channel is not alive. {error}"
+            Ok(Err(error)) => MmError::err(AskForDataError::Internal(format!(
+                "Receiver channel is not alive. {error}"
             ))),
+            Err(_) => MmError::err(AskForDataError::Timeout),
         }
     }
 }
@@ -140,7 +144,7 @@ mod tests {
     use crate::mm_ctx::MmCtxBuilder;
     use common::block_on;
     use common::executor::Timer;
-    use instant::Duration;
+    use compatible_time::Duration;
     use serde::Deserialize;
     use serde_json::json;
     use std::thread;

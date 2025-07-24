@@ -10,9 +10,9 @@ use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, Re
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
-use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::now_sec;
+use compatible_time::Duration;
 use futures::compat::Future01CompatExt;
-use instant::Duration;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
@@ -21,7 +21,7 @@ use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
-use std::convert::Infallible;
+use std::convert::{Infallible, TryInto};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -116,9 +116,15 @@ pub struct TakerSwapWatcherData {
     pub maker_coin_start_block: u64,
 }
 
+#[allow(dead_code)]
 struct ValidatePublicKeys {}
+
+#[allow(dead_code)]
 struct ValidateTakerFee {}
+
+#[allow(dead_code)]
 struct ValidateTakerPayment {}
+
 struct WaitForTakerPaymentSpend {
     taker_payment_hex: Vec<u8>,
 }
@@ -137,6 +143,7 @@ struct Stopped {
     stop_reason: StopReason,
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum StopReason {
     Finished(WatcherSuccess),
@@ -151,6 +158,7 @@ enum WatcherSuccess {
     TakerPaymentRefundedByTaker,
 }
 
+#[expect(dead_code)]
 #[derive(Debug)]
 enum WatcherError {
     InvalidTakerFee(String),
@@ -191,7 +199,6 @@ impl State for ValidateTakerFee {
                     taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
                     sender_pubkey: watcher_ctx.verified_pub.clone(),
                     min_block_number: watcher_ctx.data.taker_coin_start_block,
-                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
                     lock_duration: watcher_ctx.data.lock_duration,
                 })
                 .compat()
@@ -379,7 +386,7 @@ impl State for WaitForTakerPaymentSpend {
                 .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex, true)
                 .await
             {
-                Ok(bytes) => H256Json::from(bytes.as_slice()),
+                Ok(secret) => H256Json::from(secret),
                 Err(err) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Error(
                         WatcherError::UnableToExtractSecret(err).into(),
@@ -607,7 +614,17 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
-    let fee_hash = H256Json::from(watcher_data.taker_fee_hash.as_slice());
+    let taker_fee_bytes: [u8; 32] = match watcher_data.taker_fee_hash.as_slice().try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            error!(
+                "Invalid taker fee hash length for {}",
+                hex::encode(&watcher_data.taker_fee_hash)
+            );
+            return;
+        },
+    };
+    let fee_hash = H256Json::from(taker_fee_bytes);
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {

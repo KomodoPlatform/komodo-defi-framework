@@ -1,9 +1,9 @@
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
+
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
@@ -11,10 +11,10 @@ use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info, warn};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::Rng;
 use script::Builder;
@@ -66,7 +66,7 @@ where
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
@@ -79,23 +79,20 @@ where
     fn ticker(&self) -> &str { self.ticker }
 }
 
-impl<'a, F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'a, F, T> where
+impl<F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'_, F, T> where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
 
-impl<'a, F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
-}
+impl<F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'_, F, T> where F: Fn(UtxoArc) -> T + Send + Sync + 'static {}
 
-impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> where
+impl<F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'_, F, T> where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilder for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -109,7 +106,6 @@ where
         let utxo = self.build_utxo_fields().await?;
         let sync_status_loop_handle = utxo.block_headers_status_notifier.clone();
         let spv_conf = utxo.conf.spv_conf.clone();
-        let (is_native_mode, mode) = (utxo.rpc_client.is_native(), utxo.rpc_client.to_string());
         let utxo_arc = UtxoArc::new(utxo);
 
         self.spawn_merge_utxo_loop_if_required(&utxo_arc, self.constructor.clone());
@@ -121,23 +117,11 @@ where
             spawn_block_header_utxo_loop(self.ticker, &utxo_arc, sync_handle, spv_conf);
         }
 
-        if let Some(stream_config) = &self.ctx().event_stream_configuration {
-            if is_native_mode {
-                return MmError::err(UtxoCoinBuildError::UnsupportedModeForBalanceEvents { mode });
-            }
-
-            if let EventInitStatus::Failed(err) =
-                EventBehaviour::spawn_if_active(UtxoStandardCoin::from(utxo_arc), stream_config).await
-            {
-                return MmError::err(UtxoCoinBuildError::FailedSpawningBalanceEvents(err));
-            }
-        }
-
         Ok(result_coin)
     }
 }
 
-impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
+impl<F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -542,6 +526,7 @@ impl PossibleChainReorgError {
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
+#[allow(clippy::unit_arg)]
 async fn resolve_possible_chain_reorg(
     client: &ElectrumClient,
     server_address: &str,

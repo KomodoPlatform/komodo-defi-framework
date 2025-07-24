@@ -6,7 +6,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ConfirmedTransactionInfo, Elec
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs};
+use crate::{MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs, WeakSpawner};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -74,7 +74,7 @@ pub async fn update_best_block(
                 )
             },
             ElectrumBlockHeader::V14(h) => {
-                let block_header = match deserialize(&h.hex.into_vec()) {
+                let block_header = match deserialize(&h.hex.0) {
                     Ok(header) => header,
                     Err(e) => {
                         error!("Block header deserialization error: {}", e.to_string());
@@ -216,7 +216,7 @@ impl Platform {
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 
-    pub fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
+    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -568,7 +568,7 @@ impl FeeEstimator for Platform {
             ConfirmationTarget::Normal => self.confirmations_targets.normal,
             ConfirmationTarget::HighPriority => self.confirmations_targets.high_priority,
         };
-        let fee_per_kb = tokio::task::block_in_place(move || {
+        let fee_rate = tokio::task::block_in_place(move || {
             block_on_f01(self.rpc_client().estimate_fee_sat(
                 platform_coin.decimals(),
                 // Todo: when implementing Native client detect_fee_method should be used for Native and
@@ -582,16 +582,16 @@ impl FeeEstimator for Platform {
 
         // Set default fee to last known fee for the corresponding confirmation target
         match confirmation_target {
-            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_per_kb),
-            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_per_kb),
-            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_per_kb),
+            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_rate),
+            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_rate),
+            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_rate),
         };
 
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
         // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
         // This has changed in rust-lightning v0.0.110 as LDK currently wraps get_est_sat_per_1000_weight to ensure that the value returned is
         // no smaller than 253. https://github.com/lightningdevkit/rust-lightning/pull/1552
-        (fee_per_kb as f64 / 4.0).ceil() as u32
+        (fee_rate as f64 / 4.0).ceil() as u32
     }
 }
 

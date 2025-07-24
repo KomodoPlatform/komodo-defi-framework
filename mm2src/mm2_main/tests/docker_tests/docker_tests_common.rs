@@ -1,13 +1,13 @@
-pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use coins::z_coin::ZCoin;
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
-                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
-                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
+                                      wait_check_stats_swap_status, MarketMakerIt};
 
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
+use super::z_coin_docker_tests::z_coin_from_spending_key;
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::addr_from_raw_pubkey;
@@ -22,7 +22,7 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
-use crypto::privkey::key_pair_from_seed;
+use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
@@ -39,6 +39,8 @@ use script::Builder;
 use secp256k1::Secp256k1;
 pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
+pub use std::cell::Cell;
+use std::convert::TryFrom;
 use std::process::{Command, Stdio};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
@@ -55,12 +57,13 @@ lazy_static! {
     static ref MY_COIN1_LOCK: Mutex<()> = Mutex::new(());
     static ref QTUM_LOCK: Mutex<()> = Mutex::new(());
     static ref FOR_SLP_LOCK: Mutex<()> = Mutex::new(());
+    static ref ZOMBIE_LOCK: Mutex<()> = Mutex::new(());
     pub static ref SLP_TOKEN_ID: Mutex<H256> = Mutex::new(H256::default());
     // Private keys supplied with 1000 SLP tokens on tests initialization.
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
     // Supply more privkeys when 18 will be not enough.
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
-    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
+    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().with_conf(json!({"coins":[eth_dev_conf()],"use_trading_proto_v2": true})).into_mm_arc();
     /// We need a second `MmCtx` instance when we use the same private keys for Maker and Taker across various tests.
     /// When enabling coins for both Maker and Taker, two distinct coin instances are created.
     /// This means that different instances of the same coin should have separate global nonce locks.
@@ -114,10 +117,19 @@ pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 
+// use thread local to affect only the current running test
+thread_local! {
+    /// Set test dex pubkey as Taker (to check DexFee::NoFee)
+    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = const { Cell::new(false) };
+}
+
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
 pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
+pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunner";
+pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
+
 #[allow(dead_code)]
 pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
 #[allow(dead_code)]
@@ -213,6 +225,24 @@ impl UtxoAssetDockerOps {
     }
 }
 
+pub struct ZCoinAssetDockerOps {
+    #[allow(dead_code)]
+    ctx: MmArc,
+    coin: ZCoin,
+}
+
+impl CoinDockerOps for ZCoinAssetDockerOps {
+    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+}
+
+impl ZCoinAssetDockerOps {
+    pub fn new() -> ZCoinAssetDockerOps {
+        let (ctx, coin) = block_on(z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe", "fe"));
+
+        ZCoinAssetDockerOps { ctx, coin }
+    }
+}
+
 pub struct BchDockerOps {
     #[allow(dead_code)]
     ctx: MmArc,
@@ -297,7 +327,9 @@ impl BchDockerOps {
         let adex_slp = SlpToken::new(
             8,
             "ADEXSLP".into(),
-            slp_genesis_tx.tx_hash_as_bytes().as_slice().into(),
+            <&[u8; 32]>::try_from(slp_genesis_tx.tx_hash_as_bytes().as_slice())
+                .unwrap()
+                .into(),
             self.coin.clone(),
             1,
         )
@@ -313,7 +345,9 @@ impl BchDockerOps {
         };
         block_on_f01(self.coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
-        *SLP_TOKEN_ID.lock().unwrap() = slp_genesis_tx.tx_hash_as_bytes().as_slice().into();
+        *SLP_TOKEN_ID.lock().unwrap() = <[u8; 32]>::try_from(slp_genesis_tx.tx_hash_as_bytes().as_slice())
+            .unwrap()
+            .into();
     }
 }
 
@@ -448,6 +482,38 @@ pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_>
         container,
         ticker: Default::default(), // This isn't an asset node.
         port: Default::default(),   // This doesn't need to be the correct value as we are using the host network.
+    }
+}
+
+pub fn zombie_asset_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
+    let image = GenericImage::new(ZOMBIE_ASSET_DOCKER_IMAGE, "multiarch")
+        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_env_var("COIN_RPC_PORT", port.to_string())
+        .with_wait_for(WaitFor::message_on_stdout("config is ready"));
+
+    let image = RunnableImage::from(image).with_mapped_port((port, port));
+    let container = docker.run(image);
+    let config_ticker = "ZOMBIE";
+    let mut conf_path = coin_daemon_data_dir(config_ticker, true);
+
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push(format!("{}.conf", config_ticker));
+    Command::new("docker")
+        .arg("cp")
+        .arg(format!("{}:/data/node_0/{}.conf", container.id(), config_ticker))
+        .arg(&conf_path)
+        .status()
+        .expect("Failed to execute docker command");
+
+    let timeout = wait_until_ms(3000);
+    while !conf_path.exists() {
+        assert!(now_ms() < timeout, "Test timed out");
+    }
+
+    DockerNode {
+        container,
+        ticker: config_ticker.into(),
+        port,
     }
 }
 
@@ -762,7 +828,7 @@ where
         block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = block_on_f01(client.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])).unwrap();
+            let unspents = block_on_f01(client.list_unspent_impl(0, i32::MAX, vec![address.to_string()])).unwrap();
             if !unspents.is_empty() {
                 break;
             }
@@ -875,7 +941,17 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     let bob_priv_key = generate_and_fill_priv_key(base);
     let alice_priv_key = generate_and_fill_priv_key(rel);
+    let alice_pubkey_str = hex::encode(
+        key_pair_from_secret(&alice_priv_key)
+            .expect("valid test key pair")
+            .public()
+            .to_vec(),
+    );
 
+    let mut envs = vec![];
+    if SET_BURN_PUBKEY_TO_ALICE.get() {
+        envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
+    }
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         eth_dev_conf(),
@@ -886,12 +962,12 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         {"coin":"MYCOIN1","asset":"MYCOIN1","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         // TODO: check if we should fix protocol "type":"UTXO" to "QTUM" for this and other QTUM coin tests.
         // Maybe we should use a different coin for "UTXO" protocol and make new tests for "QTUM" protocol
-        {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1, "dust":72800,
         "mm2":1,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt","address_format":{"format":"segwit"}},
         {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
         {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
     ]);
-    let mut mm_bob = MarketMakerIt::start(
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -900,15 +976,17 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
-    )
+        envs.as_slice(),
+    ))
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    let mut mm_alice = MarketMakerIt::start(
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -920,7 +998,8 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         }),
         "pass".to_string(),
         None,
-    )
+        envs.as_slice(),
+    ))
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
@@ -1044,10 +1123,10 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     ));
 
     log!("Checking alice status..");
-    block_on(wait_check_stats_swap_status(&mm_alice, &uuid, 30));
+    block_on(wait_check_stats_swap_status(&mm_alice, &uuid, 240));
 
     log!("Checking bob status..");
-    block_on(wait_check_stats_swap_status(&mm_bob, &uuid, 30));
+    block_on(wait_check_stats_swap_status(&mm_bob, &uuid, 240));
 
     log!("Checking alice recent swaps..");
     block_on(check_recent_swaps(&mm_alice, 1));
@@ -1074,6 +1153,7 @@ pub fn slp_supplied_node() -> MarketMakerIt {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1179,7 +1259,7 @@ pub fn wait_until_relayer_container_is_ready(container_id: &str) {
 
         log!("Expected output {Q_RESULT}, received {output}.");
         if attempts > 10 {
-            panic!("{}", "Reached max attempts for <<{docker:?}>>.");
+            panic!("Reached max attempts for <<{:?}>>.", docker);
         } else {
             log!("Asking for relayer node status again..");
         }
@@ -1313,8 +1393,7 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        let dex_fee_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY).unwrap();
-        let dex_fee_addr = Token::Address(dex_fee_addr);
+        let dex_fee_addr = Token::Address(GETH_ACCOUNT);
         let params = ethabi::encode(&[dex_fee_addr]);
         let taker_swap_v2_data = format!("{}{}", TAKER_SWAP_V2_BYTES, hex::encode(params));
 
@@ -1585,7 +1664,7 @@ pub fn init_geth_node() {
             SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 =
                 EthAddress::from_str("0x9eb88cd58605d8fb9b14652d6152727f7e95fb4d").unwrap();
             SEPOLIA_ERC20_CONTRACT = EthAddress::from_str("0xF7b5F8E8555EF7A743f24D3E974E23A3C6cB6638").unwrap();
-            SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
+            SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x3B19873b81a6B426c8B2323955215F7e89CfF33F").unwrap();
             // deploy tx https://sepolia.etherscan.io/tx/0x6f743d79ecb806f5899a6a801083e33eba9e6f10726af0873af9f39883db7f11
             SEPOLIA_MAKER_SWAP_V2 = EthAddress::from_str("0xf9000589c66Df3573645B59c10aa87594Edc318F").unwrap();
         }

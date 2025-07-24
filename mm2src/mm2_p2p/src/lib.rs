@@ -2,7 +2,6 @@
 
 pub mod behaviours;
 
-mod network;
 mod relay_address;
 mod swarm_runtime;
 
@@ -39,7 +38,6 @@ pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, Keypair, Pu
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports
-pub use network::SeedNodeInfo;
 pub use relay_address::RelayAddress;
 pub use relay_address::RelayAddressError;
 
@@ -78,7 +76,7 @@ impl<'de> Deserialize<'de> for PeerAddress {
     {
         struct PeerAddressVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for PeerAddressVisitor {
+        impl serde::de::Visitor<'_> for PeerAddressVisitor {
             type Value = PeerAddress;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

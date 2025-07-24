@@ -39,7 +39,9 @@ impl TxInternalId {
             return ERR!("Incorrect bytes len {}, expected {}", bytes.len(), EXPECTED_LEN);
         }
 
-        let tx_hash: H256Json = bytes[0..32].into();
+        let mut tx_hash = [0u8; 32];
+        tx_hash.copy_from_slice(&bytes[0..32]);
+        let tx_hash = H256Json::from(tx_hash);
 
         let buf = bytes[32..].to_vec();
         let mut cursor = Cursor::new(buf);
@@ -192,7 +194,7 @@ impl Qrc20Coin {
         let receipts = try_s!(self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await);
         // request Qtum transaction details to get a tx_hex, timestamp, block_height and calculate a miner_fee
         let mut input_transactions = HistoryUtxoTxMap::new();
-        let qtum_details = try_s!(utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions).await);
+        let qtum_details = try_s!(utxo_common::tx_details_by_hash(self, &tx_hash, &mut input_transactions).await);
         // Deserialize the UtxoTx to get a script pubkey
         let qtum_tx: UtxoTx = try_s!(deserialize(
             try_s!(qtum_details.tx.tx_hex().ok_or("unexpected tx type")).as_slice()
@@ -556,7 +558,7 @@ impl Qrc20Coin {
                     return Ok(HistoryMapByHash::default());
                 },
             };
-            let tx_hash_history = history_map.entry(id.tx_hash).or_insert_with(HashMap::default);
+            let tx_hash_history = history_map.entry(id.tx_hash).or_default();
             if tx_hash_history.insert(id, tx).is_some() {
                 ctx.log.log(
                     "😟",
@@ -823,17 +825,21 @@ fn is_transfer_event_log(log: &LogEntry) -> bool {
 mod tests {
     use super::*;
     use common::block_on;
+    use hex::FromHex;
     use mm2_metrics::{MetricType, MetricsJson, MetricsOps};
     use mm2_test_helpers::for_tests::find_metrics_in_json;
     use qrc20_tests::qrc20_coin_for_test;
 
     #[test]
     fn test_tx_internal_id() {
-        let tx_hash = hex::decode("39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a").unwrap();
-        let expected_id = TxInternalId::new(tx_hash.as_slice().into(), 13, 257);
+        let tx_hash: [u8; 32] = hex::decode("39104d29d77ba83c5c6c63ab7a0f096301c443b4538dc6b30140453a40caa80a")
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let expected_id = TxInternalId::new(tx_hash.into(), 13, 257);
         let actual_bytes: BytesJson = expected_id.clone().into();
 
-        let mut expected_bytes = tx_hash;
+        let mut expected_bytes = Vec::from(tx_hash);
         expected_bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 13]);
         expected_bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 1, 1]);
         assert_eq!(actual_bytes, expected_bytes.into());
@@ -852,10 +858,10 @@ mod tests {
         let (ctx, coin) = qrc20_coin_for_test(priv_key, None);
         ctx.metrics.init();
 
-        let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
+                .unwrap()
+                .into();
         let tx_height = 699545;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
@@ -884,10 +890,10 @@ mod tests {
         let (ctx, coin) = qrc20_coin_for_test(priv_key, None);
         ctx.metrics.init();
 
-        let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
+                .unwrap()
+                .into();
         let tx_height = 699545;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
@@ -926,10 +932,10 @@ mod tests {
         let (ctx, coin) = qrc20_coin_for_test(priv_key, None);
         ctx.metrics.init();
 
-        let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
+                .unwrap()
+                .into();
         let tx_height = 699545;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
 
@@ -937,9 +943,8 @@ mod tests {
             .into_iter()
             .map(|(mut id, tx)| {
                 // just another tx_hash
-                id.tx_hash = hex::decode("8a7270110ab7b56142b3bac89999276beb70320a7fe7666f460a05aa615eb0a0")
+                id.tx_hash = <[u8; 32]>::from_hex("8a7270110ab7b56142b3bac89999276beb70320a7fe7666f460a05aa615eb0a0")
                     .unwrap()
-                    .as_slice()
                     .into();
                 (id, tx)
             })
@@ -966,10 +971,10 @@ mod tests {
         ];
         let (ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
-        let tx_hash: H256Json = hex::decode("35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("35e03bc529528a853ee75dde28f27eec8ed7b152b6af7ab6dfa5d55ea46f25ac")
+                .unwrap()
+                .into();
         let tx_height = 681443;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();
@@ -991,10 +996,10 @@ mod tests {
         ];
         let (ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
-        let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
+                .unwrap()
+                .into();
         let tx_height = 699545;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();
@@ -1019,14 +1024,14 @@ mod tests {
         let metrics = MetricsArc::new();
         metrics.init();
 
-        let tx_hash_invalid: H256Json = hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
-            .unwrap()
-            .as_slice()
-            .into();
-        let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
-            .unwrap()
-            .as_slice()
-            .into();
+        let tx_hash_invalid: H256Json =
+            <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap()
+                .into();
+        let tx_hash: H256Json =
+            <[u8; 32]>::from_hex("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
+                .unwrap()
+                .into();
         let tx_height = 699545;
         let transfer_map_expected = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
         let mut history_map_expected = HistoryMapByHash::new();

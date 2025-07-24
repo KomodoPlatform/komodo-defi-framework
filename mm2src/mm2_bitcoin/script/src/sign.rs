@@ -9,6 +9,7 @@ use hash::{H256, H512};
 use keys::KeyPair;
 use ser::Stream;
 use serde::Deserialize;
+use std::convert::TryInto;
 use {Builder, Script};
 
 const ZCASH_PREVOUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashPrevoutHash";
@@ -41,7 +42,6 @@ impl From<SighashBase> for u32 {
     fn from(s: SighashBase) -> Self { s as u32 }
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::doc_markdown))]
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
@@ -81,7 +81,7 @@ impl Sighash {
         };
 
         // Only exact All | None | Single values are passing this check
-        matches!(u, 1 | 2 | 3)
+        matches!(u, 1..=3)
     }
 
     /// Creates Sighash from any u, even if is_defined() == false
@@ -162,6 +162,7 @@ pub struct TransactionInputSigner {
     pub posv: bool,
     pub str_d_zeel: Option<String>,
     pub hash_algo: SignerHashAlgo,
+    pub v_extra_payload: Option<Vec<u8>>,
 }
 
 /// Used for resigning and loading test transactions
@@ -185,6 +186,7 @@ impl From<Transaction> for TransactionInputSigner {
             posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
@@ -222,6 +224,7 @@ impl From<TransactionInputSigner> for Transaction {
             join_split_sig: H512::default(),
             str_d_zeel: t.str_d_zeel,
             tx_hash_algo: t.hash_algo.into(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
@@ -370,6 +373,7 @@ impl TransactionInputSigner {
             posv: self.posv,
             str_d_zeel: self.str_d_zeel.clone(),
             tx_hash_algo: self.hash_algo.into(),
+            v_extra_payload: None,
         };
 
         let mut stream = Stream::default();
@@ -466,7 +470,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &prev_out_stream.out(),
                 ZCASH_PREVOUTS_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else {
             sig_hash_stream.append(&H256::default());
         }
@@ -480,7 +484,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &sequence_stream.out(),
                 ZCASH_SEQUENCE_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else {
             sig_hash_stream.append(&H256::default());
         }
@@ -494,7 +498,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &outputs_stream.out(),
                 ZCASH_OUTPUTS_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else if sighash.base == SighashBase::Single && input_index < self.outputs.len() {
             let mut outputs_stream = Stream::new();
             outputs_stream.append(&self.outputs[input_index]);
@@ -502,7 +506,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &outputs_stream.out(),
                 ZCASH_OUTPUTS_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else {
             sig_hash_stream.append(&H256::default());
         }
@@ -515,7 +519,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &join_splits_stream.out(),
                 ZCASH_JOIN_SPLITS_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else {
             sig_hash_stream.append(&H256::default());
         }
@@ -533,7 +537,7 @@ impl TransactionInputSigner {
             sig_hash_stream.append(&blake_2b_256_personal(
                 &s_spends_stream.out(),
                 ZCASH_SHIELDED_SPENDS_HASH_PERSONALIZATION,
-            ));
+            )?);
         } else {
             sig_hash_stream.append(&H256::default());
         }
@@ -544,7 +548,7 @@ impl TransactionInputSigner {
                 s_outputs_stream.append(output);
             }
             let hash_shielded_outputs =
-                blake_2b_256_personal(&s_outputs_stream.out(), ZCASH_SHIELDED_OUTPUTS_HASH_PERSONALIZATION);
+                blake_2b_256_personal(&s_outputs_stream.out(), ZCASH_SHIELDED_OUTPUTS_HASH_PERSONALIZATION)?;
             sig_hash_stream.append(&hash_shielded_outputs);
         } else {
             sig_hash_stream.append(&H256::default());
@@ -560,7 +564,7 @@ impl TransactionInputSigner {
         sig_hash_stream.append(&self.inputs[input_index].amount);
         sig_hash_stream.append(&self.inputs[input_index].sequence);
 
-        Ok(blake_2b_256_personal(&sig_hash_stream.out(), &personalization))
+        blake_2b_256_personal(&sig_hash_stream.out(), &personalization)
     }
 }
 
@@ -608,16 +612,17 @@ fn compute_hash_outputs(sighash: Sighash, input_index: usize, outputs: &[Transac
     }
 }
 
-fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> H256 {
-    H256::from(
-        Blake2b::new()
-            .hash_length(32)
-            .personal(personal)
-            .to_state()
-            .update(input)
-            .finalize()
-            .as_bytes(),
-    )
+fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> {
+    let bytes: [u8; 32] = Blake2b::new()
+        .hash_length(32)
+        .personal(personal)
+        .to_state()
+        .update(input)
+        .finalize()
+        .as_bytes()
+        .try_into()
+        .map_err(|_| "Invalid length".to_string())?;
+    Ok(H256::from(bytes))
 }
 
 #[cfg(test)]
@@ -689,6 +694,7 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             hash_algo: SignerHashAlgo::DSHA256,
+            v_extra_payload: None,
         };
 
         let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
@@ -741,6 +747,7 @@ mod tests {
             posv: true,
             str_d_zeel: None,
             hash_algo: SignerHashAlgo::DSHA256,
+            v_extra_payload: None,
         };
 
         let hash = input_signer.signature_hash(0, 0, &previous_output, SignatureVersion::Base, SighashBase::All.into());
@@ -783,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_blake_2b_personal() {
-        let hash = blake_2b_256_personal(b"", b"ZcashPrevoutHash");
+        let hash = blake_2b_256_personal(b"", b"ZcashPrevoutHash").unwrap();
         assert_eq!(
             H256::from("d53a633bbecf82fe9e9484d8a0e727c73bb9e68c96e72dec30144f6a84afa136"),
             hash

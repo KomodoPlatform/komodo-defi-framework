@@ -1,5 +1,5 @@
 <p align="center">
-    <a href="https://atomicdex.io" alt="Contributors">
+    <a href="https://komodoplatform.com/en/docs/komodo-defi-framework/api/v20/" alt="Contributors">
         <img width="420" src="https://user-images.githubusercontent.com/24797699/252396802-de8f9264-8056-4430-a17d-5ecec9668dfc.png" />
     </a>
 </p>
@@ -37,6 +37,7 @@
     <a href="https://github.com/KomodoPlatform/komodo-defi-framework/releases">
         <img src="https://img.shields.io/github/v/release/komodoplatform/komodo-defi-framework" alt="release version">
     </a>
+    <a href="https://deepwiki.com/KomodoPlatform/komodo-defi-framework"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
     <a href="https://discord.gg/3rzDPAr">
         <img src="https://img.shields.io/discord/412898016371015680?logo=discord" alt="chat on Discord">
     </a>
@@ -48,13 +49,13 @@
 
 ## What is the Komodo DeFi Framework?
 
-The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/academy/atomic-swaps/) software for seamless, decentralized, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
+The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/docs/komodo-defi-framework/tutorials/#technical-comparisons) software for seamless, decentralized, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
 
 There is no 3rd party intermediary, no proxy tokens, and at all times users remain in sole possession of their private keys.
 
-A [well documented API](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html) offers simple access to the underlying services using simple language agnostic JSON structured methods and parameters such that users can communicate with the core in a variety of methods such as [curl](https://developers.komodoplatform.com/basic-docs/atomicdex-api-legacy/buy.html) in CLI, or fully functioning [desktop and mobile applications](https://atomicdex.io/) like [Komodo Wallet Desktop](https://github.com/KomodoPlatform/komodo-wallet-desktop).
+A [well documented API](https://komodoplatform.com/en/docs/komodo-defi-framework/tutorials/) offers simple access to the underlying services using simple language agnostic JSON structured methods and parameters such that users can communicate with the core in a variety of methods such as [curl](https://komodoplatform.com/en/docs/komodo-defi-framework/api/legacy/buy/) in CLI, or fully functioning [browser, desktop and mobile wallet apps](https://komodoplatform.com/en/downloads/) like [Komodo Wallet](https://github.com/KomodoPlatform/komodo-wallet).
 
-For a curated list of Komodo DeFi Framework based projects and resources, check out [Awesome AtomicDEX](https://github.com/KomodoPlatform/awesome-atomicdex).
+For a curated list of Komodo DeFi Framework based projects and resources, check out [Awesome KomoDeFi]( https://github.com/KomodoPlatform/awesome-komodefi).
 
 
 ## Features
@@ -62,13 +63,13 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 - Perform blockchain transactions without a local native chain (e.g. via Electrum servers)
 - Query orderbooks for all pairs within the [supported coins](https://github.com/KomodoPlatform/coins/blob/master/coins)
 - Buy/sell from the orderbook, or create maker orders
-- Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
+- Configure automated ["makerbot" trading](https://komodoplatform.com/en/docs/komodo-defi-framework/api/v20/swaps_and_orders/start_simple_market_maker_bot/) with periodic price updates and optional [telegram](https://telegram.org/) alerts
 
 ## Building from source
 
 ### On Host System:
 
-[Pre-built release binaries](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html) are available for OSX, Linux or Windows.
+[Pre-built release binaries](https://github.com/KomodoPlatform/komodo-defi-framework/releases) are available for Android, iOS, OSX, Linux, Windows and WASM.
 
 If you want to build from source, the following prerequisites are required:
 - [Rustup](https://rustup.rs/)
@@ -80,7 +81,7 @@ If you want to build from source, the following prerequisites are required:
 
 To build, run `cargo build` (or `cargo build -vv` to get verbose build output).
 
-For more detailed instructions, please refer to the [Installation Guide](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
+For more detailed instructions, please refer to the [Installation Guide](https://komodoplatform.com/en/docs/komodo-defi-framework/setup/).
 
 ### From Container:
 
@@ -100,6 +101,8 @@ docker run -v "$(pwd)":/app -w /app kdf-build-container cargo build
 
 Just like building it on your host system, you will now have the target directory containing the build files.
 
+Alternatively, container images are available on [DockerHub](https://hub.docker.com/r/komodoofficial/komodo-defi-framework)
+
 ## Building WASM binary
 
 Please refer to the [WASM Build Guide](./docs/WASM_BUILD.md).
@@ -108,7 +111,7 @@ Please refer to the [WASM Build Guide](./docs/WASM_BUILD.md).
 
 Basic config is contained in two files, `MM2.json` and `coins`
 
-The user configuration [MM2.json file](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/configure-mm2-json.html) contains rpc credentials, your mnemonic seed phrase, a `netid` (8762 is the current main network) and some extra [optional parameters](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html).
+The user configuration `MM2.json` file contains rpc credentials, your mnemonic seed phrase, a `netid` (8762 is the current main network) and some extra [optional parameters](https://komodoplatform.com/en/docs/komodo-defi-framework/setup/configure-mm2-json/).
 
 For example:
 ```json
@@ -116,7 +119,8 @@ For example:
   "gui": "core_readme",
   "netid": 8762,
   "rpc_password": "Ent3r_Un1Qu3_Pa$$w0rd",
-  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU"
+  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU",
+  "seednodes": ["example-seed-address1.com", "example-seed-address2.com", "example-seed-address3.com", "example-seed-address4.com"]
 }
 ```
 
@@ -167,7 +171,7 @@ curl --url "http://127.0.0.1:7783" --data '{
 }'
 ```
 
-Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html) for details of additional RPC methods and parameters
+Refer to the [Komodo Developer Docs](https://komodoplatform.com/en/docs/komodo-defi-framework/api/) for details of additional RPC methods and parameters
 
 
 ## Project structure
@@ -180,7 +184,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 - [Contribution guide](./docs/CONTRIBUTING.md)
 - [Setting up the environment to run the full tests suite](./docs/DEV_ENVIRONMENT.md)
 - [Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)
-- [Komodo Developer Docs](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html)
+- [Komodo Developer Docs](https://komodoplatform.com/en/docs/komodo-defi-framework/)
 
 
 ## Disclaimer
@@ -193,5 +197,5 @@ The current state can be considered as an alpha version.
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.
+If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-general` channel.
 

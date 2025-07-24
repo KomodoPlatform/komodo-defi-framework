@@ -331,6 +331,7 @@ pub trait JsonRpcBatchClient: JsonRpcClient {
     }
 
     /// Validates the given batch requests if they all have unique IDs.
+    #[allow(clippy::result_large_err)]
     fn validate_batch_request(&self, request: &JsonRpcBatchRequest) -> Result<(), JsonRpcError> {
         if request.orig_sequence_ids().all_unique() {
             return Ok(());

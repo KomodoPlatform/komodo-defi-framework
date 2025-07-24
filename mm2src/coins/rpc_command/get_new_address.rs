@@ -16,8 +16,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes};
 use std::time::Duration;
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
@@ -315,7 +315,7 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type)?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type).map_mm_err()?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
@@ -360,7 +360,7 @@ pub async fn get_new_address(
     ctx: MmArc,
     req: GetNewAddressRequest,
 ) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Map(
             utxo.get_new_address_rpc_without_conf(req.params).await?,
@@ -379,13 +379,16 @@ pub async fn get_new_address(
 /// TODO remove once GUI integrates `task::get_new_address::init`.
 pub async fn init_get_new_address(
     ctx: MmArc,
-    req: GetNewAddressRequest,
+    req: RpcInitReq<GetNewAddressRequest>,
 ) -> MmResult<InitRpcTaskResponse, GetNewAddressRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let (client_id, req) = (req.client_id, req.inner);
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetNewAddressRpcError::Internal)?;
     let spawner = coin.spawner();
     let task = InitGetNewAddressTask { ctx, coin, req };
-    let task_id = GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task)?;
+    let task_id =
+        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -412,7 +415,7 @@ pub async fn init_get_new_address_user_action(
         .get_new_address_manager
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -425,14 +428,14 @@ pub async fn cancel_get_new_address(
         .get_new_address_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
 pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceObject, HDWalletBalanceOps};
-    use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
+    use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
     use std::collections::HashSet;
@@ -450,7 +453,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync + Send,
         HDCoinAddress<Coin>: fmt::Display,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_id;
         let mut hd_account = hd_wallet
@@ -466,13 +469,14 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_new_address(hd_wallet, hd_account.deref_mut(), chain)
-            .await?;
+            .await
+            .map_mm_err()?;
         let address = hd_address.address();
-        let balance = coin.known_address_balance(&address).await?;
+        let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: coin.address_formatter()(&address),
+                address: address.display_address(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
@@ -480,7 +484,7 @@ pub(crate) mod common_impl {
         })
     }
 
-    pub async fn get_new_address_rpc<'a, Coin, ConfirmAddress>(
+    pub async fn get_new_address_rpc<Coin, ConfirmAddress>(
         coin: &Coin,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
@@ -490,7 +494,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Send + Sync,
         HDCoinAddress<Coin>: Display + Eq + Hash,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_id;
         let mut hd_account = hd_wallet
@@ -506,11 +510,12 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_and_confirm_new_address(hd_wallet, &mut hd_account, chain, confirm_address)
-            .await?;
+            .await
+            .map_mm_err()?;
         let address = hd_address.address();
-        let balance = coin.known_address_balance(&address).await?;
+        let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
-        let formatted_address = coin.address_formatter()(&address);
+        let formatted_address = address.display_address();
         coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
             .await
             .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;
@@ -535,7 +540,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + Sync,
         HDCoinAddress<Coin>: fmt::Display,
     {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         if known_addresses_number == 0 || gap_limit > known_addresses_number {
             return Ok(());
         }
@@ -545,15 +550,19 @@ pub(crate) mod common_impl {
             return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number });
         }
 
-        let address_scanner = coin.produce_hd_address_scanner().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
 
         // Address IDs start from 0, so the `last_known_address_id = known_addresses_number - 1`.
         // At this point we are sure that `known_addresses_number > 0`.
         let last_address_id = known_addresses_number - 1;
 
         for address_id in (0..=last_address_id).rev() {
-            let address = coin.derive_address(hd_account, chain, address_id).await?.address();
-            if address_scanner.is_address_used(&address).await? {
+            let address = coin
+                .derive_address(hd_account, chain, address_id)
+                .await
+                .map_mm_err()?
+                .address();
+            if address_scanner.is_address_used(&address).await.map_mm_err()? {
                 return Ok(());
             }
 

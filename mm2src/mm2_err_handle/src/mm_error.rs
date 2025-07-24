@@ -17,7 +17,7 @@
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
 //!     let filename = filename(path)?;
-//!     let extension = get_file_extension(filename)?;
+//!     let extension = get_file_extension(filename).map_mm_err()?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())
 //!     } else {
@@ -42,7 +42,7 @@
 //! fn get_file_extension(filename: &str) -> Result<&str, MmError<E1>> { MmError::err(E1::new()) }
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
-//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1))?;
+//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1)).map_mm_err()??;
 //!     let extension = get_file_extension(filename).mm_err(|e1| E2::from_e1(e1))?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())
@@ -115,11 +115,6 @@ pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
-pub auto trait NotEqual {}
-impl<X> !NotEqual for (X, X) {}
-impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
-impl<T: ?Sized> NotEqual for Arc<T> {}
-
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MmError<E: NotMmError> {
@@ -144,17 +139,6 @@ where
 }
 
 impl<E: fmt::Display + StdError + NotMmError> StdError for MmError<E> {}
-
-/// Track the location whenever `MmError<E2>::from(MmError<E1>)` is called.
-impl<E1, E2> From<MmError<E1>> for MmError<E2>
-where
-    E1: NotMmError,
-    E2: From<E1> + NotMmError,
-    (E1, E2): NotEqual,
-{
-    #[track_caller]
-    fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
-}
 
 /// Track the location whenever `MmError<E2>::from(E1)` is called.
 impl<E1, E2> From<E1> for MmError<E2>
@@ -367,7 +351,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error(actual: u64, required: u64) -> Result<(), MmError<ForwardedError>> {
-            generate_error(actual, required)?;
+            generate_error(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 
@@ -462,7 +446,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error_for_box(actual: u64, required: u64) -> Result<(), MmError<ForwardedErrorWithBox>> {
-            generate_error_for_box(actual, required)?;
+            generate_error_for_box(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 
