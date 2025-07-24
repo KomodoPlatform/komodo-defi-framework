@@ -38,8 +38,8 @@ pub enum SighashBase {
     Single = 3,
 }
 
-impl From<SighashBase> for u32 {
-    fn from(s: SighashBase) -> Self { s as u32 }
+impl From<SighashBase> for u8 {
+    fn from(s: SighashBase) -> Self { s as u8 }
 }
 
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
@@ -50,16 +50,13 @@ pub struct Sighash {
     pub fork_id: bool,
 }
 
-impl From<Sighash> for u32 {
+impl From<Sighash> for u8 {
     fn from(s: Sighash) -> Self {
-        let base = s.base as u32;
-        let base = if s.anyone_can_pay { base | 0x80 } else { base };
+        let mut base = s.base as u8;
+        base = if s.anyone_can_pay { base | 0x80 } else { base };
+        base = if s.fork_id { base | 0x40 } else { base };
 
-        if s.fork_id {
-            base | 0x40
-        } else {
-            base
-        }
+        base
     }
 }
 
@@ -73,7 +70,7 @@ impl Sighash {
     }
 
     /// Used by SCRIPT_VERIFY_STRICTENC
-    pub fn is_defined(version: SignatureVersion, u: u32) -> bool {
+    pub fn is_defined(version: SignatureVersion, u: u8) -> bool {
         // reset anyone_can_pay && fork_id (if applicable) bits
         let u = match version {
             SignatureVersion::ForkId => u & !(0x40 | 0x80),
@@ -85,7 +82,7 @@ impl Sighash {
     }
 
     /// Creates Sighash from any u, even if is_defined() == false
-    pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
+    pub fn from_u8(version: SignatureVersion, u: u8) -> Self {
         let anyone_can_pay = (u & 0x80) == 0x80;
         let fork_id = version == SignatureVersion::ForkId && (u & 0x40) == 0x40;
         let base = match u & 0x1f {
@@ -236,9 +233,9 @@ impl TransactionInputSigner {
         input_amount: u64,
         script_pubkey: &Script,
         sigversion: SignatureVersion,
-        sighashtype: u32,
+        sighashtype: u8,
     ) -> H256 {
-        let sighash = Sighash::from_u32(sigversion, sighashtype);
+        let sighash = Sighash::from_u8(sigversion, sighashtype);
         match sigversion {
             SignatureVersion::ForkId if sighash.fork_id => {
                 self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
@@ -261,12 +258,12 @@ impl TransactionInputSigner {
         input_amount: u64,
         script_pubkey: &Script,
         sigversion: SignatureVersion,
-        sighash: u32,
+        sighash: u8,
     ) -> TransactionInput {
         let hash = self.signature_hash(input_index, input_amount, script_pubkey, sigversion, sighash);
 
         let mut signature: Vec<u8> = keypair.private().sign_low_r(&hash).unwrap().into();
-        signature.push(sighash as u8);
+        signature.push(sighash);
         let script_sig = Builder::default()
             .push_data(&signature)
             //.push_data(keypair.public())
@@ -285,7 +282,7 @@ impl TransactionInputSigner {
         &self,
         input_index: usize,
         script_pubkey: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         sighash: Sighash,
     ) -> H256 {
         if input_index >= self.inputs.len() {
@@ -378,7 +375,7 @@ impl TransactionInputSigner {
 
         let mut stream = Stream::default();
         stream.append(&tx);
-        stream.append(&sighashtype);
+        stream.append(&(sighashtype as u32));
         let out = stream.out();
         match self.hash_algo {
             SignerHashAlgo::DSHA256 => dhash256(&out),
@@ -391,7 +388,7 @@ impl TransactionInputSigner {
         input_index: usize,
         input_amount: u64,
         script_pubkey: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         sighash: Sighash,
     ) -> H256 {
         let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
@@ -408,7 +405,8 @@ impl TransactionInputSigner {
         stream.append(&self.inputs[input_index].sequence);
         stream.append(&hash_outputs);
         stream.append(&self.lock_time);
-        stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
+        // TODO: This is missing the fork id.
+        stream.append(&(sighashtype as u32)); // this also includes 24-bit fork id. which is 0 for BitcoinCash
         let out = stream.out();
         dhash256(&out)
     }
@@ -418,7 +416,7 @@ impl TransactionInputSigner {
         input_index: usize,
         input_amount: u64,
         script_pubkey: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         sighash: Sighash,
     ) -> H256 {
         if input_index >= self.inputs.len() {
@@ -440,7 +438,7 @@ impl TransactionInputSigner {
         &self,
         input_index: usize,
         script_pubkey: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         sighash: Sighash,
     ) -> Result<H256, String> {
         let mut sig_hash_stream = Stream::new();
@@ -557,7 +555,7 @@ impl TransactionInputSigner {
         sig_hash_stream.append(&self.lock_time);
         sig_hash_stream.append(&self.expiry_height);
         sig_hash_stream.append(&self.value_balance);
-        sig_hash_stream.append(&sighashtype);
+        sig_hash_stream.append(&(sighashtype as u32));
 
         sig_hash_stream.append(&self.inputs[input_index].previous_output);
         sig_hash_stream.append(&script_pubkey.to_bytes());
@@ -759,7 +757,7 @@ mod tests {
         tx: &'static str,
         script: &'static str,
         input_index: usize,
-        hash_type: i32,
+        hash_type: u8,
         result: &'static str,
     ) {
         let tx: Transaction = tx.into();
@@ -767,22 +765,20 @@ mod tests {
         let script: Script = script.into();
         let expected = H256::from_reversed_str(result);
 
-        let sighash = Sighash::from_u32(SignatureVersion::Base, hash_type as u32);
-        let hash = signer.signature_hash_original(input_index, &script, hash_type as u32, sighash);
+        let sighash = Sighash::from_u8(SignatureVersion::Base, hash_type);
+        let hash = signer.signature_hash_original(input_index, &script, hash_type, sighash);
         assert_eq!(expected, hash);
     }
 
     #[test]
     fn test_sighash_forkid_from_u32() {
-        assert!(!Sighash::is_defined(SignatureVersion::Base, 0xFFFFFF82));
-        assert!(!Sighash::is_defined(SignatureVersion::Base, 0x00000182));
-        assert!(!Sighash::is_defined(SignatureVersion::Base, 0x00000080));
-        assert!(Sighash::is_defined(SignatureVersion::Base, 0x00000001));
-        assert!(Sighash::is_defined(SignatureVersion::Base, 0x00000082));
-        assert!(Sighash::is_defined(SignatureVersion::Base, 0x00000003));
+        assert!(!Sighash::is_defined(SignatureVersion::Base, 0x80));
+        assert!(!Sighash::is_defined(SignatureVersion::Base, 0x84));
+        assert!(!Sighash::is_defined(SignatureVersion::Base, 0x85));
+        assert!(Sighash::is_defined(SignatureVersion::Base, 0x01));
+        assert!(Sighash::is_defined(SignatureVersion::Base, 0x82));
+        assert!(Sighash::is_defined(SignatureVersion::Base, 0x03));
 
-        assert!(!Sighash::is_defined(SignatureVersion::ForkId, 0xFFFFFFC2));
-        assert!(!Sighash::is_defined(SignatureVersion::ForkId, 0x000001C2));
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x00000081));
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x000000C2));
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x00000043));
@@ -807,7 +803,7 @@ mod tests {
         signer.inputs[0].amount = 50000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u8(SignatureVersion::Base, 1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("1976a914507173527b4c3318a2aecd793bf1cfed705950cf88ac"),
@@ -841,7 +837,7 @@ mod tests {
         signer.inputs[0].amount = 9924260;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u8(SignatureVersion::Base, 1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("76a91405aab5342166f8594baf17a7d9bef5d56744332788ac"),
@@ -875,7 +871,7 @@ mod tests {
         signer.inputs[0].amount = 100000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u8(SignatureVersion::Base, 1);
         let hash = signer.signature_hash_overwintered(
 			0,
 			&Script::from("6304e5928060b17521031c632dad67a611de77d9666cbc61e65957c7d7544c25e384f4e76de729e6a1bfac6782012088a914b78f0b837e2c710f8b28e59d06473d489e5315c88821037310a8fb9fd8f198a1a21db830252ad681fccda580ed4101f3f6bfb98b34fab5ac68"),

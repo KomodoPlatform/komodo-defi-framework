@@ -17,7 +17,7 @@ pub struct TrezorTxSigner<'a, TxP> {
     pub tx_provider: TxP,
     pub trezor_coin: String,
     pub params: UtxoSignTxParams,
-    pub fork_id: u32,
+    pub fork_id: u8,
     pub branch_id: u32,
 }
 

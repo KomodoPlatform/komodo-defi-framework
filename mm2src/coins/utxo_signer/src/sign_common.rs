@@ -1,4 +1,4 @@
-use crate::Signature;
+use crate::{with_key_pair::SIGHASH_ALL, Signature};
 use chain::{Transaction as UtxoTx, TransactionInput};
 use keys::bytes::Bytes;
 use keys::Public as PublicKey;
@@ -33,7 +33,7 @@ pub(crate) fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<T
 /// Create TransactionInput spending P2PK output, adding script sig with signature
 pub(crate) fn p2pk_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
-    fork_id: u32,
+    fork_id: u8,
     signature: Signature,
 ) -> TransactionInput {
     let script_sig = script_sig(signature, fork_id);
@@ -50,7 +50,7 @@ pub(crate) fn p2pk_spend_with_signature(
 pub(crate) fn p2pkh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     public_key: &PublicKey,
-    fork_id: u32,
+    fork_id: u8,
     signature: Signature,
 ) -> TransactionInput {
     let script_sig = script_sig_with_pub(public_key, fork_id, signature);
@@ -68,7 +68,7 @@ pub(crate) fn p2sh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     redeem_script: Script,
     script_data: Script,
-    fork_id: u32,
+    fork_id: u8,
     signature: Signature,
 ) -> TransactionInput {
     let script_sig = script_sig(signature, fork_id);
@@ -93,7 +93,7 @@ pub(crate) fn p2sh_spend_with_signature(
 pub(crate) fn p2wpkh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     public_key: &PublicKey,
-    fork_id: u32,
+    fork_id: u8,
     signature: Signature,
 ) -> TransactionInput {
     let script_sig = script_sig(signature, fork_id);
@@ -106,7 +106,7 @@ pub(crate) fn p2wpkh_spend_with_signature(
     }
 }
 
-pub(crate) fn script_sig_with_pub(public_key: &PublicKey, fork_id: u32, signature: Signature) -> Bytes {
+pub(crate) fn script_sig_with_pub(public_key: &PublicKey, fork_id: u8, signature: Signature) -> Bytes {
     let script_sig = script_sig(signature, fork_id);
     let builder = Builder::default();
     builder
@@ -115,12 +115,12 @@ pub(crate) fn script_sig_with_pub(public_key: &PublicKey, fork_id: u32, signatur
         .into_bytes()
 }
 
-pub(crate) fn script_sig(mut signature: Signature, fork_id: u32) -> Bytes {
+pub(crate) fn script_sig(mut signature: Signature, fork_id: u8) -> Bytes {
     let mut sig_script = Bytes::default();
 
     sig_script.append(&mut signature);
     // Using SIGHASH_ALL only for now
-    sig_script.append(&mut Bytes::from(vec![1 | fork_id as u8]));
+    sig_script.append(&mut Bytes::from(vec![SIGHASH_ALL | fork_id]));
 
     sig_script
 }

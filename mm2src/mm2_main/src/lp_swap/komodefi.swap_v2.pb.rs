@@ -54,6 +54,8 @@ pub struct TakerNegotiationData {
     pub maker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     #[prost(bytes = "vec", optional, tag = "8")]
     pub taker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(uint64, tag = "9")]
+    pub taker_payment_fee: u64,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -105,9 +107,9 @@ pub struct MakerPaymentInfo {
     #[prost(bytes = "vec", optional, tag = "2")]
     pub next_step_instructions: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     #[prost(bytes = "vec", tag = "3")]
-    pub funding_preimage_sig: ::prost::alloc::vec::Vec<u8>,
+    pub taker_payment_preimage_sig: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "4")]
-    pub funding_preimage_tx: ::prost::alloc::vec::Vec<u8>,
+    pub taker_payment_preimage_tx: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

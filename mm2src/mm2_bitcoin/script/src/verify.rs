@@ -11,7 +11,7 @@ pub trait SignatureChecker {
         signature: &Signature,
         public: &Public,
         script_code: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         version: SignatureVersion,
     ) -> bool;
 
@@ -23,7 +23,7 @@ pub trait SignatureChecker {
 pub struct NoopSignatureChecker;
 
 impl SignatureChecker for NoopSignatureChecker {
-    fn check_signature(&self, _: &Signature, _: &Public, _: &Script, _: u32, _: SignatureVersion) -> bool { false }
+    fn check_signature(&self, _: &Signature, _: &Public, _: &Script, _: u8, _: SignatureVersion) -> bool { false }
 
     fn check_lock_time(&self, _: Num) -> bool { false }
 
@@ -43,7 +43,7 @@ impl SignatureChecker for TransactionSignatureChecker {
         signature: &Signature,
         public: &Public,
         script_code: &Script,
-        sighashtype: u32,
+        sighashtype: u8,
         version: SignatureVersion,
     ) -> bool {
         let hash = self

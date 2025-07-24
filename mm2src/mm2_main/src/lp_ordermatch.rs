@@ -3559,7 +3559,7 @@ async fn start_taker_swap_state_machine<
         p2p_keypair: taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         taker_secret: *taker_secret,
         maker_p2p_pubkey: *maker_p2p_pubkey,
-        require_maker_payment_confirm_before_funding_spend: true,
+        require_maker_payment_confirm_before_taker_payment: true,
         require_maker_payment_spend_confirm: true,
         swap_version: taker_order.request.swap_version.version,
     };

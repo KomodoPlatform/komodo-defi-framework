@@ -6,18 +6,19 @@ use super::{CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend,
 use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
 use crate::hd_wallet::{AddrToString, HDAddressSelector};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
-            FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MmCoinEnum, NegotiateSwapContractAddrErr, ParseCoinAssocTypes, PaymentInstructionArgs,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionResult, RefundFundingSecretArgs,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs,
-            TakerCoinSwapOpsV2, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
+            FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerPaymentPreimageArgs,
+            GenTakerPaymentSpendArgs, MmCoinEnum, NegotiateSwapContractAddrErr, ParseCoinAssocTypes,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RawTransactionResult,
+            RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
+            SignatureResult, SpendPaymentArgs, TakerCoinSwapOpsV2, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
+            ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -508,26 +509,26 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         todo!()
     }
 
-    async fn gen_taker_funding_spend_preimage(
+    async fn gen_taker_payment_preimage(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
         todo!()
     }
 
-    async fn validate_taker_funding_spend_preimage(
+    async fn validate_taker_payment_preimage(
         &self,
-        gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        gen_args: &GenTakerPaymentPreimageArgs<'_, Self>,
         preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerFundingSpendPreimageResult {
         todo!()
     }
 
-    async fn sign_and_send_taker_funding_spend(
+    async fn sign_and_send_taker_payment(
         &self,
         preimage: &TxPreimageWithSig<Self>,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
         todo!()
@@ -578,10 +579,16 @@ impl TakerCoinSwapOpsV2 for TestCoin {
     async fn extract_secret_v2(&self, secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String> {
         unimplemented!()
     }
+
+    async fn get_funding_fee(&self, value: TradePreimageValue) -> TradePreimageResult<TradeFee> { todo!() }
+
+    async fn get_taker_payment_fee(&self) -> TradePreimageResult<TradeFee> { todo!() }
+
+    async fn get_taker_payment_spend_fee(&self) -> TradePreimageResult<TradeFee> { todo!() }
 }
 
 impl CommonSwapOpsV2 for TestCoin {
-    fn derive_htlc_pubkey_v2(&self, _swap_unique_data: &[u8]) -> Self::Pubkey { todo!() }
+    fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey { todo!() }
 
     fn derive_htlc_pubkey_v2_bytes(&self, _swap_unique_data: &[u8]) -> Vec<u8> { todo!() }
 

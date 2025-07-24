@@ -4,7 +4,7 @@ use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_dec
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
                  SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
                  ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
-use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerPaymentPreimageArgs, GenTakerPaymentSpendArgs,
             SearchForFundingSpendErr};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
@@ -208,7 +208,7 @@ impl EthCoin {
     /// Function accepts taker payment transaction, returns taker approve payment transaction.
     pub(crate) async fn taker_payment_approve(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
         let gas_limit = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => U256::from(self.gas_limit_v2.taker.approve_payment),
@@ -531,7 +531,7 @@ impl EthCoin {
     /// The `decoded` parameter should contain the transaction input data from the `ethTakerPayment` or `erc20TakerPayment` function of the EtomicSwapTakerV2 contract.
     async fn prepare_taker_payment_approve_data(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         decoded: Vec<Token>,
         token_address: Address,
     ) -> Result<Vec<u8>, PrepareTxDataError> {

@@ -7418,9 +7418,9 @@ impl TakerCoinSwapOpsV2 for EthCoin {
     }
 
     /// Eth doesnt have preimages
-    async fn gen_taker_funding_spend_preimage(
+    async fn gen_taker_payment_preimage(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         _swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
         Ok(TxPreimageWithSig {
@@ -7430,19 +7430,19 @@ impl TakerCoinSwapOpsV2 for EthCoin {
     }
 
     /// Eth doesnt have preimages
-    async fn validate_taker_funding_spend_preimage(
+    async fn validate_taker_payment_preimage(
         &self,
-        _gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        _gen_args: &GenTakerPaymentPreimageArgs<'_, Self>,
         _preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerFundingSpendPreimageResult {
         Ok(())
     }
 
     /// Wrapper for [EthCoin::taker_payment_approve]
-    async fn sign_and_send_taker_funding_spend(
+    async fn sign_and_send_taker_payment(
         &self,
         _preimage: &TxPreimageWithSig<Self>,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         _swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
         self.taker_payment_approve(args).await
@@ -7505,6 +7505,12 @@ impl TakerCoinSwapOpsV2 for EthCoin {
     async fn extract_secret_v2(&self, _secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String> {
         self.extract_secret_v2_impl(spend_tx).await
     }
+
+    async fn get_funding_fee(&self, _value: TradePreimageValue) -> TradePreimageResult<TradeFee> { todo!() }
+
+    async fn get_taker_payment_fee(&self) -> TradePreimageResult<TradeFee> { todo!() }
+
+    async fn get_taker_payment_spend_fee(&self) -> TradePreimageResult<TradeFee> { todo!() }
 }
 
 impl CommonSwapOpsV2 for EthCoin {
@@ -7612,4 +7618,8 @@ impl MakerCoinSwapOpsV2 for EthCoin {
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         self.spend_maker_payment_v2_impl(args).await
     }
+
+    async fn get_maker_payment_fee(&self, _value: TradePreimageValue) -> TradePreimageResult<TradeFee> { todo!() }
+
+    async fn get_maker_payment_spend_fee(&self) -> TradePreimageResult<TradeFee> { todo!() }
 }

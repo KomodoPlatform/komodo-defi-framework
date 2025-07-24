@@ -508,7 +508,7 @@ impl MakerSwap {
 
         let params = MakerSwapPreparedParams {
             maker_payment_trade_fee: maker_payment_trade_fee.clone(),
-            taker_payment_spend_trade_fee: taker_payment_spend_trade_fee.clone(),
+            taker_payment_fee: taker_payment_spend_trade_fee.clone(),
         };
         match check_balance_for_maker_swap(
             &self.ctx,
@@ -2248,7 +2248,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 
 pub struct MakerSwapPreparedParams {
     pub(super) maker_payment_trade_fee: TradeFee,
-    pub(super) taker_payment_spend_trade_fee: TradeFee,
+    pub(super) taker_payment_fee: TradeFee,
 }
 
 pub async fn check_balance_for_maker_swap(
@@ -2263,7 +2263,7 @@ pub async fn check_balance_for_maker_swap(
     let (maker_payment_trade_fee, taker_payment_spend_trade_fee) = match prepared_params {
         Some(MakerSwapPreparedParams {
             maker_payment_trade_fee,
-            taker_payment_spend_trade_fee,
+            taker_payment_fee: taker_payment_spend_trade_fee,
         }) => (maker_payment_trade_fee, taker_payment_spend_trade_fee),
         None => {
             let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
@@ -2341,7 +2341,7 @@ pub async fn maker_swap_trade_preimage(
     } else {
         let prepared_params = MakerSwapPreparedParams {
             maker_payment_trade_fee: base_coin_fee.clone(),
-            taker_payment_spend_trade_fee: rel_coin_fee.clone(),
+            taker_payment_fee: rel_coin_fee.clone(),
         };
         check_balance_for_maker_swap(
             ctx,

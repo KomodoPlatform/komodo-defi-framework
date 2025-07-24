@@ -33,6 +33,8 @@ pub enum UtxoConfError {
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
     InvalidDecimals(String),
+    #[display(fmt = "Invalid fork id: {}, valid fork ids are values between 0x00 - 0xff", _0)]
+    InvalidForkId(String),
 }
 
 impl From<Bip32Error> for UtxoConfError {
@@ -90,8 +92,8 @@ impl<'a> UtxoConfBuilder<'a> {
         let tx_fee_volatility_percent = self.tx_fee_volatility_percent();
         let version_group_id = self.version_group_id(tx_version, overwintered)?;
         let consensus_branch_id = self.consensus_branch_id(tx_version)?;
-        let signature_version = self.signature_version();
-        let fork_id = self.fork_id();
+        let signature_version = self.signature_version()?;
+        let fork_id = self.fork_id()?;
 
         // should be sufficient to detect zcash by overwintered flag
         let zcash = overwintered;
@@ -242,23 +244,23 @@ impl<'a> UtxoConfBuilder<'a> {
         Ok(consensus_branch_id)
     }
 
-    fn signature_version(&self) -> SignatureVersion {
-        let default_signature_version = if self.ticker == "BCH" || self.fork_id() != 0 {
+    fn signature_version(&self) -> UtxoConfResult<SignatureVersion> {
+        let default_signature_version = if self.ticker == "BCH" || self.fork_id()? != 0 {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
         };
-        json::from_value(self.conf["signature_version"].clone()).unwrap_or(default_signature_version)
+        Ok(json::from_value(self.conf["signature_version"].clone()).unwrap_or(default_signature_version))
     }
 
-    fn fork_id(&self) -> u32 {
+    fn fork_id(&self) -> UtxoConfResult<u8> {
         let default_fork_id = match self.ticker {
             "BCH" => "0x40",
             _ => "0x0",
         };
         let hex_string = self.conf["fork_id"].as_str().unwrap_or(default_fork_id);
-        let fork_id = u32::from_str_radix(hex_string.trim_start_matches("0x"), 16).unwrap();
-        fork_id
+        u8::from_str_radix(hex_string.trim_start_matches("0x"), 16)
+            .map_to_mm(|e| UtxoConfError::InvalidForkId(e.to_string()))
     }
 
     fn required_confirmations(&self) -> u64 {

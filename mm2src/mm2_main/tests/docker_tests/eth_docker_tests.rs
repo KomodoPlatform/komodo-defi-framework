@@ -15,14 +15,14 @@ use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ChainSpec, Et
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2,
+            MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
             RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
             SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
 use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
-            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+            Eip1559Ops, FoundSwapTxSpend, GenTakerPaymentPreimageArgs, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo,
+            ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
             SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
             ValidateNftMakerPaymentArgs};
@@ -1524,6 +1524,7 @@ fn send_and_refund_taker_funding_by_secret_eth() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1588,6 +1589,7 @@ fn send_and_refund_taker_funding_by_secret_erc20() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1651,6 +1653,7 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_eth() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1715,6 +1718,7 @@ fn taker_send_approve_and_spend_eth() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1734,13 +1738,14 @@ fn taker_send_approve_and_spend_eth() {
         maker_secret_hash: &maker_secret_hash,
         taker_pub,
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: Default::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
     };
     block_on(maker_coin.validate_taker_funding(validate)).unwrap();
 
-    let approve_args = GenTakerFundingSpendArgs {
+    let approve_args = GenTakerPaymentPreimageArgs {
         funding_tx: &funding_tx,
         maker_pub,
         taker_pub,
@@ -1748,14 +1753,14 @@ fn taker_send_approve_and_spend_eth() {
         taker_secret_hash: &taker_secret_hash,
         taker_payment_time_lock: funding_time_lock,
         maker_secret_hash: &maker_secret_hash,
+        taker_payment_fee: BigDecimal::default(),
     };
     let preimage = TxPreimageWithSig {
         preimage: funding_tx.clone(),
         signature: taker_coin.parse_signature(&[0u8; 65]).unwrap(),
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
-    let taker_approve_tx =
-        block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &approve_args, &[])).unwrap();
+    let taker_approve_tx = block_on(taker_coin.sign_and_send_taker_payment(&preimage, &approve_args, &[])).unwrap();
     log!(
         "Taker approved ETH payment, tx hash: {:02x}",
         taker_approve_tx.tx_hash()
@@ -1828,6 +1833,7 @@ fn taker_send_approve_and_spend_erc20() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1847,13 +1853,14 @@ fn taker_send_approve_and_spend_erc20() {
         maker_secret_hash: &maker_secret_hash,
         taker_pub,
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: Default::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
     };
     block_on(maker_coin.validate_taker_funding(validate)).unwrap();
 
-    let approve_args = GenTakerFundingSpendArgs {
+    let approve_args = GenTakerPaymentPreimageArgs {
         funding_tx: &funding_tx,
         maker_pub,
         taker_pub,
@@ -1861,14 +1868,14 @@ fn taker_send_approve_and_spend_erc20() {
         taker_secret_hash: &taker_secret_hash,
         taker_payment_time_lock: funding_time_lock,
         maker_secret_hash: &maker_secret_hash,
+        taker_payment_fee: BigDecimal::default(),
     };
     let preimage = TxPreimageWithSig {
         preimage: funding_tx.clone(),
         signature: taker_coin.parse_signature(&[0u8; 65]).unwrap(),
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
-    let taker_approve_tx =
-        block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &approve_args, &[])).unwrap();
+    let taker_approve_tx = block_on(taker_coin.sign_and_send_taker_payment(&preimage, &approve_args, &[])).unwrap();
     log!(
         "Taker approved ERC20 payment, tx hash: {:02x}",
         taker_approve_tx.tx_hash()
@@ -1938,6 +1945,7 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -1948,7 +1956,7 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
     wait_for_confirmations(&taker_coin, &funding_tx, 100);
 
     let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
-    let approve_args = GenTakerFundingSpendArgs {
+    let approve_args = GenTakerPaymentPreimageArgs {
         funding_tx: &funding_tx,
         maker_pub,
         taker_pub,
@@ -1956,14 +1964,14 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
         taker_secret_hash: &taker_secret_hash,
         taker_payment_time_lock: funding_time_lock,
         maker_secret_hash: &maker_secret_hash,
+        taker_payment_fee: BigDecimal::default(),
     };
     let preimage = TxPreimageWithSig {
         preimage: funding_tx.clone(),
         signature: taker_coin.parse_signature(&[0u8; 65]).unwrap(),
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
-    let taker_approve_tx =
-        block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &approve_args, &[])).unwrap();
+    let taker_approve_tx = block_on(taker_coin.sign_and_send_taker_payment(&preimage, &approve_args, &[])).unwrap();
     log!(
         "Taker approved ETH payment, tx hash: {:02x}",
         taker_approve_tx.tx_hash()
@@ -2023,6 +2031,7 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],
@@ -2034,7 +2043,7 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
     thread::sleep(Duration::from_secs(16));
 
     let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
-    let approve_args = GenTakerFundingSpendArgs {
+    let approve_args = GenTakerPaymentPreimageArgs {
         funding_tx: &funding_tx,
         maker_pub,
         taker_pub,
@@ -2042,14 +2051,14 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
         taker_secret_hash: &taker_secret_hash,
         taker_payment_time_lock: funding_time_lock,
         maker_secret_hash: &maker_secret_hash,
+        taker_payment_fee: BigDecimal::default(),
     };
     let preimage = TxPreimageWithSig {
         preimage: funding_tx.clone(),
         signature: taker_coin.parse_signature(&[0u8; 65]).unwrap(),
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
-    let taker_approve_tx =
-        block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &approve_args, &[])).unwrap();
+    let taker_approve_tx = block_on(taker_coin.sign_and_send_taker_payment(&preimage, &approve_args, &[])).unwrap();
     log!(
         "Taker approved ERC20 payment, tx hash: {:02x}",
         taker_approve_tx.tx_hash()
@@ -2111,6 +2120,7 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_erc20() {
         maker_secret_hash: &maker_secret_hash,
         maker_pub: maker_pub.as_bytes(),
         dex_fee,
+        taker_payment_fee: BigDecimal::default(),
         premium_amount: BigDecimal::default(),
         trading_amount: trading_amount.clone(),
         swap_unique_data: &[],

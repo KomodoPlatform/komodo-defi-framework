@@ -571,7 +571,7 @@ pub struct UtxoCoinConf {
     /// Address and privkey checksum type
     pub checksum_type: ChecksumType,
     /// Fork id used in sighash
-    pub fork_id: u32,
+    pub fork_id: u8,
     /// Signature version
     pub signature_version: SignatureVersion,
     pub required_confirmations: AtomicU64,

@@ -984,7 +984,7 @@ impl UtxoSignerOps for QtumCoin {
             })
     }
 
-    fn fork_id(&self) -> u32 { self.utxo_arc.conf.fork_id }
+    fn fork_id(&self) -> u8 { self.utxo_arc.conf.fork_id }
 
     fn branch_id(&self) -> u32 { self.utxo_arc.conf.consensus_branch_id }
 

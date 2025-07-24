@@ -13,21 +13,22 @@ use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
 use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            DexFee, DexFeeBurnDestination, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            DexFee, DexFeeBurnDestination, GenPreimageResult, GenTakerPaymentPreimageArgs, GenTakerPaymentSpendArgs,
             GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes,
             RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs,
             RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
             SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest,
             SignUtxoTransactionParams, SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
-            SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
-            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageError,
-            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+            SwapOps, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, TradePreimageValue, TransactionData,
+            TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig,
+            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+            ValidateTakerFundingSpendPreimageError, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageError, ValidateTakerPaymentSpendPreimageResult,
+            ValidateWatcherSpendInput, VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawResult, WithdrawSenderAddress,
+            EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -915,6 +916,191 @@ enum FundingSpendFeeSetting {
     UseExact(u64),
 }
 
+pub mod tx_sizes {
+    use super::*;
+
+    /// Returns the taker payment transaction size in vbytes.
+    pub fn get_taker_payment_tx_size(coin: &impl UtxoCommonOps) -> usize {
+        let preimage = TransactionInputSigner {
+            lock_time: 0,
+            version: coin.as_ref().conf.tx_version,
+            n_time: None,
+            overwintered: coin.as_ref().conf.overwintered,
+            inputs: vec![UnsignedTransactionInput {
+                sequence: SEQUENCE_FINAL,
+                previous_output: OutPoint {
+                    hash: H256::default(),
+                    index: DEFAULT_SWAP_VOUT as u32,
+                },
+                prev_script: Vec::new().into(),
+                amount: 0,
+            }],
+            outputs: vec![
+                // This output is used in taker payment spent tx.
+                TransactionOutput {
+                    value: 0,
+                    script_pubkey: Builder::build_p2sh(&AddressHashEnum::default_address_hash()).to_bytes(),
+                },
+            ],
+            expiry_height: 0,
+            join_splits: vec![],
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            value_balance: 0,
+            version_group_id: coin.as_ref().conf.version_group_id,
+            consensus_branch_id: coin.as_ref().conf.consensus_branch_id,
+            zcash: coin.as_ref().conf.zcash,
+            posv: coin.as_ref().conf.is_posv,
+            str_d_zeel: None,
+            hash_algo: coin.as_ref().tx_hash_algo.into(),
+            v_extra_payload: None,
+        };
+
+        let redeem_script = swap_proto_v2_scripts::taker_funding_script(
+            0,
+            H160::default().as_slice(),
+            &Public::default(),
+            &Public::default(),
+        );
+
+        let mut final_tx: UtxoTx = preimage.into();
+        final_tx.inputs[0].script_sig = Builder::default()
+            // Maximum of 72 byte maker signature + a sighash byte.
+            .push_data(&[0; 72 + 1])
+            // Maximum of 72 byte taker signature + a sighash byte.
+            .push_data(&[0; 72 + 1])
+            .push_opcode(Opcode::OP_1)
+            .push_opcode(Opcode::OP_0)
+            .push_data(&redeem_script)
+            .into_bytes();
+
+        // We aren't spending from the segwit address, we are spending from a P2SH address.
+        tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &final_tx)
+    }
+
+    /// Returns the taker payment spend transaction size in vbytes.
+    pub fn get_taker_payment_spend_tx_size(coin: &impl UtxoCommonOps) -> usize {
+        let preimage = TransactionInputSigner {
+            lock_time: 0,
+            version: coin.as_ref().conf.tx_version,
+            n_time: None,
+            overwintered: coin.as_ref().conf.overwintered,
+            inputs: vec![UnsignedTransactionInput {
+                sequence: SEQUENCE_FINAL,
+                previous_output: OutPoint {
+                    hash: H256::default(),
+                    index: DEFAULT_SWAP_VOUT as u32,
+                },
+                prev_script: Vec::new().into(),
+                amount: 0,
+            }],
+            outputs: vec![
+                // An output for the dex.
+                TransactionOutput {
+                    value: 0,
+                    script_pubkey: Builder::build_p2sh(&AddressHashEnum::default_address_hash()).to_bytes(),
+                };
+                // And another for the maker.
+                2
+            ],
+            expiry_height: 0,
+            join_splits: vec![],
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            value_balance: 0,
+            version_group_id: coin.as_ref().conf.version_group_id,
+            consensus_branch_id: coin.as_ref().conf.consensus_branch_id,
+            zcash: coin.as_ref().conf.zcash,
+            posv: coin.as_ref().conf.is_posv,
+            str_d_zeel: None,
+            hash_algo: coin.as_ref().tx_hash_algo.into(),
+            v_extra_payload: None,
+        };
+
+        let redeem_script = swap_proto_v2_scripts::taker_payment_script(
+            0,
+            H160::default().as_slice(),
+            &Public::default(),
+            &Public::default(),
+        );
+
+        let mut final_tx: UtxoTx = preimage.into();
+        final_tx.inputs[0].script_sig = Builder::default()
+            // Maximum of 72 byte maker signature + a sighash byte.
+            .push_data(&[0; 72 + 1])
+            // Maximum of 72 byte taker signature + a sighash byte.
+            .push_data(&[0; 72 + 1])
+            // Maker's secret hash.
+            .push_data(&[0; 32])
+            .push_opcode(Opcode::OP_0)
+            .push_data(&redeem_script)
+            .into_bytes();
+
+        // We aren't spending from the segwit address, we are spending from a P2SH address.
+        tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &final_tx)
+    }
+
+    /// Returns the maker payment spend transaction size in vbytes.
+    pub fn get_maker_payment_spend_tx_size(coin: &impl UtxoCommonOps) -> usize {
+        let preimage = TransactionInputSigner {
+            lock_time: 0,
+            version: coin.as_ref().conf.tx_version,
+            n_time: None,
+            overwintered: coin.as_ref().conf.overwintered,
+            inputs: vec![UnsignedTransactionInput {
+                sequence: SEQUENCE_FINAL,
+                previous_output: OutPoint {
+                    hash: H256::default(),
+                    index: DEFAULT_SWAP_VOUT as u32,
+                },
+                prev_script: Vec::new().into(),
+                amount: 0,
+            }],
+            outputs: vec![
+                // An output for the taker
+                TransactionOutput {
+                    value: 0,
+                    script_pubkey: Builder::build_p2sh(&AddressHashEnum::default_address_hash()).to_bytes(),
+                },
+            ],
+            expiry_height: 0,
+            join_splits: vec![],
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            value_balance: 0,
+            version_group_id: coin.as_ref().conf.version_group_id,
+            consensus_branch_id: coin.as_ref().conf.consensus_branch_id,
+            zcash: coin.as_ref().conf.zcash,
+            posv: coin.as_ref().conf.is_posv,
+            str_d_zeel: None,
+            hash_algo: coin.as_ref().tx_hash_algo.into(),
+            v_extra_payload: None,
+        };
+
+        let redeem_script = swap_proto_v2_scripts::maker_payment_script(
+            0,
+            H160::default().as_slice(),
+            H160::default().as_slice(),
+            &Public::default(),
+            &Public::default(),
+        );
+
+        let mut final_tx: UtxoTx = preimage.into();
+        final_tx.inputs[0].script_sig = Builder::default()
+            // Maximum of 72 byte taker signature + a sighash byte.
+            .push_data(&[0; 72 + 1])
+            // Maker's secret hash.
+            .push_data(&[0; 32])
+            .push_opcode(Opcode::OP_1)
+            .push_opcode(Opcode::OP_0)
+            .push_data(&redeem_script)
+            .into_bytes();
+
+        // We aren't spending from the segwit address, we are spending from a P2SH address.
+        tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &final_tx)
+    }
+}
+
 async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
     coin: &T,
     prev_tx: &UtxoTx,
@@ -1019,12 +1205,16 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
 
 type GenPreimageResInner = MmResult<TransactionInputSigner, TxGenError>;
 
-async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
-    coin: &T,
-    args: &GenTakerFundingSpendArgs<'_, T>,
+async fn gen_taker_funding_spend_preimage<T, Coin>(
+    coin: &Coin,
+    args: &GenTakerPaymentPreimageArgs<'_, T>,
     n_time: NTimeSetting,
     fee: FundingSpendFeeSetting,
-) -> GenPreimageResInner {
+) -> GenPreimageResInner
+where
+    T: UtxoCommonOps,
+    Coin: UtxoCommonOps + TakerCoinSwapOpsV2,
+{
     let payment_time_lock = args
         .taker_payment_time_lock
         .try_into()
@@ -1044,10 +1234,15 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .value;
 
     let fee = match fee {
-        FundingSpendFeeSetting::GetFromCoin => coin
-            .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-            .await
-            .map_mm_err()?,
+        FundingSpendFeeSetting::GetFromCoin => {
+            let calculated_fee = coin.get_taker_payment_fee().await.unwrap().amount.to_decimal();
+            let calculated_fee = sat_from_big_decimal(&calculated_fee, coin.as_ref().decimals).mm_err(|e| e.into())?;
+            let taker_instructed_fee =
+                sat_from_big_decimal(&args.taker_payment_fee, coin.as_ref().decimals).mm_err(|e| e.into())?;
+            // Cap the paid fee to the taker instructed fee.
+            // Since any fee above that will be paid from our (maker) trading volume.
+            calculated_fee.min(taker_instructed_fee)
+        },
         FundingSpendFeeSetting::UseExact(f) => f,
     };
 
@@ -1076,11 +1271,15 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     .map_to_mm(TxGenError::Legacy)
 }
 
-pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
-    coin: &T,
-    args: &GenTakerFundingSpendArgs<'_, T>,
+pub async fn gen_and_sign_taker_payment_preimage<T, Coin>(
+    coin: &Coin,
+    args: &GenTakerPaymentPreimageArgs<'_, T>,
     htlc_keypair: &KeyPair,
-) -> GenPreimageResult<T> {
+) -> GenPreimageResult<T>
+where
+    T: UtxoCommonOps,
+    Coin: UtxoCommonOps + TakerCoinSwapOpsV2,
+{
     let funding_time_lock = args
         .funding_time_lock
         .try_into()
@@ -1113,11 +1312,15 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
 
 /// Common implementation of taker funding spend preimage validation for UTXO coins.
 /// Checks maker's signature and compares received preimage with the expected tx.
-pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
-    coin: &T,
-    gen_args: &GenTakerFundingSpendArgs<'_, T>,
+pub async fn validate_taker_payment_preimage<T, Coin>(
+    coin: &Coin,
+    gen_args: &GenTakerPaymentPreimageArgs<'_, T>,
     preimage: &TxPreimageWithSig<T>,
-) -> ValidateTakerFundingSpendPreimageResult {
+) -> ValidateTakerFundingSpendPreimageResult
+where
+    T: UtxoCommonOps,
+    Coin: UtxoCommonOps + TakerCoinSwapOpsV2,
+{
     let funding_amount = gen_args
         .funding_tx
         .first_output()
@@ -1137,19 +1340,16 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
         )));
     }
 
-    let expected_fee = coin
-        .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-        .await
-        .map_mm_err()?;
-
     let actual_fee = funding_amount - payment_amount;
+    let instructed_fee =
+        sat_from_big_decimal(&gen_args.taker_payment_fee, coin.as_ref().decimals).mm_err(|e| e.into())?;
 
-    let fee_div = expected_fee as f64 / actual_fee as f64;
-
-    if !(0.9..=1.1).contains(&fee_div) {
+    if actual_fee > instructed_fee {
+        // Reject a high fee. Such fee will typically be paid from the maker's trading volume,
+        // but the maker might fail the swap later and this would make us incur this fee instead.
         return MmError::err(ValidateTakerFundingSpendPreimageError::UnexpectedPreimageFee(format!(
-            "Too large difference between expected {} and actual {} fees",
-            expected_fee, actual_fee
+            "A fee of {} was used, more than the agreed upon fee of {}.",
+            actual_fee, instructed_fee
         )));
     }
 
@@ -1199,10 +1399,10 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
 }
 
 /// Common implementation of taker funding spend finalization and broadcast for UTXO coins.
-pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
+pub async fn sign_and_send_taker_payment<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig<T>,
-    gen_args: &GenTakerFundingSpendArgs<'_, T>,
+    gen_args: &GenTakerPaymentPreimageArgs<'_, T>,
     htlc_keypair: &KeyPair,
 ) -> Result<UtxoTx, TransactionErr> {
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
@@ -1227,13 +1427,13 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id
     ));
-    let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
+    let sig_hash_all_fork_id = SIGHASH_ALL | coin.as_ref().conf.fork_id;
 
     let mut maker_signature_with_sighash = preimage.signature.to_vec();
     maker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(maker_signature_with_sighash);
 
-    let mut taker_signature_with_sighash: Vec<u8> = taker_signature.take();
+    let mut taker_signature_with_sighash = taker_signature.take();
     taker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(taker_signature_with_sighash);
 
@@ -1513,14 +1713,14 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     ));
     let mut taker_signature_with_sighash = preimage.signature.to_vec();
     let taker_sig_hash = match gen_args.dex_fee {
-        DexFee::Standard(_) => (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8,
-        DexFee::WithBurn { .. } | DexFee::NoFee => (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8,
+        DexFee::Standard(_) => SIGHASH_SINGLE | coin.as_ref().conf.fork_id,
+        DexFee::WithBurn { .. } | DexFee::NoFee => SIGHASH_ALL | coin.as_ref().conf.fork_id,
     };
 
     taker_signature_with_sighash.push(taker_sig_hash);
     drop_mutability!(taker_signature_with_sighash);
 
-    let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
+    let sig_hash_all_fork_id = SIGHASH_ALL | coin.as_ref().conf.fork_id;
     let mut maker_signature_with_sighash: Vec<u8> = maker_signature.take();
     maker_signature_with_sighash.push(sig_hash_all_fork_id);
     drop_mutability!(maker_signature_with_sighash);
@@ -2100,7 +2300,7 @@ fn verify_p2pk_input_pubkey(
     unsigned_tx: &TransactionInputSigner,
     index: usize,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> Result<bool, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
@@ -4148,6 +4348,9 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
     Box::new(fut.boxed().compat())
 }
 
+// FIXME: Why do we inforce such a constraint? And it's now always true if we change the utxo picking algo.
+// E.g. an algo that favors getting rid of small utxos (basically, consolidates whenever possible) might pick
+// more inputs for a smaller amount and one large input for a larger amount, thus fee for the larger amount is less.
 /// To ensure the `get_sender_trade_fee(x) <= get_sender_trade_fee(y)` condition is satisfied for any `x < y`,
 /// we should include a `change` output into the result fee. Imagine this case:
 /// Let `sum_inputs = 11000` and `total_tx_fee: { 200, if there is no the change output; 230, if there is the change output }`.
@@ -4778,6 +4981,7 @@ where
         value: amount,
         script_pubkey: Builder::build_p2sh(&redeem_script_hash.into()).into(),
     };
+    // DICUSS: Is this for when maker/taker goes offline and comes back to complete the swap? Inefficient?
     // record secret hash to blockchain too making it impossible to lose
     // lock time may be easily brute forced so it is not mandatory to record it
     let mut op_return_builder = Builder::default().push_opcode(Opcode::OP_RETURN);
@@ -5136,7 +5340,14 @@ where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
     let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_amount = &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
+    // TODO:
+    //    1- Let the preimage tx fee be handled by the taker as well.
+    //    2- Who pays the maker payment fee? Take in considration that a nicer UX would be to hand the taker the full amount they requested. (so account for maker payment fee and taker claiming fee)
+    //    3- For the nicer UX, we also want to account for the maker payment spend fee beforehand.
+    let total_amount = &args.dex_fee.total_spend_amount().to_decimal()
+        + &args.premium_amount
+        + &args.trading_amount
+        + &args.taker_payment_fee;
 
     let SwapPaymentOutputsResult {
         payment_address,
@@ -5228,8 +5439,10 @@ where
     T: UtxoCommonOps + SwapOps,
 {
     let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_expected_amount =
-        &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
+    let total_expected_amount = &args.dex_fee.total_spend_amount().to_decimal()
+        + &args.premium_amount
+        + &args.trading_amount
+        + &args.taker_payment_fee;
 
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals).map_mm_err()?;
 
