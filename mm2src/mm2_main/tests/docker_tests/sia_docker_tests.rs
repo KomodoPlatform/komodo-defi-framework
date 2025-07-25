@@ -1,6 +1,8 @@
 use common::block_on;
 use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
-use sia_rust::http_endpoints::{AddressBalanceRequest, AddressUtxosRequest, ConsensusTipRequest, TxpoolBroadcastRequest};
+use sia_rust::http_endpoints::{
+    AddressBalanceRequest, AddressUtxosRequest, ConsensusTipRequest, TxpoolBroadcastRequest,
+};
 use sia_rust::spend_policy::SpendPolicy;
 use sia_rust::transaction::{SiacoinOutput, V2TransactionBuilder};
 use sia_rust::types::{Address, Currency};

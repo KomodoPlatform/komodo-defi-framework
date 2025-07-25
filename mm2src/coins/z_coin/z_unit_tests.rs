@@ -30,10 +30,10 @@ const GITHUB_CLIENT_USER_AGENT: &str = "mm2";
 async fn fetch_and_save_params(param: &str, fname: &Path) -> Result<(), String> {
     let url = Url::parse(&format!("{}/", DOWNLOAD_URL)).unwrap().join(param).unwrap();
     println!("downloading zcash params {}...", url);
-    let data = slurp_url_with_headers(url.as_str(), vec![(
-        http::header::USER_AGENT.as_str(),
-        GITHUB_CLIENT_USER_AGENT,
-    )])
+    let data = slurp_url_with_headers(
+        url.as_str(),
+        vec![(http::header::USER_AGENT.as_str(), GITHUB_CLIENT_USER_AGENT)],
+    )
     .await
     .map_err(|err| format!("could not download zcash params: {}", err))?
     .2;

@@ -42,7 +42,9 @@ impl From<CoinFindError> for ListChannelsError {
 }
 
 impl From<SqlError> for ListChannelsError {
-    fn from(err: SqlError) -> ListChannelsError { ListChannelsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> ListChannelsError {
+        ListChannelsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

@@ -1,19 +1,24 @@
 use super::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use super::swap_v2_common::*;
-use super::{LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, TakerSwapPreparedParams,
-            NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
+use super::{
+    LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, TakerSwapPreparedParams, NEGOTIATE_SEND_INTERVAL,
+    NEGOTIATION_TIMEOUT_SEC,
+};
 use crate::lp_swap::swap_lock::SwapLock;
-use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
-                     SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF, TAKER_SWAP_V2_TYPE};
+use crate::lp_swap::{
+    broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
+    SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF, TAKER_SWAP_V2_TYPE,
+};
 use crate::lp_swap::{swap_v2_pb::*, NO_REFUND_FEE};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
-use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs,
-            RefundTakerPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash,
-            TakerCoinSwapOpsV2, ToBytes, TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig,
-            ValidateMakerPaymentArgs};
+use coins::{
+    CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+    MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs,
+    SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradeFee,
+    TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs,
+};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
@@ -49,7 +54,8 @@ cfg_wasm32!(
 );
 
 // This is needed to have Debug on messages
-#[allow(unused_imports)] use prost::Message;
+#[allow(unused_imports)]
+use prost::Message;
 
 /// Negotiation data representation to be stored in DB.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -181,7 +187,9 @@ pub struct TakerSwapStorage {
 }
 
 impl TakerSwapStorage {
-    pub fn new(ctx: MmArc) -> Self { TakerSwapStorage { ctx } }
+    pub fn new(ctx: MmArc) -> Self {
+        TakerSwapStorage { ctx }
+    }
 }
 
 #[async_trait]
@@ -389,13 +397,19 @@ impl TakerSwapDbRepr {
 impl StateMachineDbRepr for TakerSwapDbRepr {
     type Event = TakerSwapEvent;
 
-    fn add_event(&mut self, event: Self::Event) { self.events.push(event) }
+    fn add_event(&mut self, event: Self::Event) {
+        self.events.push(event)
+    }
 }
 
 impl GetSwapCoins for TakerSwapDbRepr {
-    fn maker_coin(&self) -> &str { &self.maker_coin }
+    fn maker_coin(&self) -> &str {
+        &self.maker_coin
+    }
 
-    fn taker_coin(&self) -> &str { &self.taker_coin }
+    fn taker_coin(&self) -> &str {
+        &self.taker_coin
+    }
 }
 
 /// Represents the state machine for taker's side of the Trading Protocol Upgrade swap (v2).
@@ -448,15 +462,23 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     TakerSwapStateMachine<MakerCoin, TakerCoin>
 {
     #[inline]
-    fn maker_payment_conf_timeout(&self) -> u64 { self.started_at + self.lock_duration / 3 }
+    fn maker_payment_conf_timeout(&self) -> u64 {
+        self.started_at + self.lock_duration / 3
+    }
 
     #[inline]
-    fn taker_funding_locktime(&self) -> u64 { self.started_at + self.lock_duration * 3 }
+    fn taker_funding_locktime(&self) -> u64 {
+        self.started_at + self.lock_duration * 3
+    }
 
     #[inline]
-    fn taker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
+    fn taker_payment_locktime(&self) -> u64 {
+        self.started_at + self.lock_duration
+    }
 
-    fn unique_data(&self) -> Vec<u8> { self.uuid.as_bytes().to_vec() }
+    fn unique_data(&self) -> Vec<u8> {
+        self.uuid.as_bytes().to_vec()
+    }
 
     /// Returns secret hash generated using selected [SecretHashAlgo].
     fn taker_secret_hash(&self) -> Vec<u8> {
@@ -521,9 +543,13 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         }
     }
 
-    fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
+    fn storage(&mut self) -> &mut Self::Storage {
+        &mut self.storage
+    }
 
-    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId { self.uuid }
+    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId {
+        self.uuid
+    }
 
     async fn recreate_machine(
         uuid: Uuid,
@@ -2543,7 +2569,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 {
     type StateMachine = TakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    fn get_event(&self) -> TakerSwapEvent { TakerSwapEvent::Completed }
+    fn get_event(&self) -> TakerSwapEvent {
+        TakerSwapEvent::Completed
+    }
 }
 
 #[async_trait]

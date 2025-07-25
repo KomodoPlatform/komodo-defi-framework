@@ -1,19 +1,27 @@
 use crate::lp_native_dex::init_context::MmInitContext;
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
-                          TrezorRpcTaskConnectProcessor};
-use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
-             HwWalletType, WithHwRpcError};
+use crypto::hw_rpc_task::{
+    HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
+    TrezorRpcTaskConnectProcessor,
+};
+use crypto::{
+    from_hw_error, CryptoCtx, CryptoCtxError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
+    HwWalletType, WithHwRpcError,
+};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,11 +54,15 @@ pub enum InitHwError {
 }
 
 impl From<HwError> for InitHwError {
-    fn from(hw_error: HwError) -> Self { from_hw_error(hw_error) }
+    fn from(hw_error: HwError) -> Self {
+        from_hw_error(hw_error)
+    }
 }
 
 impl From<CryptoCtxError> for InitHwError {
-    fn from(e: CryptoCtxError) -> Self { InitHwError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        InitHwError::Internal(e.to_string())
+    }
 }
 
 impl From<HwCtxInitError<RpcTaskError>> for InitHwError {
@@ -127,7 +139,9 @@ impl RpcTaskTypes for InitHwTask {
 
 #[async_trait]
 impl RpcTask for InitHwTask {
-    fn initial_status(&self) -> Self::InProgressStatus { InitHwInProgressStatus::Initializing }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        InitHwInProgressStatus::Initializing
+    }
 
     async fn cancel(self) {
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&self.ctx) {
@@ -140,15 +154,18 @@ impl RpcTask for InitHwTask {
 
         match self.hw_wallet_type {
             HwWalletType::Trezor => {
-                let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, HwConnectStatuses {
-                    on_connect: InitHwInProgressStatus::WaitingForTrezorToConnect,
-                    on_connected: InitHwInProgressStatus::Initializing,
-                    on_connection_failed: InitHwInProgressStatus::Initializing,
-                    on_button_request: InitHwInProgressStatus::FollowHwDeviceInstructions,
-                    on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
-                    on_passphrase_request: InitHwAwaitingStatus::EnterTrezorPassphrase,
-                    on_ready: InitHwInProgressStatus::Initializing,
-                })
+                let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(
+                    task_handle,
+                    HwConnectStatuses {
+                        on_connect: InitHwInProgressStatus::WaitingForTrezorToConnect,
+                        on_connected: InitHwInProgressStatus::Initializing,
+                        on_connection_failed: InitHwInProgressStatus::Initializing,
+                        on_button_request: InitHwInProgressStatus::FollowHwDeviceInstructions,
+                        on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
+                        on_passphrase_request: InitHwAwaitingStatus::EnterTrezorPassphrase,
+                        on_ready: InitHwInProgressStatus::Initializing,
+                    },
+                )
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
                 .with_pin_timeout(TREZOR_PIN_TIMEOUT);
                 let trezor_connect_processor = Arc::new(trezor_connect_processor);

@@ -9,8 +9,9 @@ cfg_native!(
 
     use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
-    use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODES, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_TOKEN_CONTRACT};
+    use mm2_test_helpers::for_tests::{
+        ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODES, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES, ETH_SEPOLIA_TOKEN_CONTRACT,
+    };
     use mocktopus::mocking::*;
 
     /// The gas price for the tests

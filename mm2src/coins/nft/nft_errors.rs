@@ -3,8 +3,10 @@ use crate::eth::GetEthAddressError;
 #[cfg(target_arch = "wasm32")]
 use crate::nft::storage::wasm::WasmNftCacheError;
 use crate::nft::storage::NftStorageError;
-use crate::{CoinFindError, GetMyAddressError, MyAddressError, NumConversError, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod, WithdrawError};
+use crate::{
+    CoinFindError, GetMyAddressError, MyAddressError, NumConversError, PrivKeyPolicyNotAllowed,
+    UnexpectedDerivationMethod, WithdrawError,
+};
 use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -51,11 +53,15 @@ pub enum GetNftInfoError {
 }
 
 impl From<GetNftInfoError> for WithdrawError {
-    fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
+    fn from(e: GetNftInfoError) -> Self {
+        WithdrawError::GetNftInfoError(e)
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for GetNftInfoError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { GetNftInfoError::Internal(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        GetNftInfoError::Internal(e.to_string())
+    }
 }
 
 impl From<SlurpError> for GetNftInfoError {
@@ -84,11 +90,15 @@ impl From<web3::Error> for GetNftInfoError {
 }
 
 impl From<GetEthAddressError> for GetNftInfoError {
-    fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
+    fn from(e: GetEthAddressError) -> Self {
+        GetNftInfoError::GetEthAddressError(e)
+    }
 }
 
 impl<T: NftStorageError> From<T> for GetNftInfoError {
-    fn from(err: T) -> Self { GetNftInfoError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        GetNftInfoError::DbError(format!("{:?}", err))
+    }
 }
 
 impl From<GetInfoFromUriError> for GetNftInfoError {
@@ -103,15 +113,21 @@ impl From<GetInfoFromUriError> for GetNftInfoError {
 }
 
 impl From<ParseRfc3339Err> for GetNftInfoError {
-    fn from(e: ParseRfc3339Err) -> Self { GetNftInfoError::ParseRfc3339Err(e) }
+    fn from(e: ParseRfc3339Err) -> Self {
+        GetNftInfoError::ParseRfc3339Err(e)
+    }
 }
 
 impl From<ProtectFromSpamError> for GetNftInfoError {
-    fn from(e: ProtectFromSpamError) -> Self { GetNftInfoError::ProtectFromSpamError(e) }
+    fn from(e: ProtectFromSpamError) -> Self {
+        GetNftInfoError::ProtectFromSpamError(e)
+    }
 }
 
 impl From<TransferConfirmationsError> for GetNftInfoError {
-    fn from(e: TransferConfirmationsError) -> Self { GetNftInfoError::TransferConfirmationsError(e) }
+    fn from(e: TransferConfirmationsError) -> Self {
+        GetNftInfoError::TransferConfirmationsError(e)
+    }
 }
 
 impl From<ethabi::Error> for GetNftInfoError {
@@ -221,27 +237,39 @@ pub enum UpdateNftError {
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
-    fn from(e: GetNftInfoError) -> Self { UpdateNftError::GetNftInfoError(e) }
+    fn from(e: GetNftInfoError) -> Self {
+        UpdateNftError::GetNftInfoError(e)
+    }
 }
 
 impl From<GetMyAddressError> for UpdateNftError {
-    fn from(e: GetMyAddressError) -> Self { UpdateNftError::GetMyAddressError(e) }
+    fn from(e: GetMyAddressError) -> Self {
+        UpdateNftError::GetMyAddressError(e)
+    }
 }
 
 impl<T: NftStorageError> From<T> for UpdateNftError {
-    fn from(err: T) -> Self { UpdateNftError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        UpdateNftError::DbError(format!("{:?}", err))
+    }
 }
 
 impl From<UpdateSpamPhishingError> for UpdateNftError {
-    fn from(e: UpdateSpamPhishingError) -> Self { UpdateNftError::UpdateSpamPhishingError(e) }
+    fn from(e: UpdateSpamPhishingError) -> Self {
+        UpdateNftError::UpdateSpamPhishingError(e)
+    }
 }
 
 impl From<GetInfoFromUriError> for UpdateNftError {
-    fn from(e: GetInfoFromUriError) -> Self { UpdateNftError::GetInfoFromUriError(e) }
+    fn from(e: GetInfoFromUriError) -> Self {
+        UpdateNftError::GetInfoFromUriError(e)
+    }
 }
 
 impl From<ProtectFromSpamError> for UpdateNftError {
-    fn from(e: ProtectFromSpamError) -> Self { UpdateNftError::ProtectFromSpamError(e) }
+    fn from(e: ProtectFromSpamError) -> Self {
+        UpdateNftError::ProtectFromSpamError(e)
+    }
 }
 
 impl From<CoinFindError> for UpdateNftError {
@@ -253,7 +281,9 @@ impl From<CoinFindError> for UpdateNftError {
 }
 
 impl From<PrivKeyPolicyNotAllowed> for UpdateNftError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { Self::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        Self::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<GenerateSignedMessageError> for UpdateNftError {
@@ -266,7 +296,9 @@ impl From<GenerateSignedMessageError> for UpdateNftError {
 }
 
 impl From<UnexpectedDerivationMethod> for UpdateNftError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        Self::UnexpectedDerivationMethod(e)
+    }
 }
 
 impl HttpStatusCode for UpdateNftError {
@@ -328,7 +360,9 @@ pub enum UpdateSpamPhishingError {
 }
 
 impl From<GetMyAddressError> for UpdateSpamPhishingError {
-    fn from(e: GetMyAddressError) -> Self { UpdateSpamPhishingError::GetMyAddressError(e) }
+    fn from(e: GetMyAddressError) -> Self {
+        UpdateSpamPhishingError::GetMyAddressError(e)
+    }
 }
 
 impl From<GetInfoFromUriError> for UpdateSpamPhishingError {
@@ -343,7 +377,9 @@ impl From<GetInfoFromUriError> for UpdateSpamPhishingError {
 }
 
 impl<T: NftStorageError> From<T> for UpdateSpamPhishingError {
-    fn from(err: T) -> Self { UpdateSpamPhishingError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        UpdateSpamPhishingError::DbError(format!("{:?}", err))
+    }
 }
 
 /// Errors encountered when parsing a `Chain` from a string.
@@ -362,7 +398,9 @@ pub(crate) enum MetaFromUrlError {
 }
 
 impl From<GetInfoFromUriError> for MetaFromUrlError {
-    fn from(e: GetInfoFromUriError) -> Self { MetaFromUrlError::GetInfoFromUriError(e) }
+    fn from(e: GetInfoFromUriError) -> Self {
+        MetaFromUrlError::GetInfoFromUriError(e)
+    }
 }
 
 /// Represents errors that can occur while locking the NFT database.
@@ -378,12 +416,16 @@ pub enum LockDBError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for LockDBError {
-    fn from(e: SqlError) -> Self { LockDBError::SqlError(e) }
+    fn from(e: SqlError) -> Self {
+        LockDBError::SqlError(e)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<WasmNftCacheError> for LockDBError {
-    fn from(e: WasmNftCacheError) -> Self { LockDBError::WasmNftCacheError(e) }
+    fn from(e: WasmNftCacheError) -> Self {
+        LockDBError::WasmNftCacheError(e)
+    }
 }
 
 /// Errors related to calculating transfer confirmations for NFTs.
@@ -425,7 +467,9 @@ pub enum ClearNftDbError {
 }
 
 impl<T: NftStorageError> From<T> for ClearNftDbError {
-    fn from(err: T) -> Self { ClearNftDbError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        ClearNftDbError::DbError(format!("{:?}", err))
+    }
 }
 
 impl HttpStatusCode for ClearNftDbError {

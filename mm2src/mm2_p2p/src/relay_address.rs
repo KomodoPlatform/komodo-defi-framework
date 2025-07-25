@@ -110,7 +110,9 @@ fn validate_domain_name(s: &str) -> bool {
     DNS_REGEX.is_match(s)
 }
 
-fn memory_multiaddr(port: u64) -> Multiaddr { format!("/memory/{}", port).parse().unwrap() }
+fn memory_multiaddr(port: u64) -> Multiaddr {
+    format!("/memory/{}", port).parse().unwrap()
+}
 
 #[cfg(target_arch = "wasm32")]
 fn ipv4_multiaddr(ipv4_addr: &str, ports: NetworkPorts) -> Multiaddr {

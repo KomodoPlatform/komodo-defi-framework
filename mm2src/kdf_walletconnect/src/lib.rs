@@ -1,9 +1,11 @@
 pub mod chain;
 mod connection_handler;
-#[allow(unused)] pub mod error;
+#[allow(unused)]
+pub mod error;
 pub mod inbound_message;
 mod metadata;
-#[allow(unused)] mod pairing;
+#[allow(unused)]
+mod pairing;
 pub mod session;
 mod storage;
 
@@ -28,8 +30,10 @@ use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
 use relay_rpc::domain::{MessageId, Topic};
 use relay_rpc::rpc::params::session::{Namespace, ProposeNamespaces};
 use relay_rpc::rpc::params::session_request::SessionRequestRequest;
-use relay_rpc::rpc::params::{session_request::Request as SessionRequest, IrnMetadata, Metadata, Relay,
-                             RelayProtocolMetadata, RequestParams, ResponseParamsError, ResponseParamsSuccess};
+use relay_rpc::rpc::params::{
+    session_request::Request as SessionRequest, IrnMetadata, Metadata, Relay, RelayProtocolMetadata, RequestParams,
+    ResponseParamsError, ResponseParamsSuccess,
+};
 use relay_rpc::rpc::{ErrorResponse, Payload, Request, Response, SuccessfulResponse};
 use serde::de::DeserializeOwned;
 use session::rpc::delete::send_session_delete_request;
@@ -106,7 +110,9 @@ pub struct WalletConnectCtxImpl {
 pub struct WalletConnectCtx(pub Arc<WalletConnectCtxImpl>);
 impl Deref for WalletConnectCtx {
     type Target = WalletConnectCtxImpl;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl WalletConnectCtx {

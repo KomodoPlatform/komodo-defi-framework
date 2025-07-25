@@ -1,11 +1,14 @@
 use crate::hd_wallet::AddrToString;
-use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters,
-                              NftTransferHistoryFromMoralis, PhishingDomainReq, PhishingDomainRes, SpamContractReq,
-                              SpamContractRes, TransferMeta};
+use crate::nft::nft_structs::{
+    Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters, NftTransferHistoryFromMoralis, PhishingDomainReq,
+    PhishingDomainRes, SpamContractReq, SpamContractRes, TransferMeta,
+};
 use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
-use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
-                 process_text_for_spam_link};
+use crate::nft::{
+    check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
+    process_text_for_spam_link,
+};
 use common::cross_test;
 use ethereum_types::Address;
 use mm2_net::transport::send_post_request_to_uri;

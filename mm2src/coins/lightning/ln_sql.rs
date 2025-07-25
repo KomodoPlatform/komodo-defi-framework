@@ -1,26 +1,33 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
-                              DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
-                              PaymentInfo, PaymentType};
+use crate::lightning::ln_db::{
+    ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails, DBPaymentsFilter, GetClosedChannelsResult,
+    GetPaymentsResult, HTLCStatus, LightningDB, PaymentInfo, PaymentType,
+};
 use async_trait::async_trait;
 use common::{async_blocking, now_sec_i64, PagingOptionsEnum};
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{params, Error as SqlError, Row, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
-                        sql_text_conversion_err, string_from_row, validate_table_name, AsSqlNamedParams,
-                        OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
+use db_common::sqlite::{
+    h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row, sql_text_conversion_err,
+    string_from_row, validate_table_name, AsSqlNamedParams, OwnedSqlNamedParams, SqlNamedParams, SqliteConnShared,
+    CHECK_TABLE_EXISTS_SQL,
+};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v24::PublicKey;
 use std::convert::TryInto;
 use std::str::FromStr;
 use uuid::Uuid;
 
-fn channels_history_table(ticker: &str) -> String { ticker.to_owned() + "_channels_history" }
+fn channels_history_table(ticker: &str) -> String {
+    ticker.to_owned() + "_channels_history"
+}
 
-fn payments_history_table(ticker: &str) -> String { ticker.to_owned() + "_payments_history" }
+fn payments_history_table(ticker: &str) -> String {
+    ticker.to_owned() + "_payments_history"
+}
 
 fn create_channels_history_table_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);

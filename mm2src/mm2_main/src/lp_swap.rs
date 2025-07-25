@@ -64,10 +64,12 @@ use bitcrypto::sha256;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
-use common::{bits256, calc_total_pages,
-             executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
-             log::{error, info},
-             HttpStatusCode, PagingOptions, StatusCode};
+use common::{
+    bits256, calc_total_pages,
+    executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
+    log::{error, info},
+    HttpStatusCode, PagingOptions, StatusCode,
+};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -113,34 +115,40 @@ pub(crate) mod taker_swap;
 pub mod taker_swap_v2;
 mod trade_preimage;
 
-#[cfg(target_arch = "wasm32")] mod swap_wasm_db;
+#[cfg(target_arch = "wasm32")]
+mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
-pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage,
-                     run_maker_swap, CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap,
-                     MakerSwapStatusChanged, MakerTradePreimage, RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
+pub use maker_swap::{
+    calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage, run_maker_swap,
+    CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
+    RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG,
+};
 pub use max_maker_vol_rpc::max_maker_vol;
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker,
-                     ActiveSwapV2Info};
+use swap_v2_common::{
+    get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker, ActiveSwapV2Info,
+};
 use swap_v2_pb::*;
 use swap_v2_rpcs::{get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
-                       WATCHER_PREFIX};
+pub use swap_watcher::{
+    process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
+    MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC, WATCHER_PREFIX,
+};
 use taker_swap::TakerSwapEvent;
-pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
-                     run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
-                     REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG};
+pub use taker_swap::{
+    calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available, run_taker_swap,
+    taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap, TakerSwapData, TakerSwapPreparedParams,
+    TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
+};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -392,7 +400,9 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
     Ok(())
 }
 
-pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+pub fn swap_topic(uuid: &Uuid) -> String {
+    pub_sub_topic(SWAP_PREFIX, &uuid.to_string())
+}
 
 /// Formats and returns a topic format for `txhlp`.
 ///
@@ -402,7 +412,9 @@ pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_s
 /// // Returns topic format `txhlp/BTC` as String type.
 /// ```
 #[inline(always)]
-pub fn tx_helper_topic(coin: &str) -> String { pub_sub_topic(TX_HELPER_PREFIX, coin) }
+pub fn tx_helper_topic(coin: &str) -> String {
+    pub_sub_topic(TX_HELPER_PREFIX, coin)
+}
 
 async fn recv_swap_msg<T>(
     ctx: MmArc,
@@ -455,7 +467,9 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
-pub fn taker_payment_spend_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+pub fn taker_payment_spend_duration(locktime: u64) -> u64 {
+    (locktime * 4) / 5
+}
 
 #[inline]
 pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 {
@@ -463,7 +477,9 @@ pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 
 }
 
 #[inline]
-pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 {
+    (locktime * 2) / 5
+}
 
 #[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
@@ -516,11 +532,15 @@ pub enum SwapEvent {
 }
 
 impl From<MakerSwapEvent> for SwapEvent {
-    fn from(maker_event: MakerSwapEvent) -> Self { SwapEvent::Maker(maker_event) }
+    fn from(maker_event: MakerSwapEvent) -> Self {
+        SwapEvent::Maker(maker_event)
+    }
 }
 
 impl From<TakerSwapEvent> for SwapEvent {
-    fn from(taker_event: TakerSwapEvent) -> Self { SwapEvent::Taker(taker_event) }
+    fn from(taker_event: TakerSwapEvent) -> Self {
+        SwapEvent::Taker(taker_event)
+    }
 }
 
 struct LockedAmountInfo {
@@ -570,10 +590,14 @@ impl SwapsContext {
     }
 
     /// Removes storage for the swap with specific uuid.
-    pub fn remove_msg_v2_store(&self, uuid: &Uuid) { self.swap_v2_msgs.lock().unwrap().remove(uuid); }
+    pub fn remove_msg_v2_store(&self, uuid: &Uuid) {
+        self.swap_v2_msgs.lock().unwrap().remove(uuid);
+    }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { self.swap_db.get_or_initialize().await }
+    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> {
+        self.swap_db.get_or_initialize().await
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -737,10 +761,14 @@ pub struct SwapConfirmationsSettings {
 }
 
 impl SwapConfirmationsSettings {
-    pub fn requires_notarization(&self) -> bool { self.maker_coin_nota || self.taker_coin_nota }
+    pub fn requires_notarization(&self) -> bool {
+        self.maker_coin_nota || self.taker_coin_nota
+    }
 }
 
-fn coin_with_4x_locktime(ticker: &str) -> bool { matches!(ticker, "BCH" | "BTG" | "SBTC") }
+fn coin_with_4x_locktime(ticker: &str) -> bool {
+    matches!(ticker, "BCH" | "BTG" | "SBTC")
+}
 
 #[derive(Debug)]
 pub enum AtomicLocktimeVersion {
@@ -961,7 +989,9 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf { ctx.address_dir(address).join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf {
+    ctx.address_dir(address).join("SWAPS").join("MY")
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
@@ -1042,11 +1072,15 @@ pub struct SwapError {
 }
 
 impl From<String> for SwapError {
-    fn from(error: String) -> Self { SwapError { error } }
+    fn from(error: String) -> Self {
+        SwapError { error }
+    }
 }
 
 impl From<&str> for SwapError {
-    fn from(e: &str) -> Self { SwapError { error: e.to_owned() } }
+    fn from(e: &str) -> Self {
+        SwapError { error: e.to_owned() }
+    }
 }
 
 #[derive(Serialize)]
@@ -1629,7 +1663,9 @@ pub struct SwapPubkeys {
 }
 
 /// P2P topic used to broadcast messages during execution of the upgraded swap protocol.
-pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
+pub fn swap_v2_topic(uuid: &Uuid) -> String {
+    pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string())
+}
 
 /// Broadcast the swap v2 message once
 pub fn broadcast_swap_v2_message<T: prost::Message>(

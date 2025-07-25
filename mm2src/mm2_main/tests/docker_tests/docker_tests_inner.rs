@@ -1,29 +1,35 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
-                                               SET_BURN_PUBKEY_TO_ALICE};
-use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
-                                            fill_eth_erc20_with_private_key, swap_contract};
+use crate::docker_tests::docker_tests_common::{
+    generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX, SET_BURN_PUBKEY_TO_ALICE,
+};
+use crate::docker_tests::eth_docker_tests::{
+    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract,
+};
 use crate::integration_tests_common::*;
-use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
-            utxo_coin_from_privkey};
+use crate::{
+    fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+    utxo_coin_from_privkey,
+};
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::TxFeeDetails;
-use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-            TransactionEnum, WithdrawRequest};
+use coins::{
+    ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TransactionEnum, WithdrawRequest,
+};
 use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use http::StatusCode;
 use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
-                                  enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
-                                  kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
-                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
+use mm2_test_helpers::for_tests::{
+    check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin, enable_eth_with_tokens_v2,
+    erc20_dev_conf, eth_dev_conf, get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
+    set_price, start_swaps, wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure, MarketMakerIt,
+    Mm2TestConf, DEFAULT_RPC_PASSWORD,
+};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -2171,11 +2177,16 @@ fn test_get_max_taker_vol_with_kmd() {
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    let electrum = block_on(enable_electrum(&mm_alice, "KMD", false, &[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]));
+    let electrum = block_on(enable_electrum(
+        &mm_alice,
+        "KMD",
+        false,
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+    ));
     log!("{:?}", electrum);
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -3568,9 +3579,11 @@ fn test_locked_amount() {
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
@@ -3920,10 +3933,14 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
 }
 
 #[test]
-fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); }
+fn test_trade_base_rel_eth_erc20_coins() {
+    trade_base_rel(("ETH", "ERC20DEV"));
+}
 
 #[test]
-fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
+fn test_trade_base_rel_mycoin_mycoin1_coins() {
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
 
 // run swap with burn pubkey set to alice (no dex fee)
 #[test]
@@ -4865,9 +4882,11 @@ fn test_my_orders_after_matched() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf = Mm2TestConf::light_node(&alice_coin.display_priv_key().unwrap(), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &alice_coin.display_priv_key().unwrap(),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -4961,9 +4980,11 @@ fn test_update_maker_order_after_matched() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf = Mm2TestConf::light_node(&alice_coin.display_priv_key().unwrap(), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &alice_coin.display_priv_key().unwrap(),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -5410,9 +5431,11 @@ fn test_orderbook_depth() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();

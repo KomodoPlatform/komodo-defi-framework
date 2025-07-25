@@ -58,12 +58,13 @@ pub struct IdbTransactionImpl {
     /// It's not used directly, but we need to hold the closures in memory till `transaciton` exists.
     #[allow(dead_code)]
     onabort_closure: Closure<dyn FnMut(JsValue)>,
+    _not_send: common::NotSend,
 }
 
-impl !Send for IdbTransactionImpl {}
-
 impl IdbTransactionImpl {
-    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn aborted(&self) -> bool {
+        self.aborted.load(Ordering::Relaxed)
+    }
 
     pub(crate) fn open_table(&self, table_name: &str) -> DbTransactionResult<IdbObjectStoreImpl> {
         if self.aborted.load(Ordering::Relaxed) {
@@ -79,6 +80,7 @@ impl IdbTransactionImpl {
             Ok(object_store) => Ok(IdbObjectStoreImpl {
                 object_store,
                 aborted: self.aborted.clone(),
+                _not_send: common::NotSend::default(),
             }),
             Err(e) => MmError::err(DbTransactionError::ErrorOpeningTable {
                 table: table_name.to_owned(),
@@ -101,6 +103,7 @@ impl IdbTransactionImpl {
             tables,
             aborted,
             onabort_closure,
+            _not_send: common::NotSend::default(),
         }
     }
 }

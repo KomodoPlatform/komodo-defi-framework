@@ -1,5 +1,7 @@
-use crate::sign_common::{complete_tx, p2pk_spend_with_signature, p2pkh_spend_with_signature,
-                         p2sh_spend_with_signature, p2wpkh_spend_with_signature};
+use crate::sign_common::{
+    complete_tx, p2pk_spend_with_signature, p2pkh_spend_with_signature, p2sh_spend_with_signature,
+    p2wpkh_spend_with_signature,
+};
 use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
 use derive_more::Display;
@@ -40,7 +42,9 @@ pub enum UtxoSignWithKeyPairError {
 }
 
 impl From<keys::Error> for UtxoSignWithKeyPairError {
-    fn from(sign: keys::Error) -> Self { UtxoSignWithKeyPairError::ErrorSigning(sign) }
+    fn from(sign: keys::Error) -> Self {
+        UtxoSignWithKeyPairError::ErrorSigning(sign)
+    }
 }
 
 pub fn sign_tx(

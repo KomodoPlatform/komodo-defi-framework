@@ -38,6 +38,11 @@
        ```
 9. Try `cargo test --all --features run-docker-tests -- --test-threads=16`.
 
+   Note for MacOS users:
+    - The UTXO 'testblockchain' docker container may fail to start due to TCP port conflict with MacOS AirPlay Receiver (using the same 7000 port). Disabling AirPlay Receiver resolves this problem.
+
+    - The 'nucleusd' test docker container (and the dependent 'ibc-relayer' container) may fail to start on MacOS. The MacOS docker "Enable host networking" option may help with this issue.
+
 ## Running WASM tests
 
 1. Set up [WASM Build Environment](../docs/WASM_BUILD.md#Setting-up-the-environment)

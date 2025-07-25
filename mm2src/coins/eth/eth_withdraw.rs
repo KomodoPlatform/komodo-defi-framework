@@ -1,13 +1,19 @@
-use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
-            EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
+use super::{
+    checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
+    EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
+};
 use crate::eth::wallet_connect::WcEthTxParams;
-use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
-                 tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
-                 SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
+use crate::eth::{
+    calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
+    tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
+    TransactionWrapper, UnSignedEthTxBuilder,
+};
 use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
-use crate::{BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
-            TransactionDetails};
+use crate::{
+    BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
+    TransactionDetails,
+};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use common::custom_futures::timeout::FutureTimerExt;
@@ -413,9 +419,13 @@ pub struct InitEthWithdraw {
 
 #[async_trait]
 impl EthWithdraw for InitEthWithdraw {
-    fn coin(&self) -> &EthCoin { &self.coin }
+    fn coin(&self) -> &EthCoin {
+        &self.coin
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
         self.task_handle
@@ -491,13 +501,21 @@ pub struct StandardEthWithdraw {
 
 #[async_trait]
 impl EthWithdraw for StandardEthWithdraw {
-    fn coin(&self) -> &EthCoin { &self.coin }
+    fn coin(&self) -> &EthCoin {
+        &self.coin
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
-    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
-    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
     async fn sign_tx_with_trezor(
         &self,

@@ -52,7 +52,9 @@ pub struct UnifiedLoggerBuilder {
 }
 
 impl UnifiedLoggerBuilder {
-    pub fn new() -> UnifiedLoggerBuilder { UnifiedLoggerBuilder::default() }
+    pub fn new() -> UnifiedLoggerBuilder {
+        UnifiedLoggerBuilder::default()
+    }
 
     pub fn silent_console(mut self, silent_console: bool) -> UnifiedLoggerBuilder {
         self.silent_console = silent_console;

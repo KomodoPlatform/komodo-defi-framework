@@ -1,8 +1,10 @@
 use crate::sql_constraint::SqlConstraint;
 use crate::sql_value::{FromQuoted, SqlValue};
 use crate::sqlite::StringError;
-use common::{write_safe,
-             write_safe::fmt::{WriteSafe, WriteSafeJoin}};
+use common::{
+    write_safe,
+    write_safe::fmt::{WriteSafe, WriteSafeJoin},
+};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult};
 use std::fmt;
 

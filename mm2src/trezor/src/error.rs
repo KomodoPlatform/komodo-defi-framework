@@ -83,11 +83,15 @@ impl From<Failure> for OperationFailure {
 }
 
 impl From<DecodeError> for TrezorError {
-    fn from(e: DecodeError) -> Self { TrezorError::ProtocolError(e.to_string()) }
+    fn from(e: DecodeError) -> Self {
+        TrezorError::ProtocolError(e.to_string())
+    }
 }
 
 impl From<EncodeError> for TrezorError {
-    fn from(e: EncodeError) -> Self { TrezorError::Internal(e.to_string()) }
+    fn from(e: EncodeError) -> Self {
+        TrezorError::Internal(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -117,5 +121,7 @@ impl From<UsbError> for TrezorError {
 
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 impl From<std::io::Error> for TrezorError {
-    fn from(e: std::io::Error) -> Self { TrezorError::UnderlyingError(e.to_string()) }
+    fn from(e: std::io::Error) -> Self {
+        TrezorError::UnderlyingError(e.to_string())
+    }
 }

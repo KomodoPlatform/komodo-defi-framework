@@ -132,9 +132,13 @@ pub struct WsOutgoingSender {
 /// Please note `WsOutgoingSender` must not provide a way to close the [`WsOutgoingSender::inner`] channel,
 /// because the shutdown_tx wouldn't be closed properly.
 impl WsOutgoingSender {
-    pub async fn send(&mut self, msg: Vec<u8>) -> Result<(), SendError> { self.inner.send(msg).await }
+    pub async fn send(&mut self, msg: Vec<u8>) -> Result<(), SendError> {
+        self.inner.send(msg).await
+    }
 
-    pub fn try_send(&mut self, msg: Vec<u8>) -> Result<(), TrySendError<Vec<u8>>> { self.inner.try_send(msg) }
+    pub fn try_send(&mut self, msg: Vec<u8>) -> Result<(), TrySendError<Vec<u8>>> {
+        self.inner.try_send(msg)
+    }
 }
 
 #[derive(Debug)]
@@ -463,7 +467,9 @@ impl StateEventListener {
         }
     }
 
-    async fn receive_one(&mut self) -> Option<StateEvent> { self.rx.next().await }
+    async fn receive_one(&mut self) -> Option<StateEvent> {
+        self.rx.next().await
+    }
 }
 
 /// The combination of `WsTransportEvent` and `OutgoingEvent`
@@ -503,7 +509,9 @@ enum WsTransportError {
 }
 
 impl From<CloseEvent> for WsTransportEvent {
-    fn from(close: CloseEvent) -> Self { WsTransportEvent::Close { code: close.code() } }
+    fn from(close: CloseEvent) -> Self {
+        WsTransportEvent::Close { code: close.code() }
+    }
 }
 
 struct ConnectingState;

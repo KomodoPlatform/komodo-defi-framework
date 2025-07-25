@@ -382,18 +382,21 @@ mod bchd_grpc_tests {
             slp_amount: 999,
         };
 
-        let slp_utxos = [invalid_utxo.clone(), SlpUnspent {
-            bch_unspent: UnspentInfo {
-                outpoint: OutPoint {
-                    hash: tx_hash,
-                    index: 2,
+        let slp_utxos = [
+            invalid_utxo.clone(),
+            SlpUnspent {
+                bch_unspent: UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: tx_hash,
+                        index: 2,
+                    },
+                    value: 0,
+                    height: None,
+                    script: Vec::new().into(),
                 },
-                value: 0,
-                height: None,
-                script: Vec::new().into(),
+                slp_amount: 8999,
             },
-            slp_amount: 8999,
-        }];
+        ];
 
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap_err();

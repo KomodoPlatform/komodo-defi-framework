@@ -1,6 +1,8 @@
 use crate::account::storage::AccountStorageError;
-use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
+use crate::account::{
+    AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId, MAX_ACCOUNT_DESCRIPTION_LENGTH,
+    MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH,
+};
 use crate::context::AccountContext;
 use common::{HttpStatusCode, StatusCode, SuccessResponse};
 use derive_more::Display;
