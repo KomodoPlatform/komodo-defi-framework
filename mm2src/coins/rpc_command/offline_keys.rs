@@ -396,7 +396,7 @@ async fn offline_hd_keys_export_internal(
                     (address, priv_key)
                 },
                 Some(PrefixValues::Tendermint { account_prefix }) => {
-                    let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
+                    let address = tendermint::account_id_from_pubkey_hex(account_prefix, &pubkey)
                         .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                         .to_string();
 
@@ -591,7 +591,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -615,7 +615,7 @@ mod tests {
             "L5kmC8cqWodyjm2JUQNfRbmyZeJMJMeYH4WJGUSVcdnD9X6aAs8Z",
         ];
 
-        let btc_conf = json!({
+        let _btc_conf = json!({
             "coin": "BTC",
             "protocol": {
                 "type": "UTXO"
@@ -661,7 +661,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["BTC-segwit".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -720,7 +720,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["ETH".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -779,7 +779,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["ATOM".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -792,12 +792,12 @@ mod tests {
             "cosmos1cecqkvtwn0vyr730yq3hawrl8rztvchz6kadk8",
             "cosmos1c27v3agv745fhnjve8ch754rmzswuc7guglt76",
         ];
-        let expected_pubkeys = [
+        let _expected_pubkeys = [
             "cosmospub1addwnpepq09wmcqe8qvcmyvgre8g07q9z42rz6y7uguz5dxqvhw0tdrqa38csd8wlfa",
             "cosmospub1addwnpepq0uy8zghd8q8p5wjvz84catqgwuwem45s5rpvd9syq44jz2jmyqfvp049kz",
             "cosmospub1add", // Truncated in the original test vectors
         ];
-        let expected_privkeys_base64 = [
+        let _expected_privkeys_base64 = [
             "Nbfdi2ZHb+2W41DNJPaHxAi6oHcJ4lFLtBZkATGAB8M=",
             "8FJrDCXtcLl6OgjqF/l5QQvUYYpjwGn+F3q3pBp3e94=",
         ];
