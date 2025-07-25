@@ -212,7 +212,7 @@ uint = "0.9.3"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 void = "1.0"
 wagyu-zcash-parameters = { version = "0.2" }
-wasm-bindgen = "0.2.86"
+wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.21"
 wasm-bindgen-test = "0.3.2"
 wc_common = { git = "https://github.com/komodoplatform/walletconnectrust", tag = "k-0.1.3" }
