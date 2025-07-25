@@ -2,7 +2,9 @@ use chrono::Utc;
 use regex::Regex;
 use std::{env, process::Command};
 
-fn crate_version() -> &'static str { env!("CARGO_PKG_VERSION") }
+fn crate_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
 
 fn version_tag() -> Result<String, String> {
     if let Ok(tag) = env::var("KDF_BUILD_TAG") {
@@ -29,9 +31,13 @@ fn version_tag() -> Result<String, String> {
     Ok(commit_hash)
 }
 
-fn version() -> Result<String, String> { version_tag().map(|tag| format!("{}_{}", crate_version(), tag)) }
+fn version() -> Result<String, String> {
+    version_tag().map(|tag| format!("{}_{}", crate_version(), tag))
+}
 
-fn build_datetime() -> String { Utc::now().to_rfc3339() }
+fn build_datetime() -> String {
+    Utc::now().to_rfc3339()
+}
 
 fn set_build_variables() -> Result<(), String> {
     println!("cargo:rustc-env=KDF_VERSION={}", version()?);

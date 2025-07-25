@@ -1,28 +1,33 @@
 use super::ethermint_account::EthermintAccount;
-use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, HtlcType, QueryHtlcRequestProto,
-                  QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
+use super::htlc::{
+    ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, HtlcType, QueryHtlcRequestProto, QueryHtlcResponse,
+    TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED,
+};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDAddressSelector, HDPathAccountToAddressId};
 use crate::rpc_command::tendermint::ibc::ChannelId;
-use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
-                                              DelegationsQueryResponse, Undelegation, UndelegationEntry,
-                                              UndelegationsQueryResponse, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{
+    ClaimRewardsPayload, Delegation, DelegationPayload, DelegationsQueryResponse, Undelegation, UndelegationEntry,
+    UndelegationsQueryResponse, ValidatorStatus,
+};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{
+    big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs, CoinBalance,
+    ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+    MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
+    RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+    RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
+    SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee, TradePreimageError,
+    TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum,
+    TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentFut,
+    ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner,
+    WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -36,20 +41,24 @@ use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::distribution::MsgWithdrawDelegatorReward;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto,
-                                           QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{
+    MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse,
+};
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
-use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
-                                                       GetLatestBlockRequest, GetLatestBlockResponse};
+use cosmrs::proto::cosmos::base::tendermint::v1beta1::{
+    GetBlockByHeightRequest, GetBlockByHeightResponse, GetLatestBlockRequest, GetLatestBlockResponse,
+};
 use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
-                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
-                                              QueryDelegatorUnbondingDelegationsRequest,
-                                              QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
-                                              QueryValidatorsResponse as QueryValidatorsResponseProto};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
-                                         TxRaw};
+use cosmrs::proto::cosmos::staking::v1beta1::{
+    QueryDelegationRequest, QueryDelegationResponse, QueryDelegatorDelegationsRequest,
+    QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest,
+    QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+    QueryValidatorsResponse as QueryValidatorsResponseProto,
+};
+use cosmrs::proto::cosmos::tx::v1beta1::{
+    GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw,
+};
 use cosmrs::proto::ibc;
 use cosmrs::proto::ibc::core::channel::v1::{QueryChannelRequest, QueryChannelResponse};
 use cosmrs::proto::prost::{DecodeError, Message};
@@ -90,7 +99,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 
 // ABCI Request Paths
 const ABCI_GET_LATEST_BLOCK_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock";
@@ -265,7 +275,9 @@ impl TendermintActivationPolicy {
         Self::PrivateKey(private_key_policy)
     }
 
-    pub fn with_public_key(account_public_key: PublicKey) -> Self { Self::PublicKey(account_public_key) }
+    pub fn with_public_key(account_public_key: PublicKey) -> Self {
+        Self::PublicKey(account_public_key)
+    }
 
     fn generate_account_id(&self, account_prefix: &str) -> Result<AccountId, ErrorReport> {
         match self {
@@ -411,7 +423,9 @@ pub enum TendermintWalletConnectionType {
 }
 
 impl Default for TendermintWalletConnectionType {
-    fn default() -> Self { Self::Native }
+    fn default() -> Self {
+        Self::Native
+    }
 }
 
 pub struct TendermintCoinImpl {
@@ -438,7 +452,9 @@ pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 impl Deref for TendermintCoin {
     type Target = TendermintCoinImpl;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -518,23 +534,33 @@ pub enum IBCError {
 }
 
 impl From<IBCError> for WithdrawError {
-    fn from(err: IBCError) -> Self { WithdrawError::IBCError(err) }
+    fn from(err: IBCError) -> Self {
+        WithdrawError::IBCError(err)
+    }
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
-    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err.to_string()) }
+    fn from(err: DecodeError) -> Self {
+        TendermintCoinRpcError::Prost(err.to_string())
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { TendermintCoinRpcError::InternalError(err.to_string()) }
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self {
+        TendermintCoinRpcError::InternalError(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for WithdrawError {
-    fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        WithdrawError::Transport(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for DelegationError {
-    fn from(err: TendermintCoinRpcError) -> Self { DelegationError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        DelegationError::Transport(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for BalanceError {
@@ -570,21 +596,29 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
 }
 
 impl From<TendermintCoinRpcError> for TradePreimageError {
-    fn from(err: TendermintCoinRpcError) -> Self { TradePreimageError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        TradePreimageError::Transport(err.to_string())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<tendermint_rpc::Error> for TendermintCoinRpcError {
-    fn from(err: tendermint_rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+    fn from(err: tendermint_rpc::Error) -> Self {
+        TendermintCoinRpcError::PerformError(err.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<PerformError> for TendermintCoinRpcError {
-    fn from(err: PerformError) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+    fn from(err: PerformError) -> Self {
+        TendermintCoinRpcError::PerformError(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for RawTransactionError {
-    fn from(err: TendermintCoinRpcError) -> Self { RawTransactionError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        RawTransactionError::Transport(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -593,7 +627,9 @@ pub struct CosmosTransaction {
 }
 
 impl crate::Transaction for CosmosTransaction {
-    fn tx_hex(&self) -> Vec<u8> { self.data.encode_to_vec() }
+    fn tx_hex(&self) -> Vec<u8> {
+        self.data.encode_to_vec()
+    }
 
     fn tx_hash_as_bytes(&self) -> BytesJson {
         let bytes = self.data.encode_to_vec();
@@ -619,11 +655,15 @@ pub enum AccountIdFromPubkeyHexErr {
 }
 
 impl From<FromHexError> for AccountIdFromPubkeyHexErr {
-    fn from(err: FromHexError) -> Self { AccountIdFromPubkeyHexErr::InvalidHexString(err) }
+    fn from(err: FromHexError) -> Self {
+        AccountIdFromPubkeyHexErr::InvalidHexString(err)
+    }
 }
 
 impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
-    fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
+    fn from(err: ErrorReport) -> Self {
+        AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err)
+    }
 }
 
 pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> Result<AccountId, AccountIdFromPubkeyHexErr> {
@@ -657,20 +697,28 @@ enum SearchForSwapTxSpendErr {
 }
 
 impl From<ErrorReport> for SearchForSwapTxSpendErr {
-    fn from(e: ErrorReport) -> Self { SearchForSwapTxSpendErr::Cosmrs(e) }
+    fn from(e: ErrorReport) -> Self {
+        SearchForSwapTxSpendErr::Cosmrs(e)
+    }
 }
 
 impl From<TendermintCoinRpcError> for SearchForSwapTxSpendErr {
-    fn from(e: TendermintCoinRpcError) -> Self { SearchForSwapTxSpendErr::Rpc(e) }
+    fn from(e: TendermintCoinRpcError) -> Self {
+        SearchForSwapTxSpendErr::Rpc(e)
+    }
 }
 
 impl From<DecodeError> for SearchForSwapTxSpendErr {
-    fn from(e: DecodeError) -> Self { SearchForSwapTxSpendErr::Proto(e) }
+    fn from(e: DecodeError) -> Self {
+        SearchForSwapTxSpendErr::Proto(e)
+    }
 }
 
 #[async_trait]
 impl TendermintCommons for TendermintCoin {
-    fn platform_denom(&self) -> &Denom { &self.protocol_info.denom }
+    fn platform_denom(&self) -> &Denom {
+        &self.protocol_info.denom
+    }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.history_sync_state.lock().unwrap() = new_state;
@@ -877,7 +925,9 @@ impl TendermintCoin {
     }
 
     #[inline(always)]
-    fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
+    fn gas_price(&self) -> f64 {
+        self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE)
+    }
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
@@ -3207,7 +3257,9 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<VecDeque<Http
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     #[cfg(feature = "ibc-routing-for-swaps")]
     fn wallet_only(&self, ctx: &MmArc) -> bool {
@@ -3247,7 +3299,9 @@ impl MmCoin for TendermintCoin {
         wallet_only_conf || self.is_ledger_connection()
     }
 
-    fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    fn spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
@@ -3464,7 +3518,9 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { self.protocol_info.decimals }
+    fn decimals(&self) -> u8 {
+        self.protocol_info.decimals
+    }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         // TODO
@@ -3489,7 +3545,9 @@ impl MmCoin for TendermintCoin {
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { self.history_sync_state.lock().unwrap().clone() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        self.history_sync_state.lock().unwrap().clone()
+    }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         Box::new(futures01::future::err("Not implemented".into()))
@@ -3659,23 +3717,37 @@ impl MmCoin for TendermintCoin {
         .await
     }
 
-    fn required_confirmations(&self) -> u64 { 0 }
+    fn required_confirmations(&self) -> u64 {
+        0
+    }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         warn!("set_required_confirmations is not supported for tendermint")
     }
 
-    fn set_requires_notarization(&self, requires_nota: bool) { warn!("TendermintCoin doesn't support notarization") }
+    fn set_requires_notarization(&self, requires_nota: bool) {
+        warn!("TendermintCoin doesn't support notarization")
+    }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { None }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { None }
+    fn mature_confirmations(&self) -> Option<u32> {
+        None
+    }
 
-    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn is_coin_protocol_supported(
         &self,
@@ -3687,16 +3759,22 @@ impl MmCoin for TendermintCoin {
         true
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+    fn on_disabled(&self) -> Result<(), AbortedError> {
+        AbortableSystem::abort_all(&self.abortable_system)
+    }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]
 impl MarketCoinOps for TendermintCoin {
-    fn ticker(&self) -> &str { &self.ticker }
+    fn ticker(&self) -> &str {
+        &self.ticker
+    }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        Ok(self.account_id.to_string())
+    }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let address = account_id_from_raw_pubkey(&self.protocol_info.account_prefix, &pubkey.0)
@@ -3744,7 +3822,9 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
     }
 
-    fn platform_ticker(&self) -> &str { &self.ticker }
+    fn platform_ticker(&self) -> &str {
+        &self.ticker
+    }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
@@ -3891,13 +3971,19 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     #[inline]
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals)
+    }
 
     #[inline]
-    fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+    fn min_trading_vol(&self) -> MmNumber {
+        self.min_tx_amount().into()
+    }
 
     #[inline]
-    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
+    fn should_burn_dex_fee(&self) -> bool {
+        false
+    } // TODO: fix back to true when negotiation version added
 
     fn is_trezor(&self) -> bool {
         match &self.activation_policy {
@@ -4254,10 +4340,15 @@ pub(crate) async fn create_withdraw_msg_as_any(
     ibc_source_channel: Option<ChannelId>,
 ) -> Result<Any, MmError<WithdrawError>> {
     if let Some(channel_id) = ibc_source_channel {
-        MsgTransfer::new_with_default_timeout(channel_id.to_string(), sender, receiver, Coin {
-            denom: denom.clone(),
-            amount: amount.into(),
-        })
+        MsgTransfer::new_with_default_timeout(
+            channel_id.to_string(),
+            sender,
+            receiver,
+            Coin {
+                denom: denom.clone(),
+                amount: amount.into(),
+            },
+        )
         .to_any()
     } else {
         MsgSend {

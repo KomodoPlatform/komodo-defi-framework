@@ -28,7 +28,9 @@ pub enum HDConfirmAddressError {
 }
 
 impl From<TrezorError> for HDConfirmAddressError {
-    fn from(e: TrezorError) -> Self { HDConfirmAddressError::HardwareWalletError(HwError::from(e)) }
+    fn from(e: TrezorError) -> Self {
+        HDConfirmAddressError::HardwareWalletError(HwError::from(e))
+    }
 }
 
 impl From<TrezorProcessingError<RpcTaskError>> for HDConfirmAddressError {

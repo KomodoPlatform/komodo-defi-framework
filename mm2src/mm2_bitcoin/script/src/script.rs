@@ -81,31 +81,47 @@ pub struct Script {
 }
 
 impl From<&'static str> for Script {
-    fn from(s: &'static str) -> Self { Script::new(s.into()) }
+    fn from(s: &'static str) -> Self {
+        Script::new(s.into())
+    }
 }
 
 impl From<Bytes> for Script {
-    fn from(s: Bytes) -> Self { Script::new(s) }
+    fn from(s: Bytes) -> Self {
+        Script::new(s)
+    }
 }
 
 impl From<Vec<u8>> for Script {
-    fn from(v: Vec<u8>) -> Self { Script::new(v.into()) }
+    fn from(v: Vec<u8>) -> Self {
+        Script::new(v.into())
+    }
 }
 
 impl From<Script> for Bytes {
-    fn from(script: Script) -> Self { script.data }
+    fn from(script: Script) -> Self {
+        script.data
+    }
 }
 
 impl Script {
     /// Script constructor.
-    pub fn new(data: Bytes) -> Self { Script { data } }
+    pub fn new(data: Bytes) -> Self {
+        Script { data }
+    }
 
-    pub fn to_bytes(&self) -> Bytes { self.data.clone() }
+    pub fn to_bytes(&self) -> Bytes {
+        self.data.clone()
+    }
 
-    pub fn as_slice(&self) -> &[u8] { self.data.as_slice() }
+    pub fn as_slice(&self) -> &[u8] {
+        self.data.as_slice()
+    }
 
     /// Is empty script
-    pub fn is_empty(&self) -> bool { self.data.len() == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.data.len() == 0
+    }
 
     /// Extra-fast test for pay-to-public-key-hash (P2PKH) scripts.
     pub fn is_pay_to_public_key_hash(&self) -> bool {
@@ -214,7 +230,9 @@ impl Script {
         !self.data.is_empty() && self.data[0] == Opcode::OP_RETURN as u8 && self.subscript(1).is_push_only()
     }
 
-    pub fn subscript(&self, from: usize) -> Script { self.data[from..].to_vec().into() }
+    pub fn subscript(&self, from: usize) -> Script {
+        self.data[from..].to_vec().into()
+    }
 
     pub fn find_and_delete(&self, data: &[u8]) -> Script {
         let mut result = Vec::new();
@@ -593,7 +611,9 @@ impl Iterator for Opcodes<'_> {
 impl ops::Deref for Script {
     type Target = [u8];
 
-    fn deref(&self) -> &Self::Target { &self.data }
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 pub struct Instruction<'a> {

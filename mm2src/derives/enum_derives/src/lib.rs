@@ -3,8 +3,9 @@ use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::fmt;
 use syn::Meta::List;
-use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics,
-          WhereClause};
+use syn::{
+    parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause,
+};
 use syn::{Attribute, NestedMeta, Variant};
 
 mod from_inner;
@@ -232,11 +233,15 @@ impl CompileError {
 }
 
 impl From<CompileError> for TokenStream {
-    fn from(e: CompileError) -> Self { TokenStream2::from(e).into() }
+    fn from(e: CompileError) -> Self {
+        TokenStream2::from(e).into()
+    }
 }
 
 impl From<CompileError> for TokenStream2 {
-    fn from(e: CompileError) -> Self { Error::new(Span::call_site(), e.0).to_compile_error() }
+    fn from(e: CompileError) -> Self {
+        Error::new(Span::call_site(), e.0).to_compile_error()
+    }
 }
 
 /// An information about the derive ident.
@@ -277,7 +282,9 @@ impl<'a> UnnamedInnerField<'a> {
     }
 
     /// Get a type of the field.
-    fn ty(&self) -> &Type { &self.field.ty }
+    fn ty(&self) -> &Type {
+        &self.field.ty
+    }
 }
 
 /// An implementation of `EnumFromInner` and `EnumFromTrait` macros.

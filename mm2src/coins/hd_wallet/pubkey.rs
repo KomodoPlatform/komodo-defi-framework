@@ -27,16 +27,24 @@ pub trait ExtendedPublicKeyOps: FromStr + Sized {
 }
 
 impl ExtendedPublicKeyOps for Secp256k1ExtendedPublicKey {
-    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> {
+        self.derive_child(child_number)
+    }
 
-    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+    fn to_string(&self, prefix: Prefix) -> String {
+        self.to_string(prefix)
+    }
 }
 
 #[cfg(feature = "enable-sia")]
 impl ExtendedPublicKeyOps for Ed25519ExtendedPublicKey {
-    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> {
+        self.derive_child(child_number)
+    }
 
-    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+    fn to_string(&self, prefix: Prefix) -> String {
+        self.to_string(prefix)
+    }
 }
 
 /// This trait should be implemented for coins

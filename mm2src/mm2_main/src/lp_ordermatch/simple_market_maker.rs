@@ -1,19 +1,24 @@
 use crate::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
-use crate::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped,
-                                   TradingBotStopping, VolumeSettings};
+use crate::lp_ordermatch::lp_bot::{
+    RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped, TradingBotStopping, VolumeSettings,
+};
 use crate::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
 use crate::lp_swap::SavedSwap;
-use crate::{lp_ordermatch::{cancel_order, create_maker_order,
-                            lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
-                                     TradingBotState},
-                            update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext,
-                            SetPriceReq},
-            lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
+use crate::{
+    lp_ordermatch::{
+        cancel_order, create_maker_order,
+        lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext, TradingBotState},
+        update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext, SetPriceReq,
+    },
+    lp_swap::{latest_swaps_for_pair, LatestSwapsErr},
+};
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
-use common::{executor::{SpawnFuture, Timer},
-             log::{debug, error, info, warn},
-             Future01CompatExt, HttpStatusCode, StatusCode};
+use common::{
+    executor::{SpawnFuture, Timer},
+    log::{debug, error, info, warn},
+    Future01CompatExt, HttpStatusCode, StatusCode,
+};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -93,7 +98,9 @@ pub enum OrderProcessingError {
 }
 
 impl From<LatestSwapsErr> for OrderProcessingError {
-    fn from(e: LatestSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError(format!("{}", e)) }
+    fn from(e: LatestSwapsErr) -> Self {
+        OrderProcessingError::MyRecentSwapsError(format!("{}", e))
+    }
 }
 
 impl From<GetNonZeroBalance> for OrderProcessingError {
@@ -106,7 +113,9 @@ impl From<GetNonZeroBalance> for OrderProcessingError {
 }
 
 impl From<std::string::String> for OrderProcessingError {
-    fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
+    fn from(error: std::string::String) -> Self {
+        OrderProcessingError::LegacyError(error)
+    }
 }
 
 #[derive(Deserialize)]
@@ -118,7 +127,9 @@ enum PriceSources {
 }
 
 impl Default for PriceSources {
-    fn default() -> Self { PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(ToString::to_string).collect()) }
+    fn default() -> Self {
+        PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(ToString::to_string).collect())
+    }
 }
 
 impl PriceSources {
@@ -151,7 +162,9 @@ pub struct StopSimpleMakerBotRes {
 
 impl StopSimpleMakerBotRes {
     #[allow(dead_code)]
-    pub fn get_result(&self) -> String { self.result.clone() }
+    pub fn get_result(&self) -> String {
+        self.result.clone()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -161,7 +174,9 @@ pub struct StartSimpleMakerBotRes {
 
 impl StartSimpleMakerBotRes {
     #[allow(dead_code)]
-    pub fn get_result(&self) -> String { self.result.clone() }
+    pub fn get_result(&self) -> String {
+        self.result.clone()
+    }
 }
 
 enum VwapSide {
@@ -207,7 +222,9 @@ pub enum SwapUpdateNotificationError {
 }
 
 impl From<LatestSwapsErr> for SwapUpdateNotificationError {
-    fn from(e: LatestSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
+    fn from(e: LatestSwapsErr) -> Self {
+        SwapUpdateNotificationError::MyRecentSwapsError(e)
+    }
 }
 
 impl HttpStatusCode for StartSimpleMakerBotError {
@@ -244,9 +261,13 @@ struct TradingPair {
 }
 
 impl TradingPair {
-    pub fn new(base: String, rel: String) -> TradingPair { TradingPair { base, rel } }
+    pub fn new(base: String, rel: String) -> TradingPair {
+        TradingPair { base, rel }
+    }
 
-    pub fn as_combination(&self) -> String { self.base.clone() + "/" + self.rel.clone().as_str() }
+    pub fn as_combination(&self) -> String {
+        self.base.clone() + "/" + self.rel.clone().as_str()
+    }
 }
 
 pub async fn tear_down_bot(ctx: MmArc) {
@@ -368,10 +389,13 @@ async fn vwap_calculator(
 async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, SimpleCoinMarketMakerCfg>) -> usize {
     let mut nb_orders = 0;
     for (trading_pair, cfg) in cfg_registry.iter() {
-        match cancel_all_orders(ctx.clone(), CancelBy::Pair {
-            base: cfg.base.clone(),
-            rel: cfg.rel.clone(),
-        })
+        match cancel_all_orders(
+            ctx.clone(),
+            CancelBy::Pair {
+                base: cfg.base.clone(),
+                rel: cfg.rel.clone(),
+            },
+        )
         .await
         {
             Ok(resp) => {

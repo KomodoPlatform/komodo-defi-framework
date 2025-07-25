@@ -9,4 +9,5 @@ pub mod init_scan_for_new_addresses;
 pub mod init_withdraw;
 pub mod tendermint;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod lightning;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod lightning;

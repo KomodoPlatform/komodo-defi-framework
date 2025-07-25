@@ -67,7 +67,9 @@ pub enum UtxoSignTxError {
 }
 
 impl From<TrezorError> for UtxoSignTxError {
-    fn from(e: TrezorError) -> Self { UtxoSignTxError::TrezorError(e) }
+    fn from(e: TrezorError) -> Self {
+        UtxoSignTxError::TrezorError(e)
+    }
 }
 
 impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
@@ -94,7 +96,9 @@ impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
 }
 
 impl From<keys::Error> for UtxoSignTxError {
-    fn from(e: keys::Error) -> Self { UtxoSignTxError::ErrorSigning(e) }
+    fn from(e: keys::Error) -> Self {
+        UtxoSignTxError::ErrorSigning(e)
+    }
 }
 
 impl From<TxProviderError> for UtxoSignTxError {

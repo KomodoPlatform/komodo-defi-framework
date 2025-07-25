@@ -54,11 +54,15 @@ impl From<CoinFindError> for ConnectToNodeError {
 }
 
 impl From<std::io::Error> for ConnectToNodeError {
-    fn from(err: std::io::Error) -> ConnectToNodeError { ConnectToNodeError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> ConnectToNodeError {
+        ConnectToNodeError::IOError(err.to_string())
+    }
 }
 
 impl From<ConnectionError> for ConnectToNodeError {
-    fn from(err: ConnectionError) -> ConnectToNodeError { ConnectToNodeError::ConnectionError(err.to_string()) }
+    fn from(err: ConnectionError) -> ConnectToNodeError {
+        ConnectToNodeError::ConnectionError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

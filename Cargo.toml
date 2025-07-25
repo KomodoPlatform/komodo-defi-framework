@@ -106,7 +106,7 @@ futures-timer = "3.0"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 fnv = "1.0.6"
 group = "0.8.0"
-gstuff = { version = "0.7", features = ["nightly"] }
+gstuff = { version = "0.7" }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
 hex = "0.4.2"

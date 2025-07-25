@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
-use db_common::{sqlite::rusqlite::Error as SqlError,
-                sqlite::rusqlite::{params_from_iter, Connection, Row, ToSql},
-                sqlite::string_from_row,
-                sqlite::validate_table_name,
-                sqlite::CHECK_TABLE_EXISTS_SQL};
+use db_common::{
+    sqlite::rusqlite::Error as SqlError,
+    sqlite::rusqlite::{params_from_iter, Connection, Row, ToSql},
+    sqlite::string_from_row,
+    sqlite::validate_table_name,
+    sqlite::CHECK_TABLE_EXISTS_SQL,
+};
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -14,7 +16,9 @@ use std::convert::TryInto;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
 
-pub(crate) fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
+pub(crate) fn block_headers_cache_table(ticker: &str) -> String {
+    ticker.to_owned() + "_block_headers_cache"
+}
 
 fn get_table_name_and_validate(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = block_headers_cache_table(for_coin);

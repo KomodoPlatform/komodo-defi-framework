@@ -89,7 +89,9 @@ pub fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> { Ok(gstuff::slurp(path)) }
+pub fn slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {
+    Ok(gstuff::slurp(path))
+}
 
 pub fn safe_slurp(path: &dyn AsRef<Path>) -> Result<Vec<u8>, String> {
     let mut file = match fs::File::open(path) {

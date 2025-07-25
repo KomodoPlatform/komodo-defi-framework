@@ -21,7 +21,9 @@ pub enum TelegramError {
 }
 
 impl From<SlurpError> for TelegramError {
-    fn from(err: SlurpError) -> Self { TelegramError::RequestError(err) }
+    fn from(err: SlurpError) -> Self {
+        TelegramError::RequestError(err)
+    }
 }
 
 #[derive(Clone)]

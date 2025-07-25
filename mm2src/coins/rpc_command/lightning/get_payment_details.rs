@@ -44,7 +44,9 @@ impl From<CoinFindError> for GetPaymentDetailsError {
 }
 
 impl From<SqlError> for GetPaymentDetailsError {
-    fn from(err: SqlError) -> GetPaymentDetailsError { GetPaymentDetailsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> GetPaymentDetailsError {
+        GetPaymentDetailsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

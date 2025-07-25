@@ -1,17 +1,23 @@
 use super::settle::send_session_settle_request;
 use crate::storage::WalletConnectStorageOps;
-use crate::{error::WalletConnectError,
-            metadata::generate_metadata,
-            session::{Session, SessionKey, SessionType, THIRTY_DAYS},
-            WalletConnectCtxImpl};
+use crate::{
+    error::WalletConnectError,
+    metadata::generate_metadata,
+    session::{Session, SessionKey, SessionType, THIRTY_DAYS},
+    WalletConnectCtxImpl,
+};
 
 use chrono::Utc;
 use mm2_err_handle::map_to_mm::MapToMmResult;
 use mm2_err_handle::prelude::*;
 use relay_rpc::rpc::params::session::ProposeNamespaces;
-use relay_rpc::{domain::{MessageId, Topic},
-                rpc::params::{session_propose::{Proposer, SessionProposeRequest, SessionProposeResponse},
-                              RequestParams, ResponseParamsSuccess}};
+use relay_rpc::{
+    domain::{MessageId, Topic},
+    rpc::params::{
+        session_propose::{Proposer, SessionProposeRequest, SessionProposeResponse},
+        RequestParams, ResponseParamsSuccess,
+    },
+};
 
 /// Creates a new session proposal from topic and metadata.
 pub(crate) async fn send_proposal_request(

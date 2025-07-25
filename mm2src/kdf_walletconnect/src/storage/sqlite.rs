@@ -3,8 +3,10 @@ use common::log::debug;
 use db_common::async_sql_conn::InternalError;
 use db_common::sqlite::rusqlite::Result as SqlResult;
 use db_common::sqlite::{query_single_row, string_from_row, CHECK_TABLE_EXISTS_SQL};
-use db_common::{async_sql_conn::{AsyncConnError, AsyncConnection},
-                sqlite::validate_table_name};
+use db_common::{
+    async_sql_conn::{AsyncConnError, AsyncConnection},
+    sqlite::validate_table_name,
+};
 use futures::lock::{Mutex, MutexGuard};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -45,7 +47,9 @@ impl SqliteSessionStorage {
         Ok(Self { conn: conn.clone() })
     }
 
-    pub(crate) async fn lock_db(&self) -> MutexGuard<'_, AsyncConnection> { self.conn.lock().await }
+    pub(crate) async fn lock_db(&self) -> MutexGuard<'_, AsyncConnection> {
+        self.conn.lock().await
+    }
 }
 
 #[async_trait]
