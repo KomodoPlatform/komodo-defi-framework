@@ -42,7 +42,9 @@ pub fn impl_serializable(ast: &syn::DeriveInput) -> quote::Tokens {
     }
 }
 
-fn serialize_field_size_map(tuple: (usize, &syn::Field)) -> quote::Tokens { serialize_field_size(tuple.0, tuple.1) }
+fn serialize_field_size_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    serialize_field_size(tuple.0, tuple.1)
+}
 
 fn serialize_field_size(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {
@@ -65,7 +67,9 @@ fn serialize_field_size(index: usize, field: &syn::Field) -> quote::Tokens {
     }
 }
 
-fn serialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens { serialize_field(tuple.0, tuple.1) }
+fn serialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    serialize_field(tuple.0, tuple.1)
+}
 
 fn serialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {

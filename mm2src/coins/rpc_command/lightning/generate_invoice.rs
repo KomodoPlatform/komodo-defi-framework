@@ -50,11 +50,15 @@ impl From<CoinFindError> for GenerateInvoiceError {
 }
 
 impl From<SignOrCreationError> for GenerateInvoiceError {
-    fn from(e: SignOrCreationError) -> Self { GenerateInvoiceError::SignOrCreationError(e.to_string()) }
+    fn from(e: SignOrCreationError) -> Self {
+        GenerateInvoiceError::SignOrCreationError(e.to_string())
+    }
 }
 
 impl From<SqlError> for GenerateInvoiceError {
-    fn from(err: SqlError) -> GenerateInvoiceError { GenerateInvoiceError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> GenerateInvoiceError {
+        GenerateInvoiceError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

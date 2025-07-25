@@ -1,23 +1,26 @@
 use crate::context::CoinsActivationContext;
-use crate::platform_coin_with_tokens::{platform_coin_xpub_extractor_rpc_statuses, EnablePlatformCoinWithTokensError,
-                                       GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
-                                       InitPlatformCoinWithTokensInProgressStatus,
-                                       InitPlatformCoinWithTokensTaskManagerShared,
-                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
-                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
-                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
+use crate::platform_coin_with_tokens::{
+    platform_coin_xpub_extractor_rpc_statuses, EnablePlatformCoinWithTokensError, GetPlatformBalance,
+    InitPlatformCoinWithTokensAwaitingStatus, InitPlatformCoinWithTokensInProgressStatus,
+    InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+    PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams, TokenActivationRequest,
+    TokenAsMmCoinInitializer, TokenInitializer, TokenOf,
+};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
-use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
-                                EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy,
-                                EthTokenActivationError, NftActivationRequest, NftProviderEnum};
+use coins::eth::v2_activation::{
+    eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest, EthActivationV2Error,
+    EthActivationV2Request, EthPrivKeyActivationPolicy, EthTokenActivationError, NftActivationRequest, NftProviderEnum,
+};
 use coins::eth::{ChainSpec, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
-            MmCoin, MmCoinEnum};
+use coins::{
+    CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps, MmCoin,
+    MmCoinEnum,
+};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -163,7 +166,9 @@ impl TokenInitializer for Erc20Initializer {
         Ok(tokens)
     }
 
-    fn platform_coin(&self) -> &EthCoin { &self.platform_coin }
+    fn platform_coin(&self) -> &EthCoin {
+        &self.platform_coin
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -177,11 +182,15 @@ pub struct EthWithTokensActivationRequest {
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool {
+        false
+    }
 }
 
 impl ActivationRequestInfo for EthWithTokensActivationRequest {
-    fn is_hw_policy(&self) -> bool { self.platform_request.priv_key_policy.is_hw_policy() }
+    fn is_hw_policy(&self) -> bool {
+        self.platform_request.priv_key_policy.is_hw_policy()
+    }
 }
 
 impl TokenOf for EthCoin {
@@ -195,10 +204,13 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
             return;
         }
 
-        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenDetails {
-            token_address: token.erc20_token_address().unwrap(),
-            decimals: token.decimals(),
-        });
+        self.add_erc_token_info(
+            token.ticker().to_string(),
+            Erc20TokenDetails {
+                token_address: token.erc20_token_address().unwrap(),
+                decimals: token.decimals(),
+            },
+        );
     }
 }
 

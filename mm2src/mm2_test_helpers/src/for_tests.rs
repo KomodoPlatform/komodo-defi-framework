@@ -1553,8 +1553,7 @@ impl MarketMakerIt {
         .with_timeout_secs(timeout_sec)
         .await
         .map_err(|e| ERRL!("{:?}", e))
-        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
-        .flatten()
+        .and_then(|inner_result| inner_result)
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.

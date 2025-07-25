@@ -48,7 +48,9 @@ impl AsSqlNamedParams for OwnedSqlNamedParams {
     }
 }
 
-pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
+pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> {
+    row.get(0)
+}
 
 pub fn query_single_row<T, P, F>(conn: &Connection, query: &str, params: P, map_fn: F) -> Result<Option<T>, SqlError>
 where
@@ -188,7 +190,9 @@ impl SafeTableName {
 
     /// Retrieves the table name.
     #[inline(always)]
-    pub fn inner(&self) -> &str { &self.0 }
+    pub fn inner(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Calculates the offset to skip records by uuid.
@@ -391,7 +395,9 @@ impl SqlParamsBuilder {
         params.into_iter().map(|param| self.push_param(param)).collect()
     }
 
-    pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
+    pub(crate) fn params(&self) -> &OwnedSqlParams {
+        &self.params
+    }
 }
 
 /// TODO move it to `mm2_err_handle::common_errors` when it's merged.
@@ -399,21 +405,29 @@ impl SqlParamsBuilder {
 pub struct StringError(String);
 
 impl fmt::Display for StringError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl StdError for StringError {}
 
 impl From<&'static str> for StringError {
-    fn from(s: &str) -> Self { StringError(s.to_owned()) }
+    fn from(s: &str) -> Self {
+        StringError(s.to_owned())
+    }
 }
 
 impl From<String> for StringError {
-    fn from(s: String) -> Self { StringError(s) }
+    fn from(s: String) -> Self {
+        StringError(s)
+    }
 }
 
 impl StringError {
-    pub fn into_boxed(self) -> Box<StringError> { Box::new(self) }
+    pub fn into_boxed(self) -> Box<StringError> {
+        Box::new(self)
+    }
 }
 
 /// Internal function to validate identifiers such as table names.

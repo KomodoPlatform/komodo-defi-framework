@@ -8,8 +8,10 @@
 /// You need the bridge for connecting from the Suite, it can be downloaded from trezor.io.
 /// Do not use pin for the created wallet.
 /// Be aware that when you rebuild the firmware the emulator flash memory file emulator.img is recreated (so save it before rebuilding code)
-use super::{protocol::{Link, Protocol, ProtocolV1},
-            ProtoMessage, Transport};
+use super::{
+    protocol::{Link, Protocol, ProtocolV1},
+    ProtoMessage, Transport,
+};
 use crate::transport::ConnectableDeviceWrapper;
 use crate::{TrezorError, TrezorResult};
 use async_std::{io, net::UdpSocket};
@@ -152,11 +154,19 @@ impl UdpTransport {
 
 #[async_trait]
 impl Transport for UdpTransport {
-    async fn session_begin(&mut self) -> TrezorResult<()> { self.protocol.session_begin().await }
-    async fn session_end(&mut self) -> TrezorResult<()> { self.protocol.session_end().await }
+    async fn session_begin(&mut self) -> TrezorResult<()> {
+        self.protocol.session_begin().await
+    }
+    async fn session_end(&mut self) -> TrezorResult<()> {
+        self.protocol.session_end().await
+    }
 
-    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> { self.protocol.write(message).await }
-    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> { self.protocol.read().await }
+    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> {
+        self.protocol.write(message).await
+    }
+    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> {
+        self.protocol.read().await
+    }
 }
 
 #[async_trait]
@@ -170,5 +180,7 @@ impl ConnectableDeviceWrapper for UdpAvailableDevice {
         find_devices().await
     }
 
-    async fn connect(&self) -> TrezorResult<Self::TransportType> { UdpAvailableDevice::connect(self).await }
+    async fn connect(&self) -> TrezorResult<Self::TransportType> {
+        UdpAvailableDevice::connect(self).await
+    }
 }

@@ -15,7 +15,9 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, PeerDecodedResponse};
+use crate::lp_network::{
+    add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, PeerDecodedResponse,
+};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -57,19 +59,27 @@ impl HttpStatusCode for NodeVersionError {
 }
 
 impl From<serde_json::Error> for NodeVersionError {
-    fn from(e: serde_json::Error) -> Self { NodeVersionError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        NodeVersionError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<NetIdError> for NodeVersionError {
-    fn from(e: NetIdError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: NetIdError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<ParseAddressError> for NodeVersionError {
-    fn from(e: ParseAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: ParseAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<RelayAddressError> for NodeVersionError {
-    fn from(e: RelayAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: RelayAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -88,7 +98,9 @@ pub struct NodeVersionStat {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> { Ok(()) }
+fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
@@ -96,7 +108,9 @@ fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), Strin
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> { Ok(()) }
+fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
@@ -104,7 +118,9 @@ fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionSta
 }
 
 #[cfg(target_arch = "wasm32")]
-fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
+fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
@@ -112,7 +128,9 @@ fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(Vec::new()) }
+fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
+    Ok(Vec::new())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {

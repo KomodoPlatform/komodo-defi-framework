@@ -39,7 +39,9 @@ impl From<RpcTaskError> for InitUtxoStandardError {
 
 impl From<CryptoCtxError> for InitUtxoStandardError {
     /// `CryptoCtx` is expected to be initialized already.
-    fn from(crypto_err: CryptoCtxError) -> Self { InitUtxoStandardError::Internal(crypto_err.to_string()) }
+    fn from(crypto_err: CryptoCtxError) -> Self {
+        InitUtxoStandardError::Internal(crypto_err.to_string())
+    }
 }
 
 impl From<CreateTxHistoryStorageError> for InitUtxoStandardError {

@@ -177,7 +177,9 @@ impl ConnectionManager {
     }
 
     /// Returns all the server addresses.
-    pub fn get_all_server_addresses(&self) -> Vec<String> { self.read_connections().keys().cloned().collect() }
+    pub fn get_all_server_addresses(&self) -> Vec<String> {
+        self.read_connections().keys().cloned().collect()
+    }
 
     /// Returns all the connections.
     pub fn get_all_connections(&self) -> Vec<Arc<ElectrumConnection>> {
@@ -219,7 +221,9 @@ impl ConnectionManager {
     }
 
     /// Returns a boolean `true` if the connection pool is empty, `false` otherwise.
-    pub fn is_connections_pool_empty(&self) -> bool { self.read_connections().is_empty() }
+    pub fn is_connections_pool_empty(&self) -> bool {
+        self.read_connections().is_empty()
+    }
 
     /// Subscribe the list of addresses to our active connections.
     ///
@@ -456,7 +460,9 @@ impl ConnectionManager {
 // Abstractions over the accesses of the inner fields of the connection manager.
 impl ConnectionManager {
     #[inline]
-    pub fn config(&self) -> &ManagerConfig { &self.0.config }
+    pub fn config(&self) -> &ManagerConfig {
+        &self.0.config
+    }
 
     #[inline]
     fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
@@ -507,7 +513,9 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
+    fn notify_below_min_connected(&self) {
+        self.0.below_min_connected_notifier.notify().ok();
+    }
 
     #[inline]
     fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
@@ -515,7 +523,9 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> {
+        &self.0.electrum_client
+    }
 
     #[inline]
     fn get_client(&self) -> Option<ElectrumClient> {

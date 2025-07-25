@@ -12,17 +12,16 @@ use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookRespon
 use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
-use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, delete_wallet, enable_qrc20, enable_utxo_v2_electrum,
-                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
-                                  get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf,
-                                  sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+use mm2_test_helpers::for_tests::{
+    account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header, check_recent_swaps,
+    delete_wallet, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
+    get_new_address, get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
+    start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
+    wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy,
+    Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT,
+    ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+    RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -191,10 +190,14 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
 }
 
 #[test]
-fn log_test_status() { common::log::tests::test_status() }
+fn log_test_status() {
+    common::log::tests::test_status()
+}
 
 #[test]
-fn log_test_printed_dashboard() { common::log::tests::test_printed_dashboard() }
+fn log_test_printed_dashboard() {
+    common::log::tests::test_printed_dashboard()
+}
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -366,9 +369,10 @@ fn test_check_balance_on_order_post() {
     // Enable coins. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm, &[
-            "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-        ])),
+        block_on(enable_coins_eth_electrum(
+            &mm,
+            &["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]
+        )),
     );
     // issue sell request by setting base/rel price
 
@@ -1746,21 +1750,31 @@ fn test_electrum_enable_conn_errors() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Using working servers and few else with random ports to trigger "connection refused"
-    block_on(enable_electrum(&mm_bob, "RICK", false, &[
-        "electrum3.cipig.net:10020",
-        "electrum2.cipig.net:10020",
-        "electrum1.cipig.net:10020",
-        "electrum1.cipig.net:60020",
-        "electrum1.cipig.net:60021",
-    ]));
+    block_on(enable_electrum(
+        &mm_bob,
+        "RICK",
+        false,
+        &[
+            "electrum3.cipig.net:10020",
+            "electrum2.cipig.net:10020",
+            "electrum1.cipig.net:10020",
+            "electrum1.cipig.net:60020",
+            "electrum1.cipig.net:60021",
+        ],
+    ));
     // use random domain name to trigger name is not resolved
-    block_on(enable_electrum(&mm_bob, "MORTY", false, &[
-        "electrum3.cipig.net:10021",
-        "electrum2.cipig.net:10021",
-        "electrum1.cipig.net:10021",
-        "random-electrum-domain-name1.net:60020",
-        "random-electrum-domain-name2.net:60020",
-    ]));
+    block_on(enable_electrum(
+        &mm_bob,
+        "MORTY",
+        false,
+        &[
+            "electrum3.cipig.net:10021",
+            "electrum2.cipig.net:10021",
+            "electrum1.cipig.net:10021",
+            "random-electrum-domain-name1.net:60020",
+            "random-electrum-domain-name2.net:60020",
+        ],
+    ));
 }
 
 #[test]
@@ -2347,10 +2361,11 @@ fn test_metrics_method() {
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
         let metrics = request_metrics(mm);
-        match find_metrics_in_json(metrics, "tx.history.request.count", &[
-            ("coin", "RICK"),
-            ("method", "blockchain.scripthash.get_history"),
-        ])
+        match find_metrics_in_json(
+            metrics,
+            "tx.history.request.count",
+            &[("coin", "RICK"), ("method", "blockchain.scripthash.get_history")],
+        )
         .unwrap()
         {
             MetricType::Counter { value, .. } => value,
@@ -2800,11 +2815,16 @@ fn test_add_delegation_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum(
+        &mm,
+        "tQTUM",
+        false,
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
+    ));
     log!("{}", json.balance);
 
     let rpc_endpoint = "experimental::staking::delegate";
@@ -2945,11 +2965,16 @@ fn test_query_delegations_info_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum(
+        &mm,
+        "tQTUM",
+        false,
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
+    ));
     log!("{}", json.balance);
 
     let rpc_endpoint = "experimental::staking::query::delegations";
@@ -3753,7 +3778,9 @@ fn test_get_raw_transaction() {
 #[test]
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
+fn test_qrc20_tx_history() {
+    block_on(test_qrc20_history_impl(None));
+}
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -4560,11 +4587,16 @@ fn test_get_current_mtp() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
-    let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]));
+    let electrum = block_on(enable_electrum(
+        &mm,
+        "KMD",
+        false,
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+    ));
     log!("{:?}", electrum);
 
     let rc = block_on(mm.rpc(&json!({
@@ -6405,10 +6437,10 @@ fn test_delete_wallet_rpc() {
     let mm_wallet_2 = MarketMakerIt::start(wallet_2_conf.conf, wallet_2_conf.rpc_password, None).unwrap();
 
     let get_wallet_names_2 = block_on(get_wallet_names(&mm_wallet_2));
-    assert_eq!(get_wallet_names_2.wallet_names, vec![
-        "active_wallet",
-        "wallet_to_be_deleted"
-    ]);
+    assert_eq!(
+        get_wallet_names_2.wallet_names,
+        vec!["active_wallet", "wallet_to_be_deleted"]
+    );
     assert_eq!(get_wallet_names_2.activated_wallet.as_deref(), Some(wallet_2_name));
 
     // Try to delete the active wallet - should fail
@@ -6667,12 +6699,12 @@ mod trezor_tests {
     use mm2_main::init_hw::init_trezor_user_action;
     use mm2_main::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
     use mm2_test_helpers::electrums::tbtc_electrums;
-    use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf,
-                                      eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,
-                                      init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
-                                      mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf,
-                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_CHAIN_ID,
-                                      ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
+    use mm2_test_helpers::for_tests::{
+        enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf, eth_testnet_conf_trezor, init_trezor_rpc,
+        init_trezor_status_rpc, init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
+        mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf, withdraw_status, MarketMakerIt,
+        Mm2TestConf, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
+    };
     use mm2_test_helpers::structs::{InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus};
     use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcInitReq, RpcTaskStatus};
     use serde_json::{self as json, json, Value as Json};

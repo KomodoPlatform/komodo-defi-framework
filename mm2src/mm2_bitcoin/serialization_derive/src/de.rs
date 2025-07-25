@@ -37,7 +37,9 @@ pub fn impl_deserializable(ast: &syn::DeriveInput) -> quote::Tokens {
     }
 }
 
-fn deserialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens { deserialize_field(tuple.0, tuple.1) }
+fn deserialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    deserialize_field(tuple.0, tuple.1)
+}
 
 fn deserialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {

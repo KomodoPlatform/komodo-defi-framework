@@ -1,7 +1,8 @@
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
+use crate::utxo_activation::init_utxo_standard_statuses::{
+    UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus, UtxoStandardUserAction,
+};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use coins::coin_balance::EnableCoinBalanceOps;
 use coins::hd_wallet::RpcTaskXPubExtractor;

@@ -90,7 +90,9 @@ impl Gravity {
         }
     }
     #[cfg(target_arch = "wasm32")]
-    fn chunk2log(&self, chunk: String) { self.landing.push(chunk); }
+    fn chunk2log(&self, chunk: String) {
+        self.landing.push(chunk);
+    }
 
     /// Prints the collected log chunks.  
     /// `println!` is used for compatibility with unit test stdout capturing.
@@ -329,33 +331,57 @@ pub trait TagParam<'a> {
 }
 
 impl<'a> TagParam<'a> for &'a str {
-    fn key(&self) -> String { String::from(&self[..]) }
-    fn val(&self) -> Option<String> { None }
+    fn key(&self) -> String {
+        String::from(&self[..])
+    }
+    fn val(&self) -> Option<String> {
+        None
+    }
 }
 
 impl TagParam<'_> for String {
-    fn key(&self) -> String { self.clone() }
-    fn val(&self) -> Option<String> { None }
+    fn key(&self) -> String {
+        self.clone()
+    }
+    fn val(&self) -> Option<String> {
+        None
+    }
 }
 
 impl<'a> TagParam<'a> for (&'a str, &'a str) {
-    fn key(&self) -> String { String::from(self.0) }
-    fn val(&self) -> Option<String> { Some(String::from(self.1)) }
+    fn key(&self) -> String {
+        String::from(self.0)
+    }
+    fn val(&self) -> Option<String> {
+        Some(String::from(self.1))
+    }
 }
 
 impl<'a> TagParam<'a> for (String, &'a str) {
-    fn key(&self) -> String { self.0.clone() }
-    fn val(&self) -> Option<String> { Some(String::from(self.1)) }
+    fn key(&self) -> String {
+        self.0.clone()
+    }
+    fn val(&self) -> Option<String> {
+        Some(String::from(self.1))
+    }
 }
 
 impl<'a> TagParam<'a> for (&'a str, i32) {
-    fn key(&self) -> String { String::from(self.0) }
-    fn val(&self) -> Option<String> { Some(self.1.to_string()) }
+    fn key(&self) -> String {
+        String::from(self.0)
+    }
+    fn val(&self) -> Option<String> {
+        Some(self.1.to_string())
+    }
 }
 
 impl TagParam<'_> for (String, String) {
-    fn key(&self) -> String { self.0.clone() }
-    fn val(&self) -> Option<String> { Some(self.1.clone()) }
+    fn key(&self) -> String {
+        self.0.clone()
+    }
+    fn val(&self) -> Option<String> {
+        Some(self.1.clone())
+    }
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -628,18 +654,26 @@ pub struct LogArc(pub Arc<LogState>);
 
 impl Deref for LogArc {
     type Target = LogState;
-    fn deref(&self) -> &LogState { &self.0 }
+    fn deref(&self) -> &LogState {
+        &self.0
+    }
 }
 
 impl LogArc {
     /// Create LogArc from real `LogState`.
-    pub fn new(state: LogState) -> LogArc { LogArc(Arc::new(state)) }
+    pub fn new(state: LogState) -> LogArc {
+        LogArc(Arc::new(state))
+    }
 
     /// Try to obtain the `LogState` from the weak pointer.
-    pub fn from_weak(weak: &LogWeak) -> Option<LogArc> { weak.0.upgrade().map(LogArc) }
+    pub fn from_weak(weak: &LogWeak) -> Option<LogArc> {
+        weak.0.upgrade().map(LogArc)
+    }
 
     /// Create a weak pointer to `LogState`.
-    pub fn weak(&self) -> LogWeak { LogWeak(Arc::downgrade(&self.0)) }
+    pub fn weak(&self) -> LogWeak {
+        LogWeak(Arc::downgrade(&self.0))
+    }
 }
 
 #[derive(Default)]
@@ -647,9 +681,13 @@ pub struct LogWeak(pub Weak<LogState>);
 
 impl LogWeak {
     /// Create a default MmWeak without allocating any memory.
-    pub fn new() -> LogWeak { Default::default() }
+    pub fn new() -> LogWeak {
+        Default::default()
+    }
 
-    pub fn dropped(&self) -> bool { self.0.strong_count() == 0 }
+    pub fn dropped(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 
 /// The state used to periodically log the dashboard.
@@ -768,7 +806,9 @@ impl LogState {
         }
     }
 
-    pub fn set_level(&mut self, level: LogLevel) { self.level = level; }
+    pub fn set_level(&mut self, level: LogLevel) {
+        self.level = level;
+    }
 
     /// The operation is considered "in progress" while the `StatusHandle` exists.
     ///
@@ -977,7 +1017,9 @@ impl LogState {
         }
     }
     #[cfg(target_arch = "wasm32")]
-    pub fn thread_gravity_on(&self) -> Result<(), String> { Ok(()) }
+    pub fn thread_gravity_on(&self) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Start intercepting the `log!` invocations happening on the current thread.
     #[cfg(not(target_arch = "wasm32"))]
@@ -994,7 +1036,9 @@ impl LogState {
         Ok(())
     }
     #[cfg(target_arch = "wasm32")]
-    pub fn register_my_thread(&self) -> Result<(), String> { Ok(()) }
+    pub fn register_my_thread(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -23,8 +23,10 @@ use crate::database::init_and_migrate_sql_db;
 use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_ordermatch::{
+    broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context, lp_ordermatch_loop,
+    orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError,
+};
 use crate::lp_swap::swap_kick_starts;
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::rpc::spawn_rpc;
@@ -40,8 +42,9 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::p2p_ctx::P2PContext;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
-                 WssCerts};
+use mm2_libp2p::{
+    spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime, WssCerts,
+};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json as json;
@@ -59,8 +62,10 @@ cfg_native! {
     use rustls_pemfile as pemfile;
 }
 
-#[path = "lp_init/init_context.rs"] mod init_context;
-#[path = "lp_init/init_hw.rs"] pub mod init_hw;
+#[path = "lp_init/init_context.rs"]
+mod init_context;
+#[path = "lp_init/init_hw.rs"]
+pub mod init_hw;
 
 cfg_wasm32! {
     use mm2_net::event_streaming::wasm_event_stream::handle_worker_stream;
@@ -102,7 +107,9 @@ pub enum P2PInitError {
 }
 
 impl From<NetIdError> for P2PInitError {
-    fn from(e: NetIdError) -> Self { P2PInitError::InvalidNetId(e) }
+    fn from(e: NetIdError) -> Self {
+        P2PInitError::InvalidNetId(e)
+    }
 }
 
 impl From<AdexBehaviourError> for P2PInitError {
@@ -184,7 +191,9 @@ impl From<P2PInitError> for MmInitError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for MmInitError {
-    fn from(e: SqlError) -> Self { MmInitError::ErrorSqliteInitializing(e.to_string()) }
+    fn from(e: SqlError) -> Self {
+        MmInitError::ErrorSqliteInitializing(e.to_string())
+    }
 }
 
 impl From<OrdermatchInitError> for MmInitError {
@@ -220,7 +229,9 @@ impl From<InitMessageServiceError> for MmInitError {
 }
 
 impl From<HwError> for MmInitError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<RpcTaskError> for MmInitError {
@@ -248,7 +259,9 @@ impl From<HwProcessingError<RpcTaskError>> for MmInitError {
 }
 
 impl From<InternalError> for MmInitError {
-    fn from(e: InternalError) -> Self { MmInitError::Internal(e.take()) }
+    fn from(e: InternalError) -> Self {
+        MmInitError::Internal(e.take())
+    }
 }
 
 impl MmInitError {

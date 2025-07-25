@@ -1,6 +1,8 @@
 use crate::eth::EthTxFeeDetails;
-use crate::nft::nft_structs::{Chain, Nft, NftList, NftListFilters, NftTokenAddrId, NftTransferHistory,
-                              NftTransferHistoryFilters, NftsTransferHistoryList, TransferMeta};
+use crate::nft::nft_structs::{
+    Chain, Nft, NftList, NftListFilters, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
+    NftsTransferHistoryList, TransferMeta,
+};
 use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
@@ -12,8 +14,10 @@ use std::num::NonZeroUsize;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) mod db_test_helpers;
-#[cfg(not(target_arch = "wasm32"))] pub(crate) mod sql_storage;
-#[cfg(target_arch = "wasm32")] pub(crate) mod wasm;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod sql_storage;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm;
 
 /// Represents the outcome of an attempt to remove an NFT.
 #[derive(Debug, PartialEq)]

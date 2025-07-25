@@ -42,7 +42,9 @@ pub enum EthWalletConnectError {
 }
 
 impl From<WalletConnectError> for EthWalletConnectError {
-    fn from(value: WalletConnectError) -> Self { Self::WalletConnectError(value) }
+    fn from(value: WalletConnectError) -> Self {
+        Self::WalletConnectError(value)
+    }
 }
 
 /// Eth Params required for constructing WalletConnect transaction.

@@ -4,9 +4,11 @@ use std::convert::TryFrom;
 use crate::utxo::utxo_common;
 use chain::hash::H256;
 use crypto::StandardHDPath;
-use kdf_walletconnect::{chain::{WcChainId, WcRequestMethods},
-                        error::WalletConnectError,
-                        WalletConnectCtx, WcTopic};
+use kdf_walletconnect::{
+    chain::{WcChainId, WcRequestMethods},
+    error::WalletConnectError,
+    WalletConnectCtx, WcTopic,
+};
 use keys::{CompactSignature, Public};
 use mm2_err_handle::prelude::{MmError, MmResult};
 
