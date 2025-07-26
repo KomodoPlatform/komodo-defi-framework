@@ -1,4 +1,5 @@
 use crate::tendermint;
+use crate::z_coin::ZcoinProtocolInfo;
 use crate::CoinProtocol;
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
@@ -56,6 +57,8 @@ pub struct HdAddressInfo {
     pub pubkey: String,
     pub address: String,
     pub priv_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewing_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,6 +107,7 @@ pub enum OfflineKeysError {
 enum PrefixValues {
     Utxo { wif_type: u8, pub_type: u8, p2sh_type: u8 },
     Tendermint { account_prefix: String },
+    Zhtlc { protocol_info: ZcoinProtocolInfo },
 }
 
 impl HttpStatusCode for OfflineKeysError {
@@ -194,6 +198,9 @@ fn extract_prefix_values(
                 ))),
             }
         },
+        CoinProtocol::ZHTLC(protocol_info) => Ok(Some(PrefixValues::Zhtlc { 
+            protocol_info: protocol_info.clone() 
+        })),
         _ => Err(OfflineKeysError::Internal(format!(
             "Unsupported protocol for {}: {:?}",
             ticker, protocol
@@ -364,15 +371,27 @@ async fn offline_hd_keys_export_internal(
 
                     (address, priv_key)
                 },
+                Some(PrefixValues::Zhtlc { .. }) => {
+                    return MmError::err(OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: "ZHTLC HD key derivation not yet implemented".to_string(),
+                    });
+                },
             };
 
             let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
+
+            let viewing_key = match &prefix_values {
+                Some(PrefixValues::Zhtlc { .. }) => None,
+                _ => None,
+            };
 
             addresses.push(HdAddressInfo {
                 derivation_path,
                 pubkey,
                 address,
                 priv_key,
+                viewing_key,
             });
         }
 
@@ -473,6 +492,12 @@ async fn offline_iguana_keys_export_internal(
 
                 (address, priv_key)
             },
+            Some(PrefixValues::Zhtlc { .. }) => {
+                return MmError::err(OfflineKeysError::KeyDerivationFailed {
+                    ticker: ticker.clone(),
+                    error: "ZHTLC Iguana key derivation not yet implemented".to_string(),
+                });
+            },
         };
 
         result.push(CoinKeyInfo {
@@ -530,8 +555,8 @@ pub async fn get_private_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json::json;
+    use mm2_core::mm_ctx::MmCtxBuilder;
 
     const TEST_MNEMONIC: &str =
         "prosper boss develop coconut warrior silly cabin trial person glass toilet mixed push spirit love";
@@ -883,5 +908,20 @@ mod tests {
             OfflineKeysError::InvalidParametersForMode => {},
             _ => panic!("Expected InvalidParametersForMode error"),
         }
+    }
+
+    #[test]
+    fn test_zhtlc_key_format_validation() {
+        let expected_first_address = "zs1tc85uguljgmhrhreqnsphanu4xura9lcn6zmz7qr3unsq5yr34kvl6938rvz7d2uml5g53ae3ys";
+        let expected_first_private_key = "secret-extended-key-main1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpke4auwnrwhpzqfzdudqn2t34t08d8rfvx3df02cgff82x5spg7lq28tvsr9vvwx6sdsymjc7fgk2ued06z9rzkp6lfczlx5ykj3mrqcy4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4cg05smz";
+        let expected_first_viewing_key = "zxviews1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpkepkc20seu8dr44353s5ydt2vmlzr9jmk6dnqx2su6g2tp7jetqalgd45qweck6r54dexp2397m3qj2kwd5d8rq4fdu3lddh7fjc4awv4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4czeh3g2";
+        
+        assert!(expected_first_address.starts_with("zs1"));
+        assert!(expected_first_private_key.starts_with("secret-extended-key-main"));
+        assert!(expected_first_viewing_key.starts_with("zxviews"));
+        
+        assert_eq!(expected_first_address.len(), 78);
+        assert!(expected_first_private_key.len() > 100);
+        assert!(expected_first_viewing_key.len() > 100);
     }
 }
