@@ -198,8 +198,8 @@ fn extract_prefix_values(
                 ))),
             }
         },
-        CoinProtocol::ZHTLC(protocol_info) => Ok(Some(PrefixValues::Zhtlc { 
-            protocol_info: protocol_info.clone() 
+        CoinProtocol::ZHTLC(protocol_info) => Ok(Some(PrefixValues::Zhtlc {
+            protocol_info: protocol_info.clone(),
         })),
         _ => Err(OfflineKeysError::Internal(format!(
             "Unsupported protocol for {}: {:?}",
@@ -262,16 +262,16 @@ async fn offline_hd_keys_export_internal(
 
         let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx).map_err(|e| OfflineKeysError::Internal(
-            format!("Failed to get crypto context: {}", e),
-        ))?;
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)
+            .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {}", e)))?;
 
         let global_hd_ctx = match crypto_ctx.key_pair_policy() {
             KeyPairPolicy::GlobalHDAccount(hd_ctx) => hd_ctx.clone(),
             KeyPairPolicy::Iguana => {
                 return MmError::err(OfflineKeysError::KeyDerivationFailed {
                     ticker: ticker.clone(),
-                    error: "HD key derivation requires GlobalHDAccount mode. Please initialize with HD wallet.".to_string(),
+                    error: "HD key derivation requires GlobalHDAccount mode. Please initialize with HD wallet."
+                        .to_string(),
                 });
             },
         };
@@ -324,7 +324,8 @@ async fn offline_hd_keys_export_internal(
                         AddressFormat::Standard
                     };
 
-                    let bech32_hrp = coin_conf.get("bech32_hrp")
+                    let bech32_hrp = coin_conf
+                        .get("bech32_hrp")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
@@ -555,8 +556,8 @@ pub async fn get_private_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use mm2_core::mm_ctx::MmCtxBuilder;
+    use serde_json::json;
 
     const TEST_MNEMONIC: &str =
         "prosper boss develop coconut warrior silly cabin trial person glass toilet mixed push spirit love";
@@ -564,7 +565,7 @@ mod tests {
     #[tokio::test]
     async fn test_btc_hd_key_derivation() {
         use mm2_test_helpers::for_tests::btc_with_spv_conf;
-        
+
         let mut btc_conf = btc_with_spv_conf();
         btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
@@ -573,7 +574,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
@@ -634,7 +635,7 @@ mod tests {
     #[tokio::test]
     async fn test_btc_segwit_hd_key_derivation() {
         use mm2_test_helpers::for_tests::btc_segwit_conf;
-        
+
         let mut btc_segwit_conf = btc_segwit_conf();
         btc_segwit_conf["derivation_path"] = json!("m/84'/0'");
         let ctx = MmCtxBuilder::new()
@@ -643,7 +644,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
@@ -693,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_eth_hd_key_derivation() {
         use mm2_test_helpers::for_tests::eth_dev_conf;
-        
+
         let mut eth_conf = eth_dev_conf();
         eth_conf["derivation_path"] = json!("m/44'/60'");
         let ctx = MmCtxBuilder::new()
@@ -702,7 +703,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
@@ -752,7 +753,7 @@ mod tests {
     #[tokio::test]
     async fn test_atom_hd_key_derivation() {
         use mm2_test_helpers::for_tests::atom_testnet_conf;
-        
+
         let mut atom_conf = atom_testnet_conf();
         atom_conf["derivation_path"] = json!("m/44'/118'");
         let ctx = MmCtxBuilder::new()
@@ -761,7 +762,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = GetPrivateKeysRequest {
@@ -815,7 +816,7 @@ mod tests {
     #[tokio::test]
     async fn test_iguana_key_derivation() {
         use mm2_test_helpers::for_tests::btc_with_spv_conf;
-        
+
         let mut btc_conf = btc_with_spv_conf();
         btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
@@ -824,7 +825,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let req = OfflineKeysRequest {
@@ -849,7 +850,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_cases() {
         use mm2_test_helpers::for_tests::btc_with_spv_conf;
-        
+
         let mut btc_conf = btc_with_spv_conf();
         btc_conf["derivation_path"] = json!("m/44'/0'");
         let ctx = MmCtxBuilder::new()
@@ -858,7 +859,7 @@ mod tests {
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
         let invalid_range_req = GetPrivateKeysRequest {
@@ -915,11 +916,11 @@ mod tests {
         let expected_first_address = "zs1tc85uguljgmhrhreqnsphanu4xura9lcn6zmz7qr3unsq5yr34kvl6938rvz7d2uml5g53ae3ys";
         let expected_first_private_key = "secret-extended-key-main1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpke4auwnrwhpzqfzdudqn2t34t08d8rfvx3df02cgff82x5spg7lq28tvsr9vvwx6sdsymjc7fgk2ued06z9rzkp6lfczlx5ykj3mrqcy4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4cg05smz";
         let expected_first_viewing_key = "zxviews1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpkepkc20seu8dr44353s5ydt2vmlzr9jmk6dnqx2su6g2tp7jetqalgd45qweck6r54dexp2397m3qj2kwd5d8rq4fdu3lddh7fjc4awv4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4czeh3g2";
-        
+
         assert!(expected_first_address.starts_with("zs1"));
         assert!(expected_first_private_key.starts_with("secret-extended-key-main"));
         assert!(expected_first_viewing_key.starts_with("zxviews"));
-        
+
         assert_eq!(expected_first_address.len(), 78);
         assert!(expected_first_private_key.len() > 100);
         assert!(expected_first_viewing_key.len() > 100);
