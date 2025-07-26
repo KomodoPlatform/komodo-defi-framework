@@ -5,7 +5,7 @@ use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
-use crypto::{Bip32DerPathOps, CryptoCtx, KeyPairPolicy, StandardHDPath, HDPathToCoin};
+use crypto::{Bip32DerPathOps, CryptoCtx, HDPathToCoin, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use http::StatusCode;
 use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes, Private};
@@ -14,9 +14,10 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::str::FromStr;
-use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address};
-use zcash_primitives::zip32::{ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
+use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key,
+                                     encode_payment_address};
 use zcash_primitives::consensus::Parameters;
+use zcash_primitives::zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum KeyExportMode {
@@ -377,50 +378,52 @@ async fn offline_hd_keys_export_internal(
                 },
                 Some(PrefixValues::Zhtlc { protocol_info: _ }) => {
                     let mut spending_key = ExtendedSpendingKey::master(global_hd_ctx.root_seed_bytes());
-                    
+
                     let z_derivation_path_str = coin_conf["protocol"]["protocol_data"]["z_derivation_path"]
                         .as_str()
                         .ok_or_else(|| OfflineKeysError::Internal("z_derivation_path not found".to_string()))?;
-                    
-                    let z_derivation_path: HDPathToCoin = z_derivation_path_str.parse()
-                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {:?}", e)))?;
-                    
+
+                    let z_derivation_path: HDPathToCoin = z_derivation_path_str.parse().map_err(|e| {
+                        OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {:?}", e))
+                    })?;
+
                     let path_to_account = z_derivation_path
                         .to_derivation_path()
                         .into_iter()
                         .map(|child| ChildIndex::from_index(child.0))
                         .chain(std::iter::once(ChildIndex::Hardened(account_index)));
-                    
+
                     for child_index in path_to_account {
                         spending_key = spending_key.derive_child(child_index);
                     }
-                    
+
                     if index > 0 {
                         // Derive change (0) and address index
                         spending_key = spending_key.derive_child(ChildIndex::NonHardened(0)); // change
-                        spending_key = spending_key.derive_child(ChildIndex::NonHardened(index)); // address index
+                        spending_key = spending_key.derive_child(ChildIndex::NonHardened(index));
+                        // address index
                     }
 
                     let (_, payment_address) = spending_key.default_address().unwrap();
 
-                    let consensus_params: ZcoinConsensusParams = serde_json::from_value(
-                        coin_conf["protocol"]["protocol_data"]["consensus_params"].clone()
-                    ).map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e)))?;
+                    let consensus_params: ZcoinConsensusParams =
+                        serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
+                            .map_err(|e| {
+                                OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e))
+                            })?;
 
-                    let address = encode_payment_address(
-                        consensus_params.hrp_sapling_payment_address(),
-                        &payment_address
-                    );
+                    let address =
+                        encode_payment_address(consensus_params.hrp_sapling_payment_address(), &payment_address);
 
                     let priv_key = encode_extended_spending_key(
                         consensus_params.hrp_sapling_extended_spending_key(),
-                        &spending_key
+                        &spending_key,
                     );
 
                     let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(&spending_key);
                     let viewing_key = encode_extended_full_viewing_key(
                         consensus_params.hrp_sapling_extended_full_viewing_key(),
-                        &extended_fvk
+                        &extended_fvk,
                     );
 
                     (address, priv_key, Some(viewing_key))
@@ -428,7 +431,6 @@ async fn offline_hd_keys_export_internal(
             };
 
             let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
-
 
             addresses.push(HdAddressInfo {
                 derivation_path,
@@ -539,7 +541,7 @@ async fn offline_iguana_keys_export_internal(
             Some(PrefixValues::Zhtlc { protocol_info: _ }) => {
                 let crypto_ctx = CryptoCtx::from_ctx(&ctx)
                     .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {}", e)))?;
-                
+
                 let iguana_key = match crypto_ctx.key_pair_policy() {
                     KeyPairPolicy::Iguana => crypto_ctx.mm2_internal_privkey_slice().to_vec(),
                     KeyPairPolicy::GlobalHDAccount(_) => {
@@ -554,19 +556,14 @@ async fn offline_iguana_keys_export_internal(
 
                 let (_, payment_address) = spending_key.default_address().unwrap();
 
-                let consensus_params: ZcoinConsensusParams = serde_json::from_value(
-                    coin_conf["protocol"]["protocol_data"]["consensus_params"].clone()
-                ).map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e)))?;
+                let consensus_params: ZcoinConsensusParams =
+                    serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
+                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e)))?;
 
-                let address = encode_payment_address(
-                    consensus_params.hrp_sapling_payment_address(),
-                    &payment_address
-                );
+                let address = encode_payment_address(consensus_params.hrp_sapling_payment_address(), &payment_address);
 
-                let priv_key = encode_extended_spending_key(
-                    consensus_params.hrp_sapling_extended_spending_key(),
-                    &spending_key
-                );
+                let priv_key =
+                    encode_extended_spending_key(consensus_params.hrp_sapling_extended_spending_key(), &spending_key);
 
                 (address, priv_key)
             },
@@ -985,7 +982,7 @@ mod tests {
     #[tokio::test]
     async fn test_arrr_hd_key_derivation() {
         const TEST_SEED: &str = "ten village flavor olympic letter impose charge pulp know salmon report simple task eager census tumble ladder casino swallow draft draft pond carbon example";
-        
+
         let arrr_conf = json!({
             "coin": "ARRR",
             "asset": "PIRATE",
@@ -1017,14 +1014,14 @@ mod tests {
             "required_confirmations": 2,
             "requires_notarization": false
         });
-        
+
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [arrr_conf],
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
-        
+
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_SEED).unwrap();
 
         let req = GetPrivateKeysRequest {
@@ -1036,7 +1033,7 @@ mod tests {
         };
 
         let response = get_private_keys(ctx.clone(), req).await.unwrap();
-        
+
         match response {
             GetPrivateKeysResponse::Hd(hd_response) => {
                 assert_eq!(hd_response.result.len(), 1);
@@ -1049,11 +1046,12 @@ mod tests {
                 assert!(first_key.address.starts_with("zs1"));
                 assert!(first_key.priv_key.starts_with("secret-extended-key-main"));
                 assert!(first_key.viewing_key.as_ref().unwrap().starts_with("zxviews"));
-                
-                let expected_first_address = "zs1tc85uguljgmhrhreqnsphanu4xura9lcn6zmz7qr3unsq5yr34kvl6938rvz7d2uml5g53ae3ys";
+
+                let expected_first_address =
+                    "zs1tc85uguljgmhrhreqnsphanu4xura9lcn6zmz7qr3unsq5yr34kvl6938rvz7d2uml5g53ae3ys";
                 let expected_first_private_key = "secret-extended-key-main1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpke4auwnrwhpzqfzdudqn2t34t08d8rfvx3df02cgff82x5spg7lq28tvsr9vvwx6sdsymjc7fgk2ued06z9rzkp6lfczlx5ykj3mrqcy4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4cg05smz";
                 let expected_first_viewing_key = "zxviews1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpkepkc20seu8dr44353s5ydt2vmlzr9jmk6dnqx2su6g2tp7jetqalgd45qweck6r54dexp2397m3qj2kwd5d8rq4fdu3lddh7fjc4awv4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4czeh3g2";
-                
+
                 assert_eq!(first_key.address, expected_first_address);
                 assert_eq!(first_key.priv_key, expected_first_private_key);
                 assert_eq!(first_key.viewing_key.as_ref().unwrap(), &expected_first_viewing_key);
@@ -1067,11 +1065,11 @@ mod tests {
         let expected_first_address = "zs1tc85uguljgmhrhreqnsphanu4xura9lcn6zmz7qr3unsq5yr34kvl6938rvz7d2uml5g53ae3ys";
         let expected_first_private_key = "secret-extended-key-main1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpke4auwnrwhpzqfzdudqn2t34t08d8rfvx3df02cgff82x5spg7lq28tvsr9vvwx6sdsymjc7fgk2ued06z9rzkp6lfczlx5ykj3mrqcy4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4cg05smz";
         let expected_first_viewing_key = "zxviews1qd0cv2y2qqqqpqye077hevux884lgksjtcqrxnc2qtdrfs05qh3h2wc99s8zc2fpkepkc20seu8dr44353s5ydt2vmlzr9jmk6dnqx2su6g2tp7jetqalgd45qweck6r54dexp2397m3qj2kwd5d8rq4fdu3lddh7fjc4awv4l4wavgqsgzem0nunwzllely77k0ra86nhl936auh2qkuc3j3k75nmdw3cwaaevty6pq5wv57nxfqhwc2q4a97wpg2duxezegpkqe4czeh3g2";
-        
+
         assert!(expected_first_address.starts_with("zs1"));
         assert!(expected_first_private_key.starts_with("secret-extended-key-main"));
         assert!(expected_first_viewing_key.starts_with("zxviews"));
-        
+
         assert_eq!(expected_first_address.len(), 78);
         assert!(expected_first_private_key.len() > 100);
         assert!(expected_first_viewing_key.len() > 100);
