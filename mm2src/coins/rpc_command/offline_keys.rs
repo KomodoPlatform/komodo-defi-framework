@@ -17,7 +17,7 @@ use std::str::FromStr;
 use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key,
                                      encode_payment_address};
 use zcash_primitives::consensus::Parameters;
-use zcash_primitives::zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::{ChildIndex, ExtendedSpendingKey};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum KeyExportMode {
@@ -111,7 +111,7 @@ pub enum OfflineKeysError {
 enum PrefixValues {
     Utxo { wif_type: u8, pub_type: u8, p2sh_type: u8 },
     Tendermint { account_prefix: String },
-    Zhtlc { protocol_info: ZcoinProtocolInfo },
+    Zhtlc { _protocol_info: ZcoinProtocolInfo },
 }
 
 impl HttpStatusCode for OfflineKeysError {
@@ -203,7 +203,7 @@ fn extract_prefix_values(
             }
         },
         CoinProtocol::ZHTLC(protocol_info) => Ok(Some(PrefixValues::Zhtlc {
-            protocol_info: protocol_info.clone(),
+            _protocol_info: protocol_info.clone(),
         })),
         _ => Err(OfflineKeysError::Internal(format!(
             "Unsupported protocol for {}: {:?}",
@@ -376,7 +376,7 @@ async fn offline_hd_keys_export_internal(
 
                     (address, priv_key, None)
                 },
-                Some(PrefixValues::Zhtlc { protocol_info: _ }) => {
+                Some(PrefixValues::Zhtlc { _protocol_info: _ }) => {
                     let mut spending_key = ExtendedSpendingKey::master(global_hd_ctx.root_seed_bytes());
 
                     let z_derivation_path_str = coin_conf["protocol"]["protocol_data"]["z_derivation_path"]
@@ -538,7 +538,7 @@ async fn offline_iguana_keys_export_internal(
 
                 (address, priv_key)
             },
-            Some(PrefixValues::Zhtlc { protocol_info: _ }) => {
+            Some(PrefixValues::Zhtlc { _protocol_info: _ }) => {
                 let crypto_ctx = CryptoCtx::from_ctx(&ctx)
                     .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {}", e)))?;
 
@@ -645,7 +645,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -658,7 +658,7 @@ mod tests {
             "17jQZo8xSjJeQLxexLZSZaBA9ks5tWh3fJ",
             "13ZwKLGksE72YgMdKjJC9XZPM6TcpejJrJ",
         ];
-        let expected_pubkeys = vec![
+        let _expected_pubkeys = vec![
             "037e746753316b028859ff20bac70ed4803a3056038e54ef86f71f35e53a6c8625",
             "030bd2b7ab3800a968544bb097a78c1ecfed233af342359e399d72fd970aa35323",
             "034bf56e7072f8f378a8efee382c9a438fa4b4c98c387d4a0db543afc434c4adaf",
@@ -669,7 +669,7 @@ mod tests {
             "L5kmC8cqWodyjm2JUQNfRbmyZeJMJMeYH4WJGUSVcdnD9X6aAs8Z",
         ];
 
-        let btc_conf = json!({
+        let _btc_conf = json!({
             "coin": "BTC",
             "protocol": {
                 "type": "UTXO"
@@ -691,7 +691,7 @@ mod tests {
 
                 for (i, addr_info) in btc_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address, expected_addresses[i]);
-                    assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
+                    assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
                     assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0/0/{}", i));
                 }
@@ -715,7 +715,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["BTC-segwit".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -728,7 +728,7 @@ mod tests {
             "bc1qv26wdgw5vqf7fcup92yhjmm234zwd2wrgv5f4f",
             "bc1qvs2pggxxcl40n9cs9v9crkclmrx57hgp5f6579",
         ];
-        let expected_pubkeys = vec![
+        let _expected_pubkeys = vec![
             "024b796b083b51ea5820bbdb80fa4e7f09f5f8c6fe76bc68fa2d8d0452a4ddfa91",
             "0272a14e54bbfa321f7afa8d98b478f7e5bea5440f3e807bd87f5c00f75ef0941f",
             "03e10fed91ec91740c726b945671954c040cd42b3ad9ab5791133f1a33d4c42e5d",
@@ -750,7 +750,7 @@ mod tests {
 
                 for (i, addr_info) in btc_segwit_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address, expected_addresses[i]);
-                    assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
+                    assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
                     assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0/0/{}", i));
                 }
@@ -774,7 +774,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["ETH".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -787,7 +787,7 @@ mod tests {
             "0x012F492f2d254e204dD8da3a4f0d6071C345b9D1",
             "0xa713617C963b82429909B09B9181a22884f1eb8f",
         ];
-        let expected_pubkeys = vec![
+        let _expected_pubkeys = vec![
             "02a2b68c3126ba160e5ffb7c0d5c5c5c56e724f57e5ec0ace40d6db990e688ed4a",
             "02d7efb9086100311021166c11b2dc7ca941ccbe242b51206555721efe93737678",
             "03353b68f1b2c0891edf78395480bc67e128fb967c5722a6b41d784da295986d4d",
@@ -809,7 +809,7 @@ mod tests {
 
                 for (i, addr_info) in eth_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address.to_lowercase(), expected_addresses[i].to_lowercase());
-                    assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
+                    assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
                     assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0/0/{}", i));
                 }
@@ -833,7 +833,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["ATOM".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -846,12 +846,12 @@ mod tests {
             "cosmos1cecqkvtwn0vyr730yq3hawrl8rztvchz6kadk8",
             "cosmos1c27v3agv745fhnjve8ch754rmzswuc7guglt76",
         ];
-        let expected_pubkeys = vec![
+        let _expected_pubkeys = vec![
             "cosmospub1addwnpepq09wmcqe8qvcmyvgre8g07q9z42rz6y7uguz5dxqvhw0tdrqa38csd8wlfa",
             "cosmospub1addwnpepq0uy8zghd8q8p5wjvz84catqgwuwem45s5rpvd9syq44jz2jmyqfvp049kz",
             "cosmospub1add", // Truncated in the original test vectors
         ];
-        let expected_privkeys_base64 = vec![
+        let _expected_privkeys_base64 = vec![
             "Nbfdi2ZHb+2W41DNJPaHxAi6oHcJ4lFLtBZkATGAB8M=",
             "8FJrDCXtcLl6OgjqF/l5QQvUYYpjwGn+F3q3pBp3e94=",
         ];
@@ -896,11 +896,11 @@ mod tests {
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let req = OfflineKeysRequest {
+        let _req = OfflineKeysRequest {
             coins: vec!["BTC".to_string()],
         };
 
-        let response = offline_iguana_keys_export_internal(ctx.clone(), req).await;
+        let response = offline_iguana_keys_export_internal(ctx.clone(), _req).await;
 
         match response {
             Ok(iguana_response) => {
@@ -1024,7 +1024,7 @@ mod tests {
 
         CryptoCtx::init_with_global_hd_account(ctx.clone(), TEST_SEED).unwrap();
 
-        let req = GetPrivateKeysRequest {
+        let _req = GetPrivateKeysRequest {
             coins: vec!["ARRR".to_string()],
             mode: Some(KeyExportMode::Hd),
             start_index: Some(0),
@@ -1032,7 +1032,7 @@ mod tests {
             account_index: Some(0),
         };
 
-        let response = get_private_keys(ctx.clone(), req).await.unwrap();
+        let response = get_private_keys(ctx.clone(), _req).await.unwrap();
 
         match response {
             GetPrivateKeysResponse::Hd(hd_response) => {
