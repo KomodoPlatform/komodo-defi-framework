@@ -73,7 +73,6 @@ pub enum GetPrivateKeysResponse {
     Hd(Vec<HdCoinKeyInfo>),
 }
 
-
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OfflineKeysError {
