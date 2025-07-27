@@ -359,7 +359,7 @@ async fn offline_hd_keys_export_internal(
                     (address, priv_key, None)
                 },
                 Some(PrefixValues::Tendermint { account_prefix }) => {
-                    let address = tendermint::account_id_from_pubkey_hex(&account_prefix, &pubkey)
+                    let address = tendermint::account_id_from_pubkey_hex(account_prefix, &pubkey)
                         .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                         .to_string();
 
