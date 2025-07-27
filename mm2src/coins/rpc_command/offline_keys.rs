@@ -69,19 +69,10 @@ pub struct HdAddressInfo {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum GetPrivateKeysResponse {
-    Iguana(IguanaKeysResponse),
-    Hd(HdKeysResponse),
+    Iguana(Vec<CoinKeyInfo>),
+    Hd(Vec<HdCoinKeyInfo>),
 }
 
-#[derive(Debug, Serialize)]
-pub struct IguanaKeysResponse {
-    pub result: Vec<CoinKeyInfo>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct HdKeysResponse {
-    pub result: Vec<HdCoinKeyInfo>,
-}
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -233,7 +224,7 @@ async fn offline_hd_keys_export_internal(
     start_index: u32,
     end_index: u32,
     account_index: u32,
-) -> Result<HdKeysResponse, MmError<OfflineKeysError>> {
+) -> Result<Vec<HdCoinKeyInfo>, MmError<OfflineKeysError>> {
     if start_index > end_index {
         return MmError::err(OfflineKeysError::InvalidHdRange { start_index, end_index });
     }
@@ -448,13 +439,13 @@ async fn offline_hd_keys_export_internal(
         });
     }
 
-    Ok(HdKeysResponse { result })
+    Ok(result)
 }
 
 async fn offline_iguana_keys_export_internal(
     ctx: MmArc,
     req: OfflineKeysRequest,
-) -> Result<IguanaKeysResponse, MmError<OfflineKeysError>> {
+) -> Result<Vec<CoinKeyInfo>, MmError<OfflineKeysError>> {
     let mut result = Vec::with_capacity(req.coins.len());
 
     for ticker in &req.coins {
@@ -578,7 +569,7 @@ async fn offline_iguana_keys_export_internal(
         });
     }
 
-    Ok(IguanaKeysResponse { result })
+    Ok(result)
 }
 
 pub async fn get_private_keys(
@@ -685,8 +676,8 @@ mod tests {
 
         match response {
             Ok(hd_response) => {
-                assert_eq!(hd_response.result.len(), 1);
-                let btc_result = &hd_response.result[0];
+                assert_eq!(hd_response.len(), 1);
+                let btc_result = &hd_response[0];
                 assert_eq!(btc_result.coin, "BTC");
                 assert_eq!(btc_result.addresses.len(), 3);
 
@@ -744,8 +735,8 @@ mod tests {
 
         match response {
             Ok(hd_response) => {
-                assert_eq!(hd_response.result.len(), 1);
-                let btc_segwit_result = &hd_response.result[0];
+                assert_eq!(hd_response.len(), 1);
+                let btc_segwit_result = &hd_response[0];
                 assert_eq!(btc_segwit_result.coin, "BTC-segwit");
                 assert_eq!(btc_segwit_result.addresses.len(), 3);
 
@@ -803,8 +794,8 @@ mod tests {
 
         match response {
             Ok(hd_response) => {
-                assert_eq!(hd_response.result.len(), 1);
-                let eth_result = &hd_response.result[0];
+                assert_eq!(hd_response.len(), 1);
+                let eth_result = &hd_response[0];
                 assert_eq!(eth_result.coin, "ETH");
                 assert_eq!(eth_result.addresses.len(), 3);
 
@@ -868,8 +859,8 @@ mod tests {
 
         match response {
             Ok(hd_response) => {
-                assert_eq!(hd_response.result.len(), 1);
-                let atom_result = &hd_response.result[0];
+                assert_eq!(hd_response.len(), 1);
+                let atom_result = &hd_response[0];
                 assert_eq!(atom_result.coin, "ATOM");
                 assert_eq!(atom_result.addresses.len(), 2);
 
@@ -905,8 +896,8 @@ mod tests {
 
         match response {
             Ok(iguana_response) => {
-                assert_eq!(iguana_response.result.len(), 1);
-                let btc_result = &iguana_response.result[0];
+                assert_eq!(iguana_response.len(), 1);
+                let btc_result = &iguana_response[0];
                 assert_eq!(btc_result.coin, "BTC");
                 assert!(!btc_result.pubkey.is_empty());
                 assert!(!btc_result.address.is_empty());
@@ -1037,8 +1028,8 @@ mod tests {
 
         match response {
             GetPrivateKeysResponse::Hd(hd_response) => {
-                assert_eq!(hd_response.result.len(), 1);
-                let arrr_result = &hd_response.result[0];
+                assert_eq!(hd_response.len(), 1);
+                let arrr_result = &hd_response[0];
                 assert_eq!(arrr_result.coin, "ARRR");
                 assert_eq!(arrr_result.addresses.len(), 2);
 
