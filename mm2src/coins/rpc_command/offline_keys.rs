@@ -14,8 +14,9 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::str::FromStr;
-use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key,
-                                     encode_payment_address};
+use zcash_client_backend::encoding::{
+    encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
+};
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::zip32::{ChildIndex, ExtendedSpendingKey};
 
