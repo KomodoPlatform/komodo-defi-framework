@@ -49,11 +49,15 @@ impl From<CoinFindError> for SendPaymentError {
 }
 
 impl From<SqlError> for SendPaymentError {
-    fn from(err: SqlError) -> SendPaymentError { SendPaymentError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> SendPaymentError {
+        SendPaymentError::DbError(err.to_string())
+    }
 }
 
 impl From<PaymentError> for SendPaymentError {
-    fn from(err: PaymentError) -> SendPaymentError { SendPaymentError::PaymentError(err.to_string()) }
+    fn from(err: PaymentError) -> SendPaymentError {
+        SendPaymentError::PaymentError(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

@@ -7,22 +7,28 @@ use async_trait::async_trait;
 use common::log::info;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
-use mm2_core::{event_dispatcher::{EventListener, EventUniqueId},
-               mm_ctx::{from_ctx, MmArc}};
+use mm2_core::{
+    event_dispatcher::{EventListener, EventUniqueId},
+    mm_ctx::{from_ctx, MmArc},
+};
 use mm2_number::MmNumber;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use std::any::TypeId;
 use std::ops::Deref;
 use std::{collections::HashMap, sync::Arc};
 
-#[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
+#[path = "simple_market_maker.rs"]
+mod simple_market_maker_bot;
 use crate::lp_dispatcher::{LpEvents, StopCtxEvent};
 use crate::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
-use crate::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
-                                                            PRECISION_FOR_NOTIFICATION};
+use crate::lp_ordermatch::lp_bot::simple_market_maker_bot::{
+    tear_down_bot, BOT_DEFAULT_REFRESH_RATE, PRECISION_FOR_NOTIFICATION,
+};
 use crate::lp_swap::MakerSwapStatusChanged;
-pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
-                                  StartSimpleMakerBotRequest};
+pub use simple_market_maker_bot::{
+    start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
+};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "simple_market_maker_tests.rs"]
@@ -35,7 +41,9 @@ pub struct TradingBotStopping {
 }
 
 impl TradingBotStopping {
-    fn event_id() -> TypeId { TypeId::of::<TradingBotStopping>() }
+    fn event_id() -> TypeId {
+        TypeId::of::<TradingBotStopping>()
+    }
 }
 
 #[derive(Clone, Display)]
@@ -45,7 +53,9 @@ pub struct TradingBotStarted {
 }
 
 impl TradingBotStarted {
-    fn event_id() -> TypeId { TypeId::of::<TradingBotStarted>() }
+    fn event_id() -> TypeId {
+        TypeId::of::<TradingBotStarted>()
+    }
 }
 
 #[derive(Clone, Display)]
@@ -58,7 +68,9 @@ pub struct TradingBotStopped {
 }
 
 impl TradingBotStopped {
-    fn event_id() -> TypeId { TypeId::of::<TradingBotStopped>() }
+    fn event_id() -> TypeId {
+        TypeId::of::<TradingBotStopped>()
+    }
 }
 
 #[derive(Clone, Display)]
@@ -79,15 +91,21 @@ impl EventUniqueId for TradingBotEvent {
 }
 
 impl From<TradingBotStopping> for TradingBotEvent {
-    fn from(trading_bot_stopping: TradingBotStopping) -> Self { TradingBotEvent::Stopping(trading_bot_stopping) }
+    fn from(trading_bot_stopping: TradingBotStopping) -> Self {
+        TradingBotEvent::Stopping(trading_bot_stopping)
+    }
 }
 
 impl From<TradingBotStopped> for TradingBotEvent {
-    fn from(trading_bot_stopped: TradingBotStopped) -> Self { TradingBotEvent::Stopped(trading_bot_stopped) }
+    fn from(trading_bot_stopped: TradingBotStopped) -> Self {
+        TradingBotEvent::Stopped(trading_bot_stopped)
+    }
 }
 
 impl From<TradingBotStarted> for TradingBotEvent {
-    fn from(trading_bot_started: TradingBotStarted) -> Self { TradingBotEvent::Started(trading_bot_started) }
+    fn from(trading_bot_started: TradingBotStarted) -> Self {
+        TradingBotEvent::Started(trading_bot_started)
+    }
 }
 
 pub struct RunningState {
@@ -112,19 +130,27 @@ enum TradingBotState {
 }
 
 impl From<RunningState> for TradingBotState {
-    fn from(running_state: RunningState) -> Self { Self::Running(running_state) }
+    fn from(running_state: RunningState) -> Self {
+        Self::Running(running_state)
+    }
 }
 
 impl From<StoppingState> for TradingBotState {
-    fn from(stopping_state: StoppingState) -> Self { Self::Stopping(stopping_state) }
+    fn from(stopping_state: StoppingState) -> Self {
+        Self::Stopping(stopping_state)
+    }
 }
 
 impl From<StoppedState> for TradingBotState {
-    fn from(stopped_state: StoppedState) -> Self { Self::Stopped(stopped_state) }
+    fn from(stopped_state: StoppedState) -> Self {
+        Self::Stopped(stopped_state)
+    }
 }
 
 impl Default for TradingBotState {
-    fn default() -> Self { StoppedState::default().into() }
+    fn default() -> Self {
+        StoppedState::default().into()
+    }
 }
 
 pub type SimpleMakerBotRegistry = HashMap<String, SimpleCoinMarketMakerCfg>;
@@ -177,7 +203,9 @@ pub struct ArcTradingBotContext(Arc<TradingBotContext>);
 
 impl Deref for ArcTradingBotContext {
     type Target = TradingBotContext;
-    fn deref(&self) -> &TradingBotContext { &self.0 }
+    fn deref(&self) -> &TradingBotContext {
+        &self.0
+    }
 }
 
 #[allow(clippy::single_match)]
@@ -254,7 +282,9 @@ impl EventListener for ArcTradingBotContext {
         ]
     }
 
-    fn listener_id(&self) -> &'static str { "lp_bot_listener" }
+    fn listener_id(&self) -> &'static str {
+        "lp_bot_listener"
+    }
 }
 
 #[cfg_attr(test, mockable)]

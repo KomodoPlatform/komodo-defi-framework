@@ -1,6 +1,8 @@
 use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
-use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
-                                FilteringAddresses, GetTxHistoryFilters, WalletId};
+use crate::tx_history_storage::{
+    token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
+    WalletId,
+};
 use crate::TransactionDetails;
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
@@ -15,12 +17,18 @@ use serde_json::{self as json};
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
-fn tx_history_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_history" }
+fn tx_history_table(wallet_id: &WalletId) -> String {
+    wallet_id.to_sql_table_name() + "_tx_history"
+}
 
-fn tx_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_address" }
+fn tx_address_table(wallet_id: &WalletId) -> String {
+    wallet_id.to_sql_table_name() + "_tx_address"
+}
 
 /// Please note TX cache table name doesn't depend on [`WalletId::hd_wallet_rmd160`].
-fn tx_cache_table(wallet_id: &WalletId) -> String { format!("{}_tx_cache", wallet_id.ticker) }
+fn tx_cache_table(wallet_id: &WalletId) -> String {
+    format!("{}_tx_cache", wallet_id.ticker)
+}
 
 fn create_tx_history_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(wallet_id);
@@ -352,14 +360,20 @@ fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
     json::from_str(&json_string).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
-fn block_height_from_row(row: &Row<'_>) -> Result<u32, SqlError> { row.get(0) }
+fn block_height_from_row(row: &Row<'_>) -> Result<u32, SqlError> {
+    row.get(0)
+}
 
 impl TxHistoryStorageError for SqlError {}
 
 impl ConfirmationStatus {
-    fn to_sql_param_str(self) -> String { (self as u8).to_string() }
+    fn to_sql_param_str(self) -> String {
+        (self as u8).to_string()
+    }
 
-    fn to_sql_param(self) -> i64 { self as i64 }
+    fn to_sql_param(self) -> i64 {
+        self as i64
+    }
 }
 
 impl WalletId {

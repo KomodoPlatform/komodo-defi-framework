@@ -1,7 +1,9 @@
 use crate::context::CoinsActivationContext;
-use crate::init_token::{token_xpub_extractor_rpc_statuses, InitTokenActivationOps, InitTokenActivationResult,
-                        InitTokenAwaitingStatus, InitTokenError, InitTokenInProgressStatus, InitTokenTaskHandleShared,
-                        InitTokenTaskManagerShared, InitTokenUserAction};
+use crate::init_token::{
+    token_xpub_extractor_rpc_statuses, InitTokenActivationOps, InitTokenActivationResult, InitTokenAwaitingStatus,
+    InitTokenError, InitTokenInProgressStatus, InitTokenTaskHandleShared, InitTokenTaskManagerShared,
+    InitTokenUserAction,
+};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};

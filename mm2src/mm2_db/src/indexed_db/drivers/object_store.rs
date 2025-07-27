@@ -13,12 +13,13 @@ use web_sys::{IdbIndex, IdbObjectStore, IdbRequest};
 pub struct IdbObjectStoreImpl {
     pub(crate) object_store: IdbObjectStore,
     pub(crate) aborted: Arc<AtomicBool>,
+    pub(crate) _not_send: common::NotSend,
 }
 
-impl !Send for IdbObjectStoreImpl {}
-
 impl IdbObjectStoreImpl {
-    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn aborted(&self) -> bool {
+        self.aborted.load(Ordering::Relaxed)
+    }
 
     pub(crate) async fn add_item(&self, item: &Json) -> DbTransactionResult<ItemId> {
         if self.aborted.load(Ordering::Relaxed) {

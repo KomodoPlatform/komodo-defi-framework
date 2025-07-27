@@ -1,5 +1,6 @@
-use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
-            CursorResult};
+use super::{
+    index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction, CursorResult,
+};
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;

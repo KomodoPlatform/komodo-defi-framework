@@ -36,16 +36,22 @@ pub struct ProtocolV1<L: Link> {
 
 #[cfg(target_arch = "wasm32")]
 impl<L: Link> ProtocolV1<L> {
-    pub(crate) fn link(&self) -> &L { &self.link }
+    pub(crate) fn link(&self) -> &L {
+        &self.link
+    }
 }
 
 #[async_trait]
 impl<L: Link + Send> Protocol for ProtocolV1<L> {
     /// Protocol V1 doesn't support sessions.
-    async fn session_begin(&mut self) -> TrezorResult<()> { Ok(()) }
+    async fn session_begin(&mut self) -> TrezorResult<()> {
+        Ok(())
+    }
 
     /// Protocol V1 doesn't support sessions.
-    async fn session_end(&mut self) -> TrezorResult<()> { Ok(()) }
+    async fn session_end(&mut self) -> TrezorResult<()> {
+        Ok(())
+    }
 
     async fn write(&mut self, message: ProtoMessage) -> TrezorResult<()> {
         // First generate the total payload, then write it to the transport in chunks.

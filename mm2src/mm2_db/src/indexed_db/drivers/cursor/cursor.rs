@@ -107,27 +107,39 @@ pub struct CursorFiltersExt {
 }
 
 impl From<u32> for CursorBoundValue {
-    fn from(uint: u32) -> Self { CursorBoundValue::Uint(uint) }
+    fn from(uint: u32) -> Self {
+        CursorBoundValue::Uint(uint)
+    }
 }
 
 impl From<i32> for CursorBoundValue {
-    fn from(int: i32) -> Self { CursorBoundValue::Int(int) }
+    fn from(int: i32) -> Self {
+        CursorBoundValue::Int(int)
+    }
 }
 
 impl From<u64> for CursorBoundValue {
-    fn from(uint: u64) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: u64) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<usize> for CursorBoundValue {
-    fn from(uint: usize) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: usize) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<u128> for CursorBoundValue {
-    fn from(uint: u128) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: u128) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<BeBigUint> for CursorBoundValue {
-    fn from(uint: BeBigUint) -> Self { CursorBoundValue::BigUint(uint) }
+    fn from(uint: BeBigUint) -> Self {
+        CursorBoundValue::BigUint(uint)
+    }
 }
 
 impl CursorBoundValue {

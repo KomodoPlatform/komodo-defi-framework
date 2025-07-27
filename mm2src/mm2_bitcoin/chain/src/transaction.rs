@@ -39,7 +39,9 @@ impl OutPoint {
         }
     }
 
-    pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::MAX }
+    pub fn is_null(&self) -> bool {
+        self.hash.is_zero() && self.index == u32::MAX
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -70,9 +72,13 @@ impl TransactionInput {
         }
     }
 
-    pub fn is_final(&self) -> bool { self.sequence == SEQUENCE_FINAL }
+    pub fn is_final(&self) -> bool {
+        self.sequence == SEQUENCE_FINAL
+    }
 
-    pub fn has_witness(&self) -> bool { !self.script_witness.is_empty() }
+    pub fn has_witness(&self) -> bool {
+        !self.script_witness.is_empty()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -234,7 +240,9 @@ pub struct Transaction {
 }
 
 impl From<&'static str> for Transaction {
-    fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
+    fn from(s: &'static str) -> Self {
+        deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -262,7 +270,9 @@ pub enum TxHashAlgo {
 pub struct TxHasNoOutputs {}
 
 impl std::fmt::Display for TxHasNoOutputs {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { f.write_str("Tx has no outputs") }
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Tx has no outputs")
+    }
 }
 
 impl Transaction {
@@ -274,17 +284,29 @@ impl Transaction {
         }
     }
 
-    pub fn witness_hash(&self) -> H256 { dhash256(&serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS)) }
+    pub fn witness_hash(&self) -> H256 {
+        dhash256(&serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS))
+    }
 
-    pub fn inputs(&self) -> &[TransactionInput] { &self.inputs }
+    pub fn inputs(&self) -> &[TransactionInput] {
+        &self.inputs
+    }
 
-    pub fn outputs(&self) -> &[TransactionOutput] { &self.outputs }
+    pub fn outputs(&self) -> &[TransactionOutput] {
+        &self.outputs
+    }
 
-    pub fn is_empty(&self) -> bool { self.inputs.is_empty() || self.outputs.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.inputs.is_empty() || self.outputs.is_empty()
+    }
 
-    pub fn is_null(&self) -> bool { self.inputs.iter().any(|input| input.previous_output.is_null()) }
+    pub fn is_null(&self) -> bool {
+        self.inputs.iter().any(|input| input.previous_output.is_null())
+    }
 
-    pub fn is_coinbase(&self) -> bool { self.inputs.len() == 1 && self.inputs[0].previous_output.is_null() }
+    pub fn is_coinbase(&self) -> bool {
+        self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
+    }
 
     pub fn is_final(&self) -> bool {
         // if lock_time is 0, transaction is final
@@ -314,7 +336,9 @@ impl Transaction {
         self.inputs.iter().all(TransactionInput::is_final)
     }
 
-    pub fn has_witness(&self) -> bool { self.inputs.iter().any(TransactionInput::has_witness) }
+    pub fn has_witness(&self) -> bool {
+        self.inputs.iter().any(TransactionInput::has_witness)
+    }
 
     pub fn total_spends(&self) -> u64 {
         let mut result = 0u64;
@@ -452,7 +476,9 @@ pub enum TxType {
 }
 
 impl TxType {
-    fn uses_witness(&self) -> bool { matches!(self, TxType::StandardWithWitness | TxType::PosvWithNTime) }
+    fn uses_witness(&self) -> bool {
+        matches!(self, TxType::StandardWithWitness | TxType::PosvWithNTime)
+    }
 }
 
 pub fn deserialize_tx<T>(reader: &mut Reader<T>, tx_type: TxType) -> Result<Transaction, Error>
@@ -620,7 +646,8 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_arch = "wasm32"))] use super::ExtTransaction;
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::ExtTransaction;
     use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;

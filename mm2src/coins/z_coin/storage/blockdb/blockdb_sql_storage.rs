@@ -1,5 +1,7 @@
-use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             LockedNotesStorage, ZcoinStorageRes};
+use crate::z_coin::storage::{
+    scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow, LockedNotesStorage,
+    ZcoinStorageRes,
+};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -41,7 +43,9 @@ impl From<ZcashClientError> for ZcoinStorageError {
 }
 
 impl From<ChainError<NoteId>> for ZcoinStorageError {
-    fn from(value: ChainError<NoteId>) -> Self { Self::SqliteError(ZcashClientError::from(value)) }
+    fn from(value: ChainError<NoteId>) -> Self {
+        Self::SqliteError(ZcashClientError::from(value))
+    }
 }
 
 impl BlockDbImpl {

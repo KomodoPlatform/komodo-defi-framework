@@ -1,12 +1,16 @@
 use crate::hd_wallet::{AddressDerivingError, DisplayAddress, InvalidBip44ChainError};
-use crate::tendermint::{BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE,
-                        TENDERMINT_COIN_PROTOCOL_TYPE};
-use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
-                                TxHistoryStorageBuilder, WalletId};
+use crate::tendermint::{
+    BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE,
+};
+use crate::tx_history_storage::{
+    CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId,
+};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
-            HistorySyncState, MmCoin, MmCoinEnum, MyAddressError, Transaction, TransactionData, TransactionDetails,
-            TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::{
+    coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId, HistorySyncState,
+    MmCoin, MmCoinEnum, MyAddressError, Transaction, TransactionData, TransactionDetails, TransactionType,
+    TxFeeDetails, UtxoRpcError,
+};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -27,7 +31,9 @@ pub enum RemoveTxResult {
 }
 
 impl RemoveTxResult {
-    pub fn tx_existed(&self) -> bool { matches!(self, RemoveTxResult::TxRemoved) }
+    pub fn tx_existed(&self) -> bool {
+        matches!(self, RemoveTxResult::TxRemoved)
+    }
 }
 
 pub struct GetHistoryResult {
@@ -168,9 +174,13 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
         }
     }
 
-    pub fn set_tx_fee(&mut self, tx_fee: Option<TxFeeDetails>) { self.tx_fee = tx_fee; }
+    pub fn set_tx_fee(&mut self, tx_fee: Option<TxFeeDetails>) {
+        self.tx_fee = tx_fee;
+    }
 
-    pub fn set_transaction_type(&mut self, tx_type: TransactionType) { self.transaction_type = tx_type; }
+    pub fn set_transaction_type(&mut self, tx_type: TransactionType) {
+        self.transaction_type = tx_type;
+    }
 
     pub fn transferred_to(&mut self, address: Addr, amount: &BigDecimal) {
         if self.my_addresses.contains(&address) {

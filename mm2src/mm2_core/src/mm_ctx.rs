@@ -1,7 +1,9 @@
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
-use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                       graceful_shutdown, AbortableSystem};
+use common::executor::{
+    abortable_queue::{AbortableQueue, WeakSpawner},
+    graceful_shutdown, AbortableSystem,
+};
 use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{cfg_native, cfg_wasm32, small_rng};
 use futures::channel::oneshot;
@@ -225,7 +227,9 @@ impl MmCtx {
         }
     }
 
-    pub fn enable_hd(&self) -> bool { self.conf["enable_hd"].as_bool().unwrap_or(false) }
+    pub fn enable_hd(&self) -> bool {
+        self.conf["enable_hd"].as_bool().unwrap_or(false)
+    }
 
     pub fn rmd160(&self) -> &H160 {
         lazy_static! {
@@ -241,7 +245,9 @@ impl MmCtx {
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
-    pub fn is_seed_node(&self) -> bool { self.conf["i_am_seed"].as_bool().unwrap_or(false) }
+    pub fn is_seed_node(&self) -> bool {
+        self.conf["i_am_seed"].as_bool().unwrap_or(false)
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
@@ -280,7 +286,9 @@ impl MmCtx {
 
     /// Whether to use HTTPS for RPC server or not.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn is_https(&self) -> bool { self.conf["https"].as_bool().unwrap_or(false) }
+    pub fn is_https(&self) -> bool {
+        self.conf["https"].as_bool().unwrap_or(false)
+    }
 
     /// SANs for self-signed certificate generation.
     #[cfg(not(target_arch = "wasm32"))]
@@ -325,7 +333,9 @@ impl MmCtx {
 
     /// Returns the path to the MM databases root.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
+    pub fn db_root(&self) -> PathBuf {
+        path_to_db_root(self.conf["dbdir"].as_str())
+    }
 
     /// MM database path.
     /// Defaults to a relative "DB".
@@ -336,7 +346,9 @@ impl MmCtx {
     ///
     /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160()) }
+    pub fn dbdir(&self) -> PathBuf {
+        path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160())
+    }
 
     /// MM shared database path.
     /// Defaults to a relative "DB".
@@ -347,7 +359,9 @@ impl MmCtx {
     ///
     /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id()) }
+    pub fn shared_dbdir(&self) -> PathBuf {
+        path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id())
+    }
 
     /// Returns the path to the global common directory.
     ///
@@ -391,13 +405,17 @@ impl MmCtx {
 
     /// Returns a SQL connection to the global database.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_db(&self) -> MutexGuard<Connection> { self.global_db_conn.get().unwrap().lock().unwrap() }
+    pub fn global_db(&self) -> MutexGuard<Connection> {
+        self.global_db_conn.get().unwrap().lock().unwrap()
+    }
 
     /// Returns a SQL connection to the shared wallet database.
     ///
     /// For new implementations, use `self.async_wallet_db()` instead.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn wallet_db(&self) -> MutexGuard<Connection> { self.wallet_db_conn.get().unwrap().lock().unwrap() }
+    pub fn wallet_db(&self) -> MutexGuard<Connection> {
+        self.wallet_db_conn.get().unwrap().lock().unwrap()
+    }
 
     /// Returns an AsyncSQL connection to the shared wallet database.
     ///
@@ -417,9 +435,13 @@ impl MmCtx {
         Ok(connection)
     }
 
-    pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or(false) }
+    pub fn is_watcher(&self) -> bool {
+        self.conf["is_watcher"].as_bool().unwrap_or(false)
+    }
 
-    pub fn disable_watchers_globally(&self) -> bool { !self.conf["use_watchers"].as_bool().unwrap_or(true) }
+    pub fn disable_watchers_globally(&self) -> bool {
+        !self.conf["use_watchers"].as_bool().unwrap_or(true)
+    }
 
     pub fn netid(&self) -> u16 {
         let netid = self.conf["netid"].as_u64().unwrap_or(0);
@@ -452,12 +474,18 @@ impl MmCtx {
         default
     }
 
-    pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
+    pub fn p2p_in_memory(&self) -> bool {
+        self.conf["p2p_in_memory"].as_bool().unwrap_or(false)
+    }
 
-    pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
+    pub fn p2p_in_memory_port(&self) -> Option<u64> {
+        self.conf["p2p_in_memory_port"].as_u64()
+    }
 
     /// Returns whether node is configured to use [Upgraded Trading Protocol](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
-    pub fn use_trading_proto_v2(&self) -> bool { self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() }
+    pub fn use_trading_proto_v2(&self) -> bool {
+        self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default()
+    }
 
     /// Returns the event streaming configuration in use.
     pub fn event_streaming_configuration(&self) -> Option<EventStreamingConfiguration> {
@@ -465,14 +493,22 @@ impl MmCtx {
     }
 
     /// Returns the cloneable `WeakSpawner`.
-    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    pub fn spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
     /// True if the MarketMaker instance needs to stop.
-    pub fn is_stopping(&self) -> bool { *self.stop.get().unwrap_or(&false) }
+    pub fn is_stopping(&self) -> bool {
+        *self.stop.get().unwrap_or(&false)
+    }
 
-    pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
+    pub fn gui(&self) -> Option<&str> {
+        self.conf["gui"].as_str()
+    }
 
-    pub fn mm_version(&self) -> &str { &self.mm_version }
+    pub fn mm_version(&self) -> &str {
+        &self.mm_version
+    }
 
     /// Initialize the global and wallet directories and databases which are constants over the lifetime of KDF.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
@@ -555,7 +591,9 @@ impl MmCtx {
 }
 
 impl Default for MmCtx {
-    fn default() -> Self { Self::with_log_state(LogState::in_memory()) }
+    fn default() -> Self {
+        Self::with_log_state(LogState::in_memory())
+    }
 }
 
 impl Drop for MmCtx {
@@ -624,12 +662,16 @@ unsafe impl Sync for MmArc {}
 
 impl Clone for MmArc {
     #[track_caller]
-    fn clone(&self) -> MmArc { MmArc(self.0.clone()) }
+    fn clone(&self) -> MmArc {
+        MmArc(self.0.clone())
+    }
 }
 
 impl Deref for MmArc {
     type Target = MmCtx;
-    fn deref(&self) -> &MmCtx { &self.0 }
+    fn deref(&self) -> &MmCtx {
+        &self.0
+    }
 }
 
 #[derive(Clone, Default)]
@@ -642,9 +684,13 @@ unsafe impl Sync for MmWeak {}
 
 impl MmWeak {
     /// Create a default MmWeak without allocating any memory.
-    pub fn new() -> MmWeak { MmWeak::default() }
+    pub fn new() -> MmWeak {
+        MmWeak::default()
+    }
 
-    pub fn dropped(&self) -> bool { self.0.strong_count() == 0 }
+    pub fn dropped(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 
 impl fmt::Debug for MmWeak {
@@ -666,7 +712,9 @@ lazy_static! {
 }
 
 impl MmArc {
-    pub fn new(ctx: MmCtx) -> MmArc { MmArc(SharedRc::new(ctx)) }
+    pub fn new(ctx: MmCtx) -> MmArc {
+        MmArc(SharedRc::new(ctx))
+    }
 
     pub async fn stop(&self) -> Result<(), String> {
         #[cfg(not(target_arch = "wasm32"))]
@@ -717,7 +765,9 @@ impl MmArc {
     }
 
     #[cfg(feature = "track-ctx-pointer")]
-    pub fn log_existing_pointers(&self, level: log::log_crate::Level) { self.0.log_existing_pointers(level, "MmArc") }
+    pub fn log_existing_pointers(&self, level: log::log_crate::Level) {
+        self.0.log_existing_pointers(level, "MmArc")
+    }
 
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     pub fn ffi_handle(&self) -> Result<u32, String> {
@@ -766,11 +816,15 @@ impl MmArc {
     }
 
     /// Generates a weak pointer, to track the allocated data without prolonging its life.
-    pub fn weak(&self) -> MmWeak { MmWeak(SharedRc::downgrade(&self.0)) }
+    pub fn weak(&self) -> MmWeak {
+        MmWeak(SharedRc::downgrade(&self.0))
+    }
 
     /// Tries to obtain the MM context from the weak pointer.
     #[track_caller]
-    pub fn from_weak(weak: &MmWeak) -> Option<MmArc> { weak.0.upgrade().map(MmArc) }
+    pub fn from_weak(weak: &MmWeak) -> Option<MmArc> {
+        weak.0.upgrade().map(MmArc)
+    }
 
     /// Init metrics with dashboard.
     pub fn init_metrics(&self) -> Result<(), String> {
@@ -848,7 +902,9 @@ pub struct MmCtxBuilder {
 }
 
 impl MmCtxBuilder {
-    pub fn new() -> Self { MmCtxBuilder::default() }
+    pub fn new() -> Self {
+        MmCtxBuilder::default()
+    }
 
     pub fn with_conf(mut self, conf: Json) -> Self {
         self.conf = Some(conf);

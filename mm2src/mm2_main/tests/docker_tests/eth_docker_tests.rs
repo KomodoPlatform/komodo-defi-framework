@@ -1,45 +1,53 @@
-use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT,
-                                 GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2,
-                                 GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT,
-                                 GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1};
+use super::docker_tests_common::{
+    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT, GETH_ERC1155_CONTRACT,
+    GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK,
+    GETH_RPC_URL, GETH_SWAP_CONTRACT, GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1,
+};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use super::docker_tests_common::{SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2,
-                                 SEPOLIA_NONCE_LOCK, SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK,
-                                 SEPOLIA_WEB3};
+use super::docker_tests_common::{
+    SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2, SEPOLIA_NONCE_LOCK,
+    SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
+};
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
-use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType,
-                 EthPrivKeyBuildPolicy, SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::eth::{
+    checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
+    SignedEthTx, SwapV2Contracts, ERC20_ABI,
+};
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
-            RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
-            SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
-            ValidateTakerFundingArgs};
-use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
-            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
-            ValidateNftMakerPaymentArgs};
+use coins::{
+    lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+    MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+    RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+    SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs, ValidateTakerFundingArgs,
+};
+use coins::{
+    CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod, Eip1559Ops,
+    FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes, ParseNftAssocTypes,
+    PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
+    SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
+};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_for_kickstart, disable_coin,
-                                  enable_erc20_token_v2, enable_eth_coin_v2, enable_eth_with_tokens_v2,
-                                  erc20_dev_conf, eth1_dev_conf, eth_dev_conf, get_locked_amount, get_new_address,
-                                  get_token_info, mm_dump, my_swap_status, nft_dev_conf, start_swaps, MarketMakerIt,
-                                  Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID};
+use mm2_test_helpers::for_tests::{
+    account_balance, active_swaps, coins_needed_for_kickstart, disable_coin, enable_erc20_token_v2, enable_eth_coin_v2,
+    enable_eth_with_tokens_v2, erc20_dev_conf, eth1_dev_conf, eth_dev_conf, get_locked_amount, get_new_address,
+    get_token_info, mm_dump, my_swap_status, nft_dev_conf, start_swaps, MarketMakerIt, Mm2TestConf,
+    SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID,
+};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
-use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
-                                TokenInfo};
+use mm2_test_helpers::structs::{
+    Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TokenInfo,
+};
 use serde_json::Value as Json;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
@@ -67,54 +75,84 @@ const ERC20: &str = "ERC20DEV";
 /// # Safety
 ///
 /// GETH_ACCOUNT is set once during initialization before tests start
-pub fn geth_account() -> Address { unsafe { GETH_ACCOUNT } }
+pub fn geth_account() -> Address {
+    unsafe { GETH_ACCOUNT }
+}
 /// # Safety
 ///
 /// GETH_SWAP_CONTRACT is set once during initialization before tests start
-pub fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
+pub fn swap_contract() -> Address {
+    unsafe { GETH_SWAP_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn maker_swap_v2() -> Address { unsafe { GETH_MAKER_SWAP_V2 } }
+pub fn maker_swap_v2() -> Address {
+    unsafe { GETH_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_TAKER_SWAP_V2 is set once during initialization before tests start
-pub fn taker_swap_v2() -> Address { unsafe { GETH_TAKER_SWAP_V2 } }
+pub fn taker_swap_v2() -> Address {
+    unsafe { GETH_TAKER_SWAP_V2 }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_taker_swap_v2() -> Address { unsafe { SEPOLIA_TAKER_SWAP_V2 } }
+pub fn sepolia_taker_swap_v2() -> Address {
+    unsafe { SEPOLIA_TAKER_SWAP_V2 }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_maker_swap_v2() -> Address { unsafe { SEPOLIA_MAKER_SWAP_V2 } }
+pub fn sepolia_maker_swap_v2() -> Address {
+    unsafe { SEPOLIA_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_NFT_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn geth_nft_maker_swap_v2() -> Address { unsafe { GETH_NFT_MAKER_SWAP_V2 } }
+pub fn geth_nft_maker_swap_v2() -> Address {
+    unsafe { GETH_NFT_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_WATCHERS_SWAP_CONTRACT is set once during initialization before tests start
-pub fn watchers_swap_contract() -> Address { unsafe { GETH_WATCHERS_SWAP_CONTRACT } }
+pub fn watchers_swap_contract() -> Address {
+    unsafe { GETH_WATCHERS_SWAP_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
-pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
+pub fn erc20_contract() -> Address {
+    unsafe { GETH_ERC20_CONTRACT }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_erc20_contract() -> Address { unsafe { SEPOLIA_ERC20_CONTRACT } }
+pub fn sepolia_erc20_contract() -> Address {
+    unsafe { SEPOLIA_ERC20_CONTRACT }
+}
 /// Return ERC20 dev token contract address in checksum format
-pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
+pub fn erc20_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", erc20_contract()))
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", sepolia_erc20_contract())) }
+pub fn sepolia_erc20_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", sepolia_erc20_contract()))
+}
 /// # Safety
 ///
 /// GETH_ERC721_CONTRACT is set once during initialization before tests start
-pub fn geth_erc721_contract() -> Address { unsafe { GETH_ERC721_CONTRACT } }
+pub fn geth_erc721_contract() -> Address {
+    unsafe { GETH_ERC721_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_ERC1155_CONTRACT is set once during initialization before tests start
-pub fn geth_erc1155_contract() -> Address { unsafe { GETH_ERC1155_CONTRACT } }
+pub fn geth_erc1155_contract() -> Address {
+    unsafe { GETH_ERC1155_CONTRACT }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// # Safety
 ///
 /// SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 address is set once during initialization before tests start
-pub fn sepolia_etomic_maker_nft() -> Address { unsafe { SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 } }
+pub fn sepolia_etomic_maker_nft() -> Address {
+    unsafe { SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 }
+}
 
 fn wait_for_confirmation(tx_hash: H256) {
     thread::sleep(Duration::from_millis(2000));
@@ -645,7 +683,9 @@ fn send_and_refund_eth_maker_payment_internal_gas_policy() {
 }
 
 #[test]
-fn send_and_refund_eth_maker_payment_priority_fee() { send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Medium); }
+fn send_and_refund_eth_maker_payment_priority_fee() {
+    send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Medium);
+}
 
 fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     let maker_eth_coin = eth_coin_with_random_privkey(swap_contract());
@@ -730,7 +770,9 @@ fn send_and_spend_eth_maker_payment_internal_gas_policy() {
 }
 
 #[test]
-fn send_and_spend_eth_maker_payment_priority_fee() { send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Medium); }
+fn send_and_spend_eth_maker_payment_priority_fee() {
+    send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Medium);
+}
 
 fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     thread::sleep(Duration::from_secs(10));
@@ -2813,10 +2855,11 @@ fn test_v2_eth_eth_kickstart() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let mut alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
+    let mut alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());

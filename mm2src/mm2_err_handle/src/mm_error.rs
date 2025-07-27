@@ -126,7 +126,9 @@ impl<E> fmt::Display for MmError<E>
 where
     E: NotMmError + fmt::Display,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{} {}", self.trace.formatted(), self.etype) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.trace.formatted(), self.etype)
+    }
 }
 
 impl<E> fmt::Debug for MmError<E>
@@ -147,7 +149,9 @@ where
     E2: From<E1> + NotMmError,
 {
     #[track_caller]
-    fn from(e1: E1) -> Self { MmError::new(E2::from(e1)) }
+    fn from(e1: E1) -> Self {
+        MmError::new(E2::from(e1))
+    }
 }
 
 impl<E> Serialize for MmError<E>
@@ -182,7 +186,9 @@ impl<E> HttpStatusCode for MmError<E>
 where
     E: HttpStatusCode + NotMmError,
 {
-    fn status_code(&self) -> StatusCode { self.etype.status_code() }
+    fn status_code(&self) -> StatusCode {
+        self.etype.status_code()
+    }
 }
 
 pub struct MmErrorTrace {
@@ -190,7 +196,9 @@ pub struct MmErrorTrace {
 }
 
 impl MmErrorTrace {
-    pub fn new(trace: Vec<TraceLocation>) -> MmErrorTrace { MmErrorTrace { trace } }
+    pub fn new(trace: Vec<TraceLocation>) -> MmErrorTrace {
+        MmErrorTrace { trace }
+    }
 }
 
 impl<E: NotMmError> MmError<E> {
@@ -212,7 +220,9 @@ impl<E: NotMmError> MmError<E> {
         }
     }
 
-    pub fn split(self) -> (E, MmErrorTrace) { (self.etype, MmErrorTrace::new(self.trace)) }
+    pub fn split(self) -> (E, MmErrorTrace) {
+        (self.etype, MmErrorTrace::new(self.trace))
+    }
 
     #[track_caller]
     pub fn map<MapE, F>(mut self, f: F) -> MmError<MapE>
@@ -228,16 +238,22 @@ impl<E: NotMmError> MmError<E> {
     }
 
     #[track_caller]
-    pub fn err<T>(etype: E) -> Result<T, MmError<E>> { Err(MmError::new(etype)) }
+    pub fn err<T>(etype: E) -> Result<T, MmError<E>> {
+        Err(MmError::new(etype))
+    }
 
     #[track_caller]
     pub fn err_with_trace<T>(etype: E, trace: MmErrorTrace) -> Result<T, MmError<E>> {
         Err(MmError::new_with_trace(etype, trace))
     }
 
-    pub fn get_inner(&self) -> &E { &self.etype }
+    pub fn get_inner(&self) -> &E {
+        &self.etype
+    }
 
-    pub fn into_inner(self) -> E { self.etype }
+    pub fn into_inner(self) -> E {
+        self.etype
+    }
 
     /// Format the [`MmError::trace`] similar to JSON path notation: `mm2.lp_swap.utxo.rpc_client`.
     /// The return path is deduplicated.
@@ -291,15 +307,23 @@ impl From<&'static Location<'static>> for TraceLocation {
 }
 
 impl FormattedTrace for TraceLocation {
-    fn formatted(&self) -> String { self.to_string() }
+    fn formatted(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl TraceLocation {
-    pub fn new(file: &'static str, line: u32) -> TraceLocation { TraceLocation { file, line } }
+    pub fn new(file: &'static str, line: u32) -> TraceLocation {
+        TraceLocation { file, line }
+    }
 
-    pub fn file(&self) -> &'static str { self.file }
+    pub fn file(&self) -> &'static str {
+        self.file
+    }
 
-    pub fn line(&self) -> u32 { self.line }
+    pub fn line(&self) -> u32 {
+        self.line
+    }
 }
 
 impl<T: FormattedTrace> FormattedTrace for Vec<T> {

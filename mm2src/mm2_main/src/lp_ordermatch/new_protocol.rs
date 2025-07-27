@@ -21,11 +21,15 @@ pub enum OrdermatchMessage {
 }
 
 impl From<PubkeyKeepAlive> for OrdermatchMessage {
-    fn from(keep_alive: PubkeyKeepAlive) -> Self { OrdermatchMessage::PubkeyKeepAlive(keep_alive) }
+    fn from(keep_alive: PubkeyKeepAlive) -> Self {
+        OrdermatchMessage::PubkeyKeepAlive(keep_alive)
+    }
 }
 
 impl From<MakerOrderUpdated> for OrdermatchMessage {
-    fn from(message: MakerOrderUpdated) -> Self { OrdermatchMessage::MakerOrderUpdated(message) }
+    fn from(message: MakerOrderUpdated) -> Self {
+        OrdermatchMessage::MakerOrderUpdated(message)
+    }
 }
 
 /// MsgPack compact representation does not work with tagged enums (encoding works, but decoding fails)
@@ -72,11 +76,15 @@ mod compact_uuid {
     pub struct CompactUuid(Uuid);
 
     impl From<Uuid> for CompactUuid {
-        fn from(uuid: Uuid) -> Self { CompactUuid(uuid) }
+        fn from(uuid: Uuid) -> Self {
+            CompactUuid(uuid)
+        }
     }
 
     impl From<CompactUuid> for Uuid {
-        fn from(compact: CompactUuid) -> Self { compact.0 }
+        fn from(compact: CompactUuid) -> Self {
+            compact.0
+        }
     }
 
     impl FromStr for CompactUuid {

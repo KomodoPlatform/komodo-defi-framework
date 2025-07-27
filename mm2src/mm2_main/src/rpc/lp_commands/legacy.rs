@@ -113,9 +113,12 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
     // Proceed with disabling the coin/tokens.
     log!("disabling {ticker} coin");
-    let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
-        ticker: ticker.to_string(),
-    })
+    let cancelled_and_matching_orders = cancel_orders_by(
+        &ctx,
+        CancelBy::Coin {
+            ticker: ticker.to_string(),
+        },
+    )
     .await;
     let cancelled_orders = match cancelled_and_matching_orders {
         Ok((cancelled, _)) => cancelled,

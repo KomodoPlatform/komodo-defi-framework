@@ -76,15 +76,21 @@ pub fn keccak256(input: &[u8]) -> H256 {
 
 /// Double Keccak-256
 #[inline]
-pub fn dkeccak256(input: &[u8]) -> H256 { keccak256(&*keccak256(input)) }
+pub fn dkeccak256(input: &[u8]) -> H256 {
+    keccak256(&*keccak256(input))
+}
 
 /// SHA-256 and RIPEMD160
 #[inline]
-pub fn dhash160(input: &[u8]) -> H160 { ripemd160(&*sha256(input)) }
+pub fn dhash160(input: &[u8]) -> H160 {
+    ripemd160(&*sha256(input))
+}
 
 /// Double SHA-256
 #[inline]
-pub fn dhash256(input: &[u8]) -> H256 { sha256(&*sha256(input)) }
+pub fn dhash256(input: &[u8]) -> H256 {
+    sha256(&*sha256(input))
+}
 
 /// SipHash-2-4
 #[inline]
@@ -96,7 +102,9 @@ pub fn siphash24(key0: u64, key1: u64, input: &[u8]) -> u64 {
 
 /// Double Groestl-512
 #[inline]
-pub fn dgroestl512(input: &[u8]) -> H512 { groestl512(&*groestl512(input)) }
+pub fn dgroestl512(input: &[u8]) -> H512 {
+    groestl512(&*groestl512(input))
+}
 
 /// Data checksum
 #[inline]
