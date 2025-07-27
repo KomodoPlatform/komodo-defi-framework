@@ -644,17 +644,17 @@ mod tests {
             account_index: Some(0),
         };
 
-        let expected_addresses = vec![
+        let expected_addresses = [
             "1DWZWURWrdJnuZBqQgv3THfmhbxWgJuFex",
             "17jQZo8xSjJeQLxexLZSZaBA9ks5tWh3fJ",
             "13ZwKLGksE72YgMdKjJC9XZPM6TcpejJrJ",
         ];
-        let _expected_pubkeys = vec![
+        let _expected_pubkeys = [
             "037e746753316b028859ff20bac70ed4803a3056038e54ef86f71f35e53a6c8625",
             "030bd2b7ab3800a968544bb097a78c1ecfed233af342359e399d72fd970aa35323",
             "034bf56e7072f8f378a8efee382c9a438fa4b4c98c387d4a0db543afc434c4adaf",
         ];
-        let expected_privkeys = vec![
+        let expected_privkeys = [
             "KywJqZF9PrFSwWkocQ4JZSgfTD3eXYbfnM54Q3Ua7UKzGD4WTRbX",
             "KwLRhtqifoX1FuMFJytB85DCZf6YoSjuFSqPXBzPsyi56GXJaVpD",
             "L5kmC8cqWodyjm2JUQNfRbmyZeJMJMeYH4WJGUSVcdnD9X6aAs8Z",
@@ -714,17 +714,17 @@ mod tests {
             account_index: Some(0),
         };
 
-        let expected_addresses = vec![
+        let expected_addresses = [
             "bc1q4cn6qhvuajkdfhk3fzuup07ktrepcukc8hv0c8",
             "bc1qv26wdgw5vqf7fcup92yhjmm234zwd2wrgv5f4f",
             "bc1qvs2pggxxcl40n9cs9v9crkclmrx57hgp5f6579",
         ];
-        let _expected_pubkeys = vec![
+        let _expected_pubkeys = [
             "024b796b083b51ea5820bbdb80fa4e7f09f5f8c6fe76bc68fa2d8d0452a4ddfa91",
             "0272a14e54bbfa321f7afa8d98b478f7e5bea5440f3e807bd87f5c00f75ef0941f",
             "03e10fed91ec91740c726b945671954c040cd42b3ad9ab5791133f1a33d4c42e5d",
         ];
-        let expected_privkeys = vec![
+        let expected_privkeys = [
             "L2aJGVhekAig5a4Zx81NH9Q99h9gH7umiyqBWXrNX5w8xn2eeU5g",
             "L1susQQK5CaP7eT4MKyAzv8KthN53i5gHJmUGtKksY8r2Hbvvyv6",
             "Kz937rcd2Hack7TUgkcg3YAiSbTGGJciMCzFbu76FkJgZkwb5zES",
@@ -773,17 +773,17 @@ mod tests {
             account_index: Some(0),
         };
 
-        let expected_addresses = vec![
+        let expected_addresses = [
             "0x6B06d67C539B101180aC03b61ba7F7f3158CE54d",
             "0x012F492f2d254e204dD8da3a4f0d6071C345b9D1",
             "0xa713617C963b82429909B09B9181a22884f1eb8f",
         ];
-        let _expected_pubkeys = vec![
+        let _expected_pubkeys = [
             "02a2b68c3126ba160e5ffb7c0d5c5c5c56e724f57e5ec0ace40d6db990e688ed4a",
             "02d7efb9086100311021166c11b2dc7ca941ccbe242b51206555721efe93737678",
             "03353b68f1b2c0891edf78395480bc67e128fb967c5722a6b41d784da295986d4d",
         ];
-        let expected_privkeys = vec![
+        let expected_privkeys = [
             "0x646431107ae37e826aaa5108fe2c2611ef15615e78b4175919b85fd6366f19a3",
             "0xc11fc3d704820e752bfae8db9f02e489c1e742392b35ac5b4a4e441e7955efa4",
             "0xddb38472a7d7095ad466b4a4e19f85f612f87e04a23c75eac8e7957d31ee22f0",
@@ -832,17 +832,17 @@ mod tests {
             account_index: Some(0),
         };
 
-        let expected_addresses = vec![
+        let expected_addresses = [
             "cosmos1j398pch49fkgx986r4aqm57zp3phuzq4p30dhh",
             "cosmos1cecqkvtwn0vyr730yq3hawrl8rztvchz6kadk8",
             "cosmos1c27v3agv745fhnjve8ch754rmzswuc7guglt76",
         ];
-        let _expected_pubkeys = vec![
+        let _expected_pubkeys = [
             "cosmospub1addwnpepq09wmcqe8qvcmyvgre8g07q9z42rz6y7uguz5dxqvhw0tdrqa38csd8wlfa",
             "cosmospub1addwnpepq0uy8zghd8q8p5wjvz84catqgwuwem45s5rpvd9syq44jz2jmyqfvp049kz",
             "cosmospub1add", // Truncated in the original test vectors
         ];
-        let _expected_privkeys_base64 = vec![
+        let _expected_privkeys_base64 = [
             "Nbfdi2ZHb+2W41DNJPaHxAi6oHcJ4lFLtBZkATGAB8M=",
             "8FJrDCXtcLl6OgjqF/l5QQvUYYpjwGn+F3q3pBp3e94=",
         ];
