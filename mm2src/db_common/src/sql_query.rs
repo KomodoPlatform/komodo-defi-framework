@@ -39,7 +39,7 @@ impl<'a> SqlQuery<'a> {
         validate_table_name(alias)?;
         Ok(SqlQuery {
             conn,
-            sql_builder: SqlBuilder::select_from(format!("{} AS {}", table, alias)),
+            sql_builder: SqlBuilder::select_from(format!("{table} AS {alias}")),
             params: SqlParamsBuilder::default(),
             ordering: Vec::default(),
         })
@@ -78,7 +78,7 @@ impl<'a> SqlQuery<'a> {
     #[inline]
     pub fn count_distinct<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
         let field = field.to_valid_sql_ident()?;
-        self.sql_builder.count(format!("DISTINCT {}", field));
+        self.sql_builder.count(format!("DISTINCT {field}"));
         Ok(self)
     }
 
@@ -321,7 +321,7 @@ impl<'a> SqlQuery<'a> {
             .join(", ");
         // Query the number of the row with the specified `order_by` ordering.
         self.sql_builder
-            .field(format!("ROW_NUMBER() OVER (ORDER BY {}) AS {}", order_by, alias));
+            .field(format!("ROW_NUMBER() OVER (ORDER BY {order_by}) AS {alias}"));
         Ok(self)
     }
 
@@ -336,7 +336,7 @@ impl<'a> SqlQuery<'a> {
         validate_table_name(alias)?;
         Ok(SqlQuery {
             conn,
-            sql_builder: SqlBuilder::select_from(format!("({}) AS {}", union_sql, alias)),
+            sql_builder: SqlBuilder::select_from(format!("({union_sql}) AS {alias}")),
             params: SqlParamsBuilder::default(),
             ordering: Vec::default(),
         })
@@ -376,8 +376,8 @@ enum SqlOrdering {
 impl SqlOrdering {
     fn to_sql(&self) -> String {
         match self {
-            SqlOrdering::Asc(column) => format!("{} ASC", column),
-            SqlOrdering::Desc(column) => format!("{} DESC", column),
+            SqlOrdering::Asc(column) => format!("{column} ASC"),
+            SqlOrdering::Desc(column) => format!("{column} DESC"),
         }
     }
 }

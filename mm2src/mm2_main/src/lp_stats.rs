@@ -25,15 +25,15 @@ pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum NodeVersionError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Database error: {}", _0)]
+    #[display(fmt = "Database error: {_0}")]
     DatabaseError(String),
-    #[display(fmt = "Invalid address: {}", _0)]
+    #[display(fmt = "Invalid address: {_0}")]
     InvalidAddress(String),
-    #[display(fmt = "Error on parse peer id {}: {}", _0, _1)]
+    #[display(fmt = "Error on parse peer id {_0}: {_1}")]
     PeerIdParseError(String, String),
-    #[display(fmt = "{} is only supported in native mode", _0)]
+    #[display(fmt = "{_0} is only supported in native mode")]
     UnsupportedMode(String),
     #[display(fmt = "start_version_stat_collection is already running")]
     AlreadyRunning,

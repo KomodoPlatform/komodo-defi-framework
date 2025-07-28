@@ -12,24 +12,21 @@ pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeR
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
-    #[display(fmt = "Error occurred due to creating the '{}' table: {}", table, description)]
+    #[display(fmt = "Error occurred due to creating the '{table}' table: {description}")]
     ErrorCreatingTable { table: String, description: String },
-    #[display(fmt = "Error occurred due to opening the '{}' table: {}", table, description)]
+    #[display(fmt = "Error occurred due to opening the '{table}' table: {description}")]
     ErrorOpeningTable { table: String, description: String },
-    #[display(fmt = "Error occurred due to creating the '{}' index: {}", index, description)]
+    #[display(fmt = "Error occurred due to creating the '{index}' index: {description}")]
     ErrorCreatingIndex { index: String, description: String },
     #[display(
-        fmt = "Upgrade attempt to an unsupported version: {}, old: {}, new: {}",
-        unsupported_version,
-        old_version,
-        new_version
+        fmt = "Upgrade attempt to an unsupported version: {unsupported_version}, old: {old_version}, new: {new_version}"
     )]
     UnsupportedVersion {
         unsupported_version: u32,
         old_version: u32,
         new_version: u32,
     },
-    #[display(fmt = "Error occurred due to deleting the '{}' index: {}", index, description)]
+    #[display(fmt = "Error occurred due to deleting the '{index}' index: {description}")]
     ErrorDeletingIndex { index: String, description: String },
 }
 

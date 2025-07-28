@@ -524,7 +524,7 @@ impl Qrc20Coin {
                 ctx.log.log(
                     "😟",
                     &[&"tx_history", &self.utxo.conf.ticker],
-                    &format!("'transfer' details of {:?} were reloaded", tx_hash),
+                    &format!("'transfer' details of {tx_hash:?} were reloaded"),
                 );
             }
 

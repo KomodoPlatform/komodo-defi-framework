@@ -22,18 +22,24 @@
 //! 1. AFee: OP_DUP OP_HASH160 FEE_RMD160 OP_EQUALVERIFY OP_CHECKSIG
 //!
 //! 2. BPayment:
-//!     OP_IF
-//!         <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
-//!     OP_ELSE
-//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
-//!     OP_ENDIF
+//!
+//! ```
+//! OP_IF
+//!   <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
+//! OP_ELSE
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
+//! OP_ENDIF
+//! ```
 //!
 //! 3. APayment:
-//!     OP_IF
-//!         <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
-//!     OP_ELSE
-//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
-//!     OP_ENDIF
+//!
+//! ```
+//! OP_IF
+//!   <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
+//! OP_ELSE
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
+//! OP_ENDIF
+//! ```
 
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
@@ -371,8 +377,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
                 },
                 Err(swap_status_err) => {
                     let error = format!(
-                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
-                        swap_msg_err, swap_status_err
+                        "Couldn't deserialize swap msg to either 'SwapMsg': {swap_msg_err} or to 'SwapStatus': {swap_status_err}"
                     );
                     MmError::err(P2PRequestError::DecodeError(error))
                 },
@@ -614,7 +619,7 @@ pub struct GetLockedAmountResp {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetLockedAmountRpcError {
-    #[display(fmt = "No such coin: {}", coin)]
+    #[display(fmt = "No such coin: {coin}")]
     NoSuchCoin { coin: String },
 }
 
@@ -995,7 +1000,7 @@ pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
-    my_swaps_dir(ctx, address).join(format!("{}.json", uuid))
+    my_swaps_dir(ctx, address).join(format!("{uuid}.json"))
 }
 
 pub async fn insert_new_swap_to_db(
@@ -1249,7 +1254,7 @@ pub struct MyRecentSwapsUuids {
 #[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LatestSwapsErr {
-    #[display(fmt = "No such swap with the uuid '{}'", _0)]
+    #[display(fmt = "No such swap with the uuid '{_0}'")]
     UUIDNotPresentInDb(Uuid),
     UnableToLoadSavedSwaps(SavedSwapError),
     #[display(fmt = "Unable to query swaps storage")]
@@ -1744,8 +1749,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
 
         if uuid_from_message != uuid {
             return MmError::err(P2PProcessError::ValidationFailed(format!(
-                "uuid from message {} doesn't match uuid from topic {}",
-                uuid_from_message, uuid,
+                "uuid from message {uuid_from_message} doesn't match uuid from topic {uuid}",
             )));
         }
 

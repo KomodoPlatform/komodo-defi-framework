@@ -776,7 +776,7 @@ async fn trade_base_rel_electrum(
     #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {
         // ensure the swaps are indexed to the SQLite database
-        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+        let expected_log = format!("Inserting new swap {uuid} to the SQLite database");
         mm_alice
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
@@ -821,8 +821,8 @@ async fn trade_base_rel_electrum(
         let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
         log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
 
-        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
-        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.bids.len(), "{base} {rel} bids must be empty");
+        assert_eq!(0, bob_orderbook.asks.len(), "{base} {rel} asks must be empty");
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -2314,7 +2314,7 @@ fn test_batch_requests() {
 #[cfg(not(target_arch = "wasm32"))]
 fn request_metrics(mm: &MarketMakerIt) -> MetricsJson {
     let (status, metrics, _headers) = block_on(mm.rpc(&json!({ "method": "metrics"}))).unwrap();
-    assert_eq!(status, StatusCode::OK, "RPC «metrics» failed with status «{}»", status);
+    assert_eq!(status, StatusCode::OK, "RPC «metrics» failed with status «{status}»");
     json::from_str(&metrics).unwrap()
 }
 
@@ -2464,7 +2464,7 @@ fn spin_n_nodes(seednodes: &[&str], coins: &Json, n: usize) -> Vec<(MarketMakerI
         let (alice_dump_log, alice_dump_dashboard) = mm.mm_dump();
         log!("Alice {} log path: {}", i, mm.log_path.display());
         for seednode in seednodes.iter() {
-            block_on(mm.wait_for_log(22., |log| log.contains(&format!("Dialed {}", seednode)))).unwrap();
+            block_on(mm.wait_for_log(22., |log| log.contains(&format!("Dialed {seednode}")))).unwrap();
         }
         mm_nodes.push((mm, alice_dump_log, alice_dump_dashboard));
     }
@@ -4306,7 +4306,7 @@ fn test_update_maker_order_fail() {
     let rc = block_on(mm_bob.rpc(&batch_json)).unwrap();
     assert!(rc.0.is_success(), "!batch: {}", rc.1);
     log!("{}", rc.1);
-    let err_msg = format!("Order with UUID: {} has been deleted", uuid);
+    let err_msg = format!("Order with UUID: {uuid} has been deleted");
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
     if responses[0].get("error").is_some() {
         assert!(responses[0]["error"].as_str().unwrap().contains(&err_msg));
@@ -4967,7 +4967,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();
@@ -6460,7 +6460,7 @@ fn test_delete_wallet_rpc() {
 
     // Delete the inactive wallet with the correct password - should succeed
     let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass));
-    assert_eq!(status, StatusCode::OK, "Body: {}", body);
+    assert_eq!(status, StatusCode::OK, "Body: {body}");
 
     // Verify the wallet is deleted
     let get_wallet_names_3 = block_on(get_wallet_names(&mm_wallet_2));
@@ -6507,7 +6507,7 @@ fn test_delete_wallet_in_no_login_mode() {
         wallet_to_delete_name,
         wallet_to_delete_pass,
     ));
-    assert_eq!(status, StatusCode::OK, "Delete failed with body: {}", body);
+    assert_eq!(status, StatusCode::OK, "Delete failed with body: {body}");
 
     block_on(mm_no_login.stop()).unwrap();
 
@@ -6823,7 +6823,7 @@ mod trezor_tests {
             paging_options: Default::default(),
         }))
         .unwrap();
-        println!("account_balance={:?}", account_balance);
+        println!("account_balance={account_balance:?}");
     }
 
     /// Tool to run withdraw directly with trezor device or emulator (no rpc version, added for easier debugging)
@@ -7170,6 +7170,6 @@ mod trezor_tests {
         .unwrap();
 
         let create_acc_res = block_on(test_create_new_account_init_loop(ctx, ticker_coin, Some(1)));
-        println!("create_acc_res= {:?}", create_acc_res);
+        println!("create_acc_res= {create_acc_res:?}");
     }
 }

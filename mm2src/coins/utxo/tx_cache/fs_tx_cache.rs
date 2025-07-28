@@ -74,7 +74,7 @@ impl UtxoVerboseCacheOps for FsVerboseCache {
         let mutex = TX_CACHE_LOCK.mutex_by_ticker(&self.ticker);
         let _lock = mutex.lock().await;
 
-        let it = txs.iter().map(|(_txid, tx)| self.cache_transaction(tx));
+        let it = txs.values().map(|tx| self.cache_transaction(tx));
         futures::future::join_all(it)
             .await
             .into_iter()
@@ -105,6 +105,6 @@ impl FsVerboseCache {
 
     #[inline]
     fn cached_transaction_path(&self, txid: &H256Json) -> PathBuf {
-        self.tx_cache_path.join(format!("{:?}", txid))
+        self.tx_cache_path.join(format!("{txid:?}"))
     }
 }

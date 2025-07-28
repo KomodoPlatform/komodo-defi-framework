@@ -317,7 +317,7 @@ pub enum MyTxHistoryErrorV2 {
 
 impl MyTxHistoryErrorV2 {
     pub fn with_expected_target(actual: MyTxHistoryTarget, expected: &str) -> MyTxHistoryErrorV2 {
-        MyTxHistoryErrorV2::InvalidTarget(format!("Expected {:?} target, found: {:?}", expected, actual))
+        MyTxHistoryErrorV2::InvalidTarget(format!("Expected {expected:?} target, found: {actual:?}"))
     }
 }
 
@@ -344,7 +344,7 @@ impl From<CoinFindError> for MyTxHistoryErrorV2 {
 
 impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
     fn from(err: T) -> Self {
-        let msg = format!("{:?}", err);
+        let msg = format!("{err:?}");
         MyTxHistoryErrorV2::StorageError(msg)
     }
 }
@@ -399,7 +399,7 @@ where
     let wallet_id = coin.history_wallet_id();
     let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await.map_mm_err()?;
     if !is_storage_init {
-        let msg = format!("Storage is not initialized for {:?}", wallet_id);
+        let msg = format!("Storage is not initialized for {wallet_id:?}");
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
     let current_block = coin

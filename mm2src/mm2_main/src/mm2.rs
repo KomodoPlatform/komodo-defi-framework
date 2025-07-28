@@ -182,7 +182,7 @@ pub async fn lp_main(
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("{}", err)),
+                Err(err) => return Err(format!("{err}")),
             }
         }
     }
@@ -313,7 +313,7 @@ pub fn get_mm2config(json_config: Option<&str>) -> Result<Json, String> {
 /// Runs LP_main with result of `get_mm2config()`.
 ///
 /// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
+///   allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_lp_main(
     first_arg: Option<&str>,

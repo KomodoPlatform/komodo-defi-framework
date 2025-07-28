@@ -81,7 +81,7 @@ impl InitStandaloneCoinInitialStatus for SiaCoinInProgressStatus {
 #[serde(tag = "error_type", content = "error_data")]
 #[non_exhaustive]
 pub enum SiaCoinInitError {
-    #[display(fmt = "Error on coin {} creation: {}", ticker, error)]
+    #[display(fmt = "Error on coin {ticker} creation: {error}")]
     CoinCreationError {
         ticker: String,
         error: String,
@@ -90,7 +90,7 @@ pub enum SiaCoinInitError {
         ticker: String,
     },
     HardwareWalletsAreNotSupportedYet,
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },

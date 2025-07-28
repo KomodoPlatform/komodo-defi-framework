@@ -115,10 +115,7 @@ async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
     match test_ip(&ctx, ip) {
         Ok(_) => {
-            let msg = format!(
-                "We've detected an external IP {} and we can bind on it, so probably a dedicated IP.",
-                ip
-            );
+            let msg = format!("We've detected an external IP {ip} and we can bind on it, so probably a dedicated IP.");
             ctx.log.log("🙂", &[&"myipaddr"], &msg);
             return Ok(ip);
         },
@@ -126,24 +123,21 @@ async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     }
     let all_interfaces = Ipv4Addr::new(0, 0, 0, 0).into();
     if test_ip(&ctx, all_interfaces).is_ok() {
-        let error = format!(
-            "We couldn't bind on the external IP {}, so NAT is likely to be present. We'll be okay though.",
-            ip
-        );
+        let error =
+            format!("We couldn't bind on the external IP {ip}, so NAT is likely to be present. We'll be okay though.");
         ctx.log.log("😅", &[&"myipaddr"], &error);
         return Ok(all_interfaces);
     }
     let localhost = Ipv4Addr::new(127, 0, 0, 1).into();
     if test_ip(&ctx, localhost).is_ok() {
         let error = format!(
-            "We couldn't bind on {} or 0.0.0.0! Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work.",
-            ip
+            "We couldn't bind on {ip} or 0.0.0.0! Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."
         );
         ctx.log.log("🤫", &[&"myipaddr"], &error);
         return Ok(localhost);
     }
 
-    let error = format!("Couldn't bind on {}, 0.0.0.0 or 127.0.0.1.", ip);
+    let error = format!("Couldn't bind on {ip}, 0.0.0.0 or 127.0.0.1.");
     ctx.log.log("🤒", &[&"myipaddr"], &error);
     // Seems like a better default than 127.0.0.1, might still work for other ports.
     Ok(all_interfaces)
@@ -174,7 +168,7 @@ pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
 pub enum ParseAddressError {
     #[display(fmt = "Address '{address}' cannot be resolved to IPv4.")]
     CannotResolveIPv4 { address: String },
-    #[display(fmt = "Couldn't resolve any IP on '{}' address. {}", address, reason)]
+    #[display(fmt = "Couldn't resolve any IP on '{address}' address. {reason}")]
     UnresolvedAddress { address: String, reason: String },
 }
 

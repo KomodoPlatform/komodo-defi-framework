@@ -734,15 +734,13 @@ impl EthCoin {
 
         let state = decoded_tokens.get(state_index).ok_or_else(|| {
             PaymentStatusErr::Internal(format!(
-                "Payment status must contain 'state' as the {} token",
-                state_index
+                "Payment status must contain 'state' as the {state_index} token"
             ))
         })?;
         match state {
             Token::Uint(state) => Ok(*state),
             _ => Err(PaymentStatusErr::InvalidData(format!(
-                "Payment status must be Uint, got {:?}",
-                state
+                "Payment status must be Uint, got {state:?}"
             ))),
         }
     }
@@ -751,14 +749,14 @@ impl EthCoin {
 #[derive(Debug, Display, EnumFromStringify)]
 enum PaymentStatusErr {
     #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
+    #[display(fmt = "ABI error: {_0}")]
     ABIError(String),
     #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
+    #[display(fmt = "Invalid data error: {_0}")]
     InvalidData(String),
 }
 
@@ -795,8 +793,7 @@ fn validate_eth_taker_payment_data(
     })?;
     if total != tx_value {
         return MmError::err(ValidateSwapV2TxError::WrongPaymentTx(format!(
-            "ETH Taker Payment amount, is invalid, expected {:?}, got {:?}",
-            total, tx_value
+            "ETH Taker Payment amount, is invalid, expected {total:?}, got {tx_value:?}"
         )));
     }
     Ok(())
@@ -844,8 +841,7 @@ fn get_dex_fee_and_amount_from_eth_payment_data(
         Some(Token::Uint(dex_fee)) => *dex_fee,
         _ => {
             return Err(PrepareTxDataError::Internal(format!(
-                "Invalid token type for dex fee, got decoded function data: {:?}",
-                decoded
+                "Invalid token type for dex fee, got decoded function data: {decoded:?}"
             )))
         },
     };

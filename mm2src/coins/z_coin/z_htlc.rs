@@ -127,7 +127,7 @@ pub enum ZP2SHSpendError {
     GenTxError(GenTxError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     Rpc(UtxoRpcError),
-    #[display(fmt = "{:?} {}", _0, _1)]
+    #[display(fmt = "{_0:?} {_1}")]
     TxRecoverable(TransactionEnum, String),
     Io(std::io::Error),
 }

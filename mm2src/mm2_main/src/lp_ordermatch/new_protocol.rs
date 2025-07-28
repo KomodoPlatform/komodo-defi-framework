@@ -111,8 +111,8 @@ mod compact_uuid {
             D: Deserializer<'de>,
         {
             let bytes: &[u8] = Deserialize::deserialize(d)?;
-            let uuid = Uuid::from_slice(bytes)
-                .map_err(|e| serde::de::Error::custom(format!("Uuid::from_slice error {}", e)))?;
+            let uuid =
+                Uuid::from_slice(bytes).map_err(|e| serde::de::Error::custom(format!("Uuid::from_slice error {e}")))?;
             Ok(uuid.into())
         }
     }

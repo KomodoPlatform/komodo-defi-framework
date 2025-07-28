@@ -115,15 +115,15 @@ pub enum PostGrpcWebErr {
 
 impl From<EncodeBodyError> for PostGrpcWebErr {
     fn from(err: EncodeBodyError) -> Self {
-        PostGrpcWebErr::EncodeBody(format!("{:?}", err))
+        PostGrpcWebErr::EncodeBody(format!("{err:?}"))
     }
 }
 
 impl From<DecodeBodyError> for PostGrpcWebErr {
     fn from(err: DecodeBodyError) -> Self {
         match err {
-            DecodeBodyError::PayloadTooShort => PostGrpcWebErr::PayloadTooShort(format!("{:?}", err)),
-            DecodeBodyError::DecodeError(_) => PostGrpcWebErr::DecodeBody(format!("{:?}", err)),
+            DecodeBodyError::PayloadTooShort => PostGrpcWebErr::PayloadTooShort(format!("{err:?}")),
+            DecodeBodyError::DecodeError(_) => PostGrpcWebErr::DecodeBody(format!("{err:?}")),
         }
     }
 }

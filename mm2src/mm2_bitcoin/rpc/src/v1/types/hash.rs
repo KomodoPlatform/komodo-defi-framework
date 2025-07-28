@@ -248,7 +248,7 @@ mod tests {
     fn hash_debug() {
         let str_reversed = "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048";
         let reversed_hash = H256::from(str_reversed);
-        let debug_result = format!("{:?}", reversed_hash);
+        let debug_result = format!("{reversed_hash:?}");
         assert_eq!(debug_result, str_reversed);
     }
 
@@ -256,7 +256,7 @@ mod tests {
     fn hash_from_str() {
         let str_reversed = "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048";
         match H256::from_str(str_reversed) {
-            Ok(reversed_hash) => assert_eq!(format!("{:?}", reversed_hash), str_reversed),
+            Ok(reversed_hash) => assert_eq!(format!("{reversed_hash:?}"), str_reversed),
             _ => panic!("unexpected"),
         }
 

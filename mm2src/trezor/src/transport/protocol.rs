@@ -94,9 +94,8 @@ impl<L: Link + Send> Protocol for ProtocolV1<L> {
             return MmError::err(TrezorError::ProtocolError(error));
         }
         let message_type_id = BigEndian::read_u16(&chunk[3..5]) as i32;
-        let message_type = MessageType::try_from(message_type_id).map_err(|e| {
-            TrezorError::ProtocolError(format!("Invalid message type: {}, Error: {}", message_type_id, e))
-        })?;
+        let message_type = MessageType::try_from(message_type_id)
+            .map_err(|e| TrezorError::ProtocolError(format!("Invalid message type: {message_type_id}, Error: {e}")))?;
         let data_length = BigEndian::read_u32(&chunk[5..9]) as usize;
         let mut data: Vec<u8> = chunk[9..].into();
 

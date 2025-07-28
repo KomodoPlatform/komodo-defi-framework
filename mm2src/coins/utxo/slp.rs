@@ -139,7 +139,7 @@ struct SlpTxPreimage {
 #[derive(Debug, Display)]
 enum ValidateDexFeeError {
     TxLackOfOutputs,
-    #[display(fmt = "OpReturnParseError: {:?}", _0)]
+    #[display(fmt = "OpReturnParseError: {_0:?}")]
     OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
     NumConversionErr(NumConversError),
@@ -208,9 +208,9 @@ impl From<String> for SpendP2SHError {
 #[derive(Debug, Display)]
 pub enum SpendHtlcError {
     TxLackOfOutputs,
-    #[display(fmt = "DeserializationErr: {:?}", _0)]
+    #[display(fmt = "DeserializationErr: {_0:?}")]
     DeserializationErr(SerError),
-    #[display(fmt = "PubkeyParseError: {:?}", _0)]
+    #[display(fmt = "PubkeyParseError: {_0:?}")]
     PubkeyParseErr(keys::Error),
     InvalidSlpDetails,
     NumConversionErr(NumConversError),
@@ -1017,8 +1017,7 @@ impl Deserializable for SlpTransaction {
                 Ok(SlpTransaction::Send { token_id, amounts })
             },
             _ => Err(SerError::Custom(format!(
-                "Unsupported transaction type {}",
-                transaction_type
+                "Unsupported transaction type {transaction_type}"
             ))),
         }
     }
@@ -1036,9 +1035,9 @@ pub struct SlpTxDetails {
 pub enum ParseSlpScriptError {
     NotOpReturn,
     UnexpectedLokadId(String),
-    #[display(fmt = "UnexpectedTokenType: {:?}", _0)]
+    #[display(fmt = "UnexpectedTokenType: {_0:?}")]
     UnexpectedTokenType(Vec<u8>),
-    #[display(fmt = "DeserializeFailed: {:?}", _0)]
+    #[display(fmt = "DeserializeFailed: {_0:?}")]
     DeserializeFailed(SerError),
 }
 
@@ -1075,12 +1074,7 @@ pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpS
 enum GenSlpSpendErr {
     RpcError(UtxoRpcError),
     TooManyOutputs,
-    #[display(
-        fmt = "Not enough {} to generate SLP spend: available {}, required at least {}",
-        coin,
-        available,
-        required
-    )]
+    #[display(fmt = "Not enough {coin} to generate SLP spend: available {available}, required at least {required}")]
     InsufficientSlpBalance {
         coin: String,
         available: BigDecimal,
@@ -1245,10 +1239,10 @@ impl MarketCoinOps for SlpToken {
         let selfi = self.clone();
         let tx = tx.to_owned();
         let fut = async move {
-            let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
+            let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{e:?}"))?;
             let tx = try_s!(deserialize(bytes.as_slice()));
-            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
-            Ok(format!("{:?}", hash))
+            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{e:?}"))?;
+            Ok(format!("{hash:?}"))
         };
 
         Box::new(fut.boxed().compat())
@@ -1259,8 +1253,8 @@ impl MarketCoinOps for SlpToken {
         let bytes = tx.to_owned();
         let fut = async move {
             let tx = try_s!(deserialize(bytes.as_slice()));
-            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
-            Ok(format!("{:?}", hash))
+            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{e:?}"))?;
+            Ok(format!("{hash:?}"))
         };
 
         Box::new(fut.boxed().compat())
@@ -1437,8 +1431,7 @@ impl SwapOps for SlpToken {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -1626,7 +1619,7 @@ impl MmCoin for SlpToken {
             let address_hash = {
                 let address_hash_len = address_hash.len();
                 let address_hash: [u8; 20] = address_hash.try_into().map_err(|_| {
-                    WithdrawError::InvalidAddress(format!("Expected 20 address hash len, not {}", address_hash_len))
+                    WithdrawError::InvalidAddress(format!("Expected 20 address hash len, not {address_hash_len}"))
                 })?;
                 address_hash.into()
             };
@@ -1661,10 +1654,7 @@ impl MmCoin for SlpToken {
                     tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic));
                 },
                 Some(fee_policy) => {
-                    let error = format!(
-                        "Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {:?}",
-                        fee_policy
-                    );
+                    let error = format!("Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {fee_policy:?}");
                     return MmError::err(WithdrawError::InvalidFeePolicy(error));
                 },
                 None => (),
@@ -1733,7 +1723,7 @@ impl MmCoin for SlpToken {
             Err(e) => {
                 return ValidateAddressResult {
                     is_valid: false,
-                    reason: Some(format!("Error {} on parsing the {} as cash address", e, address)),
+                    reason: Some(format!("Error {e} on parsing the {address} as cash address")),
                 }
             },
         };
@@ -2195,7 +2185,7 @@ mod slp_tests {
             TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err,
         };
 
-        println!("{:?}", err);
+        println!("{err:?}");
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
 
         // this is invalid tx bytes generated by one of this test runs, ensure that FUSD won't broadcast it using
@@ -2217,11 +2207,11 @@ mod slp_tests {
 
         let tx_bytes_str = hex::encode(tx_bytes);
         let err = block_on_f01(fusd.send_raw_tx(&tx_bytes_str)).unwrap_err();
-        println!("{:?}", err);
+        println!("{err:?}");
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
 
         let err2 = block_on_f01(fusd.send_raw_tx_bytes(tx_bytes)).unwrap_err();
-        println!("{:?}", err2);
+        println!("{err2:?}");
         assert!(err2.contains("is not valid with reason outputs greater than inputs"));
         assert_eq!(err, err2);
 
@@ -2294,7 +2284,7 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidatePaymentError::WrongPaymentTx(e) => println!("{:#?}", e),
+            ValidatePaymentError::WrongPaymentTx(e) => println!("{e:#?}"),
             err => panic!("Unexpected err {:#?}", err),
         };
     }

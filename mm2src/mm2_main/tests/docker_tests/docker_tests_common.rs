@@ -399,7 +399,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
     let container = docker.run(image);
     let mut conf_path = coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", ticker));
+    conf_path.push(format!("{ticker}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), ticker))
@@ -508,7 +508,7 @@ pub fn zombie_asset_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
     let mut conf_path = coin_daemon_data_dir(config_ticker, true);
 
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", config_ticker));
+    conf_path.push(format!("{config_ticker}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), config_ticker))
@@ -622,7 +622,7 @@ fn qrc20_coin_conf_item(ticker: &str) -> Json {
             _ => panic!("Expected either QICK or QORTY ticker, found {}", ticker),
         }
     };
-    let contract_address = format!("{:#02x}", contract_address);
+    let contract_address = format!("{contract_address:#02x}");
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     json!({
@@ -1109,17 +1109,17 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     // ensure the swaps are started
     block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains(&format!("Entering the maker_swap_loop {}/{}", base, rel))
+        log.contains(&format!("Entering the maker_swap_loop {base}/{rel}"))
     }))
     .unwrap();
     block_on(mm_alice.wait_for_log(22., |log| {
-        log.contains(&format!("Entering the taker_swap_loop {}/{}", base, rel))
+        log.contains(&format!("Entering the taker_swap_loop {base}/{rel}"))
     }))
     .unwrap();
 
     // ensure the swaps are finished
-    block_on(mm_bob.wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
-    block_on(mm_alice.wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+    block_on(mm_bob.wait_for_log(600., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
+    block_on(mm_alice.wait_for_log(600., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
 
     log!("Checking alice/taker status..");
     block_on(check_my_swap_status(

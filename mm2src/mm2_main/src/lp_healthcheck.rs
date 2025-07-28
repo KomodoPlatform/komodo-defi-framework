@@ -296,9 +296,9 @@ pub(crate) async fn process_p2p_healthcheck_message(
     }
 
     let data = HealthcheckMessage::decode(&message.data)
-        .map_to_mm(|e| P2PRequestError::DecodeError(format!("Couldn't decode healthcheck message: {}", e)))?;
+        .map_to_mm(|e| P2PRequestError::DecodeError(format!("Couldn't decode healthcheck message: {e}")))?;
     let sender_peer = data.is_received_message_valid().map_to_mm(|e| {
-        P2PRequestError::ValidationFailed(format!("Received an invalid healthcheck message. Error: {}", e))
+        P2PRequestError::ValidationFailed(format!("Received an invalid healthcheck message. Error: {e}"))
     })?;
 
     let ctx = ctx.clone();

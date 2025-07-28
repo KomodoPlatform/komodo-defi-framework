@@ -18,7 +18,7 @@ pub const DEFAULT_ROOM_ID: &str = "default";
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MessageError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     TelegramError(TelegramError),
 }
 
@@ -96,7 +96,7 @@ pub struct Telegram {
 
 #[derive(Display)]
 pub enum InitMessageServiceError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig { field: String, error: String },
 }
 

@@ -1313,7 +1313,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let maker_payment = match state_machine.maker_coin.send_maker_payment_v2(args).await {
             Ok(tx) => tx,
             Err(e) => {
-                let reason = AbortReason::FailedToSendMakerPayment(format!("{:?}", e));
+                let reason = AbortReason::FailedToSendMakerPayment(format!("{e:?}"));
                 return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
@@ -1484,7 +1484,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                             taker_coin_start_block: self.taker_coin_start_block,
                             negotiation_data: self.negotiation_data,
                             maker_payment: self.maker_payment,
-                            reason: MakerPaymentRefundReason::ErrorOnTakerFundingSpendSearch(format!("{:?}", e)),
+                            reason: MakerPaymentRefundReason::ErrorOnTakerFundingSpendSearch(format!("{e:?}")),
                         };
 
                         break Self::change_state(next_state, state_machine).await;
@@ -1815,7 +1815,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     taker_coin_start_block: self.taker_coin_start_block,
                     negotiation_data: self.negotiation_data,
                     maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
+                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{e:?}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -1929,7 +1929,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     taker_coin_start_block: self.taker_coin_start_block,
                     negotiation_data: self.negotiation_data,
                     maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
+                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{e:?}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },

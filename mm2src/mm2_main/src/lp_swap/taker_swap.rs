@@ -116,7 +116,7 @@ pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    stats_taker_swap_dir(ctx).join(format!("{}.json", uuid))
+    stats_taker_swap_dir(ctx).join(format!("{uuid}.json"))
 }
 
 async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
@@ -763,7 +763,7 @@ impl TakerSwapEvent {
             TakerSwapEvent::MakerPaymentSpentByWatcher(_) => "Maker payment spent by watcher...".to_owned(),
             TakerSwapEvent::MakerPaymentSpendFailed(_) => "Maker payment spend failed...".to_owned(),
             TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until } => {
-                format!("Taker payment wait refund till {} started...", wait_until)
+                format!("Taker payment wait refund till {wait_until} started...")
             },
             TakerSwapEvent::TakerPaymentRefundStarted => "Taker payment refund started...".to_owned(),
             TakerSwapEvent::TakerPaymentRefunded(_) => "Taker payment refunded...".to_owned(),

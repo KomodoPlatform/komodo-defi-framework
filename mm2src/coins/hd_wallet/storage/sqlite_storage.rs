@@ -226,7 +226,7 @@ impl HDWalletSqliteStorage {
 
     fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
         conn.lock()
-            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
+            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
 
     async fn init_tables(&self) -> HDWalletStorageResult<()> {

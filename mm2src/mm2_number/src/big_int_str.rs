@@ -49,7 +49,7 @@ impl<'de> Deserialize<'de> for BigIntStr {
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 let num: BigInt = v.parse().map_err(|e| {
-                    let err = format!("Could not parse BigInt from str {}, err {}", v, e);
+                    let err = format!("Could not parse BigInt from str {v}, err {e}");
                     de::Error::custom(err)
                 })?;
                 Ok(BigIntStr(num))
@@ -89,6 +89,6 @@ mod big_int_str_tests {
     fn check_big_int_str_debug() {
         let num: BigInt = 1023.into();
         let num: BigIntStr = num.into();
-        assert_eq!("1023", format!("{:?}", num));
+        assert_eq!("1023", format!("{num:?}"));
     }
 }

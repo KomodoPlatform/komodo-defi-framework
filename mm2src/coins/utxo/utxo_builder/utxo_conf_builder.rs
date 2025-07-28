@@ -27,9 +27,9 @@ pub enum UtxoConfError {
     DerivationPathIsNotSet,
     #[display(fmt = "'trezor_coin' field is not found in config")]
     TrezorCoinIsNotSet,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[display(fmt = "Error deserializing 'derivation_path': {_0}")]
     ErrorDeserializingDerivationPath(String),
-    #[display(fmt = "Error deserializing 'spv_conf': {}", _0)]
+    #[display(fmt = "Error deserializing 'spv_conf': {_0}")]
     ErrorDeserializingSPVConf(String),
     InvalidConsensusBranchId(String),
     InvalidVersionGroupId(String),

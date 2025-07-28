@@ -240,7 +240,7 @@ where
     Coin: CoinWithTxHistoryV2 + UtxoCommonOps,
     Storage: TxHistoryStorage,
 {
-    let tx_hash_str = format!("{:02x}", tx_hash);
+    let tx_hash_str = format!("{tx_hash:02x}");
     let wallet_id = coin.history_wallet_id();
     let tx_bytes = match storage
         .tx_bytes_from_cache(&wallet_id, &tx_hash_str)

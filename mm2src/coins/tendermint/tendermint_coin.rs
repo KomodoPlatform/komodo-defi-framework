@@ -463,9 +463,9 @@ pub enum TendermintInitErrorKind {
     AccountIsNotSet,
     #[display(fmt = "'address_index' field is not found in config")]
     AddressIndexIsNotSet,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[display(fmt = "Error deserializing 'derivation_path': {_0}")]
     ErrorDeserializingDerivationPath(String),
-    #[display(fmt = "Error deserializing 'path_to_address': {}", _0)]
+    #[display(fmt = "Error deserializing 'path_to_address': {_0}")]
     ErrorDeserializingPathToAddress(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     RpcError(String),
@@ -490,7 +490,7 @@ pub enum TendermintCoinRpcError {
     PerformError(String),
     RpcClientError(String),
     InternalError(String),
-    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    #[display(fmt = "Account type '{prefix}' is not supported for HTLCs")]
     UnexpectedAccountType {
         prefix: String,
     },
@@ -500,16 +500,14 @@ pub enum TendermintCoinRpcError {
 #[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum IBCError {
     #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
-        address_prefix
+        fmt = "IBC channel could not be found in coins file for '{address_prefix}' address prefix. Provide it manually by including `ibc_source_channel` in the request."
     )]
     IBCChannelCouldNotBeFound { address_prefix: String },
     #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
+        fmt = "IBC channel '{channel_id}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request."
     )]
     IBCChannelNotHealthy { channel_id: ChannelId },
-    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
+    #[display(fmt = "IBC channel '{channel_id}' is not present on the target node.")]
     IBCChannelMissingOnNode { channel_id: ChannelId },
     #[display(fmt = "Transport error: {reason}")]
     Transport { reason: String },
@@ -673,7 +671,7 @@ enum SearchForSwapTxSpendErr {
     TxMessagesEmpty,
     ClaimHtlcTxNotFound,
     UnexpectedHtlcState(i32),
-    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    #[display(fmt = "Account type '{prefix}' is not supported for HTLCs")]
     UnexpectedAccountType {
         prefix: String,
     },
@@ -1176,7 +1174,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let tx_bytes = self
                 .gen_simulated_tx(&account_info, activated_priv_key, msg.clone(), timeout_height, memo)
-                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
+                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{e}")))?;
 
             let request = AbciRequest::new(
                 Some(ABCI_SIMULATE_TX_PATH.to_string()),
@@ -1212,8 +1210,7 @@ impl TendermintCoin {
 
         let gas = response.gas_info.as_ref().ok_or_else(|| {
             TendermintCoinRpcError::InvalidResponse(format!(
-                "Could not read gas_info. Invalid Response: {:?}",
-                raw_response
+                "Could not read gas_info. Invalid Response: {raw_response:?}"
             ))
         })?;
 
@@ -1250,7 +1247,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let tx_bytes = self
                 .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo)
-                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
+                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{e}")))?;
 
             let request = AbciRequest::new(
                 Some(ABCI_SIMULATE_TX_PATH.to_string()),
@@ -1286,8 +1283,7 @@ impl TendermintCoin {
 
         let gas = response.gas_info.as_ref().ok_or_else(|| {
             TendermintCoinRpcError::InvalidResponse(format!(
-                "Could not read gas_info. Invalid Response: {:?}",
-                raw_response
+                "Could not read gas_info. Invalid Response: {raw_response:?}"
             ))
         })?;
 
@@ -1354,7 +1350,7 @@ impl TendermintCoin {
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("balance is None".into()))?
             .amount
             .parse()
-            .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
+            .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {e}")))
     }
 
     pub(super) fn extract_account_id_and_private_key(
@@ -1650,7 +1646,7 @@ impl TendermintCoin {
             TendermintWalletConnectionType::WcLedger(_) => {
                 let signer_address = self
                     .my_address()
-                    .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+                    .map_err(|e| ErrorReport::new(io::Error::other(e.to_string())))?;
                 let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "signerAddress": signer_address,
@@ -1723,11 +1719,11 @@ impl TendermintCoin {
 
             match htlc_state {
                 HTLC_STATE_OPEN | HTLC_STATE_COMPLETED | HTLC_STATE_REFUNDED => {},
-                unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
+                unexpected_state => return Err(format!("Unexpected state for HTLC {unexpected_state}")),
             };
 
             let rpc_client = try_s!(coin.rpc_client().await);
-            let q = format!("create_htlc.id = '{}'", htlc_id);
+            let q = format!("create_htlc.id = '{htlc_id}'");
 
             let response = try_s!(
                 // Search single tx
@@ -1745,8 +1741,7 @@ impl TendermintCoin {
             if let Some(tx) = response.txs.first() {
                 if let cosmrs::tendermint::abci::Code::Err(err_code) = tx.tx_result.code {
                     return Err(format!(
-                        "Got {} error code. Broadcasted HTLC likely isn't valid.",
-                        err_code
+                        "Got {err_code} error code. Broadcasted HTLC likely isn't valid."
                     ));
                 }
 
@@ -1943,7 +1938,7 @@ impl TendermintCoin {
             TransactionEnum::CosmosTransaction(tx) => tx.clone(),
             invalid_variant => {
                 return Box::new(futures01::future::err(
-                    ValidatePaymentError::WrongPaymentTx(format!("Unexpected tx variant {:?}", invalid_variant)).into(),
+                    ValidatePaymentError::WrongPaymentTx(format!("Unexpected tx variant {invalid_variant:?}")).into(),
                 ))
             },
         };
@@ -2060,8 +2055,7 @@ impl TendermintCoin {
 
         if create_htlc_msg != expected_msg {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Incorrect CreateHtlc message {:?}, expected {:?}",
-                create_htlc_msg, expected_msg
+                "Incorrect CreateHtlc message {create_htlc_msg:?}, expected {expected_msg:?}"
             )));
         }
 
@@ -2078,13 +2072,12 @@ impl TendermintCoin {
         let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
-            .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
+            .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {htlc_id}")))?;
 
         match htlc_state {
             HTLC_STATE_OPEN => Ok(()),
             unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "{}",
-                unexpected_state
+                "{unexpected_state}"
             ))),
         }
     }
@@ -2264,8 +2257,7 @@ impl TendermintCoin {
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
-                "Could not get current_block. {}",
-                e
+                "Could not get current_block. {e}"
             )))
         })?;
 
@@ -2305,8 +2297,7 @@ impl TendermintCoin {
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
-                "Could not get current_block. {}",
-                e
+                "Could not get current_block. {e}"
             )))
         })?;
 
@@ -2467,7 +2458,7 @@ impl TendermintCoin {
         match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
-                let query = format!("claim_htlc.id='{}'", htlc_id);
+                let query = format!("claim_htlc.id='{htlc_id}'");
                 let request = TxSearchRequest {
                     query,
                     order_by: TendermintResultOrder::Ascending.into(),
@@ -3490,7 +3481,7 @@ impl MmCoin for TendermintCoin {
         let fut = async move {
             let len = tx_hash.len();
             let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
-                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
+                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {len}"))
             })?;
             let hash = hex::encode_upper(H256::from(hash));
             let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
@@ -3878,8 +3869,7 @@ impl MarketCoinOps for TendermintCoin {
                     return match tx_status_code {
                         cosmrs::tendermint::abci::Code::Ok => Ok(()),
                         cosmrs::tendermint::abci::Code::Err(err_code) => Err(format!(
-                            "Got error code: '{}' for tx: '{}'. Broadcasted tx isn't valid.",
-                            err_code, tx_hash
+                            "Got error code: '{err_code}' for tx: '{tx_hash}'. Broadcasted tx isn't valid."
                         )),
                     };
                 };
@@ -3901,7 +3891,7 @@ impl MarketCoinOps for TendermintCoin {
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
-        let query = format!("claim_htlc.id='{}'", htlc_id);
+        let query = format!("claim_htlc.id='{htlc_id}'");
         let request = TxSearchRequest {
             query,
             order_by: TendermintResultOrder::Ascending.into(),
@@ -4363,8 +4353,7 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
     }
 
     MmError::err(TendermintCoinRpcError::InternalError(format!(
-        "Could not parse the expected sequence number from this error message: '{}'",
-        e
+        "Could not parse the expected sequence number from this error message: '{e}'"
     )))
 }
 
@@ -4597,7 +4586,7 @@ pub mod tendermint_falsecoin_tests {
 
         let (tx_id, _tx_raw) = block_on(async { send_tx_fut.await.unwrap() });
 
-        println!("Claim HTLC tx hash {}", tx_id);
+        println!("Claim HTLC tx hash {tx_id}");
         // >> END HTLC CLAIMING
     }
 
@@ -4640,13 +4629,13 @@ pub mod tendermint_falsecoin_tests {
             prove: false,
         };
         let response = block_on(block_on(coin.rpc_client()).unwrap().perform(request)).unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let tx = cosmrs::Tx::from_bytes(&response.txs.first().unwrap().tx).unwrap();
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let first_msg = tx.body.messages.first().unwrap();
-        println!("{:?}", first_msg);
+        println!("{first_msg:?}");
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
         let expected_secret = [1; 32];
@@ -4699,12 +4688,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 
@@ -4778,7 +4767,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::TxDeserializationError(err) => {
                 assert!(err.contains("failed to decode Protobuf message: MsgSend.amount"))
@@ -4819,7 +4808,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
             _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
@@ -4849,7 +4838,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid amount")),
             _ => panic!("Expected `WrongPaymentTx` invalid amount, found {:?}", error),
@@ -4866,7 +4855,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid sender")),
             _ => panic!("Expected `WrongPaymentTx` invalid sender, found {:?}", error),
@@ -4882,7 +4871,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid memo")),
             _ => panic!("Expected `WrongPaymentTx` invalid memo, found {:?}", error),
@@ -5109,12 +5098,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 
@@ -5185,12 +5174,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 

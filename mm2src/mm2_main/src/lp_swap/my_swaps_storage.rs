@@ -11,21 +11,21 @@ pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Debug, Display, PartialEq)]
 pub enum MySwapsError {
-    #[display(fmt = "Error serializing swap: {}", _0)]
+    #[display(fmt = "Error serializing swap: {_0}")]
     ErrorSerializingItem(String),
-    #[display(fmt = "Error deserializing swap: {}", _0)]
+    #[display(fmt = "Error deserializing swap: {_0}")]
     ErrorDeserializingItem(String),
     #[display(fmt = "Invalid timestamp range")]
     InvalidTimestampRange,
-    #[display(fmt = "Error saving swap: {}", _0)]
+    #[display(fmt = "Error saving swap: {_0}")]
     ErrorSavingSwap(String),
-    #[display(fmt = "'from_uuid' not found: {}", _0)]
+    #[display(fmt = "'from_uuid' not found: {_0}")]
     FromUuidNotFound(Uuid),
-    #[display(fmt = "Error parsing uuid: {}", _0)]
+    #[display(fmt = "Error parsing uuid: {_0}")]
     UuidParse(uuid::Error),
-    #[display(fmt = "Unknown SQL error: {}", _0)]
+    #[display(fmt = "Unknown SQL error: {_0}")]
     UnknownSqlError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 

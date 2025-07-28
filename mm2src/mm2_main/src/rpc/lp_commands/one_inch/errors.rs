@@ -38,7 +38,7 @@ pub enum ApiIntegrationRpcError {
         allowance: U256,
         amount: U256,
     },
-    #[display(fmt = "1inch API error: {}", _0)]
+    #[display(fmt = "1inch API error: {_0}")]
     OneInchError(ApiClientError),
     ApiDataError(String),
     InternalError(String),
@@ -111,7 +111,7 @@ impl From<NumConversError> for FromApiValueError {
 
 impl From<primitive_types::Error> for FromApiValueError {
     fn from(err: primitive_types::Error) -> Self {
-        Self(format!("{:?}", err))
+        Self(format!("{err:?}"))
     }
 }
 

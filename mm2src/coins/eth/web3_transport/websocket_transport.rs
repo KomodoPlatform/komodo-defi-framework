@@ -378,8 +378,7 @@ async fn send_request(
     };
 
     Err(Error::Transport(TransportError::Message(format!(
-        "Sending {:?} failed.",
-        request
+        "Sending {request:?} failed."
     ))))
 }
 

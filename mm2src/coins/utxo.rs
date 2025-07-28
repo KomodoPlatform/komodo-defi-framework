@@ -143,7 +143,7 @@ const UTXO_DUST_AMOUNT: u64 = 1000;
 ///
 /// # Safety
 /// 11 > 0
-const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64) };
+const KMD_MTP_BLOCK_COUNT: NonZeroU64 = NonZeroU64::new(11u64).unwrap();
 const DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT: f64 = 0.5;
 
 pub type GenerateTxResult = Result<(TransactionInputSigner, AdditionalTxData), MmError<GenerateTxError>>;
@@ -667,24 +667,19 @@ pub struct UtxoCoinFields {
 
 #[derive(Debug, Display)]
 pub enum UnsupportedAddr {
-    #[display(
-        fmt = "{} address format activated for {}, but {} format used instead",
-        activated_format,
-        ticker,
-        used_format
-    )]
+    #[display(fmt = "{activated_format} address format activated for {ticker}, but {used_format} format used instead")]
     FormatMismatch {
         ticker: String,
         activated_format: String,
         used_format: String,
     },
-    #[display(fmt = "Expected a valid P2PKH or P2SH prefix for {}", _0)]
+    #[display(fmt = "Expected a valid P2PKH or P2SH prefix for {_0}")]
     PrefixError(String),
-    #[display(fmt = "Address hrp {} is not a valid hrp for {}", hrp, ticker)]
+    #[display(fmt = "Address hrp {hrp} is not a valid hrp for {ticker}")]
     HrpError { ticker: String, hrp: String },
-    #[display(fmt = "Segwit not activated in the config for {}", _0)]
+    #[display(fmt = "Segwit not activated in the config for {_0}")]
     SegwitNotActivated(String),
-    #[display(fmt = "Internal error {}", _0)]
+    #[display(fmt = "Internal error {_0}")]
     InternalError(String),
 }
 
@@ -756,17 +751,17 @@ impl From<TryFromIntError> for GetTxHeightError {
 
 #[derive(Debug, Display)]
 pub enum GetBlockHeaderError {
-    #[display(fmt = "Block header storage error: {}", _0)]
+    #[display(fmt = "Block header storage error: {_0}")]
     StorageError(BlockHeaderStorageError),
-    #[display(fmt = "RPC error: {}", _0)]
+    #[display(fmt = "RPC error: {_0}")]
     RpcError(JsonRpcError),
-    #[display(fmt = "Serialization error: {}", _0)]
+    #[display(fmt = "Serialization error: {_0}")]
     SerializationError(serialization::Error),
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
-    #[display(fmt = "Error validating headers: {}", _0)]
+    #[display(fmt = "Error validating headers: {_0}")]
     SPVError(SPVError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -839,9 +834,9 @@ impl From<serialization::Error> for GetConfirmedTxError {
 
 #[derive(Debug, Display)]
 pub enum AddrFromStrError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     Unsupported(UnsupportedAddr),
-    #[display(fmt = "Cannot determine format: {:?}", _0)]
+    #[display(fmt = "Cannot determine format: {_0:?}")]
     CannotDetermineFormat(Vec<String>),
 }
 
@@ -1335,35 +1330,23 @@ lazy_static! {
 
 #[derive(Debug, Display)]
 pub enum GenerateTxError {
-    #[display(
-        fmt = "Couldn't generate tx from empty UTXOs set, required no less than {} satoshis",
-        required
-    )]
+    #[display(fmt = "Couldn't generate tx from empty UTXOs set, required no less than {required} satoshis")]
     EmptyUtxoSet { required: u64 },
     #[display(fmt = "Couldn't generate tx with empty output set")]
     EmptyOutputs,
-    #[display(fmt = "Output value {} less than dust {}", value, dust)]
+    #[display(fmt = "Output value {value} less than dust {dust}")]
     OutputValueLessThanDust { value: u64, dust: u64 },
-    #[display(
-        fmt = "Output {} value {} is too small, required no less than {}",
-        output_idx,
-        output_value,
-        required
-    )]
+    #[display(fmt = "Output {output_idx} value {output_value} is too small, required no less than {required}")]
     DeductFeeFromOutputFailed {
         output_idx: usize,
         output_value: u64,
         required: u64,
     },
-    #[display(
-        fmt = "Sum of input values {} is too small, required no less than {}",
-        sum_utxos,
-        required
-    )]
+    #[display(fmt = "Sum of input values {sum_utxos} is too small, required no less than {required}")]
     NotEnoughUtxos { sum_utxos: u64, required: u64 },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -1499,7 +1482,7 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     } else if is_asset_chain {
         data_dir.push(".komodo");
     } else {
-        data_dir.push(format!(".{}", name));
+        data_dir.push(format!(".{name}"));
     }
 
     if is_asset_chain {
@@ -1836,7 +1819,7 @@ pub fn sat_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     (amount * BigDecimal::from(10u64.pow(decimals as u32)))
         .to_u64()
         .or_mm_err(|| {
-            let err = format!("Could not get sat from amount {} with decimals {}", amount, decimals);
+            let err = format!("Could not get sat from amount {amount} with decimals {decimals}");
             NumConversError::new(err)
         })
 }

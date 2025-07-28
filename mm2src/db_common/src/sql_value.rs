@@ -18,10 +18,10 @@ pub enum SqlValue {
 impl fmt::Display for SqlValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValue::String(string) => write!(f, "{}", string),
-            SqlValue::StringQuoted(string) => write!(f, "'{}'", string),
-            SqlValue::Integer(decimal) => write!(f, "{}", decimal),
-            SqlValue::Real(real) => write!(f, "{}", real),
+            SqlValue::String(string) => write!(f, "{string}"),
+            SqlValue::StringQuoted(string) => write!(f, "'{string}'"),
+            SqlValue::Integer(decimal) => write!(f, "{decimal}"),
+            SqlValue::Real(real) => write!(f, "{real}"),
         }
     }
 }
@@ -62,7 +62,7 @@ pub enum SqlValueOptional {
 impl fmt::Display for SqlValueOptional {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValueOptional::Some(value) => write!(f, "{}", value),
+            SqlValueOptional::Some(value) => write!(f, "{value}"),
             SqlValueOptional::Null => write!(f, "NULL"),
         }
     }

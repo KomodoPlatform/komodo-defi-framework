@@ -32,7 +32,7 @@ pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
 pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, String> {
     let pubkey_bytes = try_s!(hex::decode(pubkey));
     let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
-    Ok(format!("{:#02x}", addr))
+    Ok(format!("{addr:#02x}"))
 }
 
 pub(crate) fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {
@@ -69,7 +69,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     } else {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
-    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{e:?}")))
 }
 
 /// Converts BigDecimal gwei value to wei value as U256

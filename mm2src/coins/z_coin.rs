@@ -1,3 +1,5 @@
+#![expect(clippy::result_large_err)]
+
 pub mod storage;
 pub mod tx_history_events;
 #[cfg_attr(not(target_arch = "wasm32"), cfg(test))]
@@ -473,10 +475,7 @@ impl ZCoin {
         if change > BigDecimal::from(0u8) {
             received_by_me += change_sat;
             let change_amount = Amount::from_u64(change_sat).map_to_mm(|_| {
-                GenTxError::NumConversion(NumConversError(format!(
-                    "Failed to get ZCash amount from {}",
-                    change_sat
-                )))
+                GenTxError::NumConversion(NumConversError(format!("Failed to get ZCash amount from {change_sat}")))
             })?;
 
             tx_builder.add_sapling_output(
@@ -753,7 +752,7 @@ impl ZCoin {
             return Err(format!("invalid amount {}, expected {}", note.value, amount_sat));
         }
         if &memo != expected_memo {
-            return Err(format!("invalid memo {:?}, expected {:?}", memo, expected_memo));
+            return Err(format!("invalid memo {memo:?}, expected {expected_memo:?}"));
         }
         Ok(true)
     }
@@ -1577,8 +1576,7 @@ impl SwapOps for ZCoin {
             TransactionEnum::ZTransaction(t) => t,
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -1604,8 +1602,7 @@ impl SwapOps for ZCoin {
         z_tx.write(&mut encoded).expect("Writing should not fail");
         if encoded != tx_from_rpc.hex.0 {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Encoded transaction {:?} does not match the tx {:?} from RPC",
-                encoded, tx_from_rpc
+                "Encoded transaction {encoded:?} does not match the tx {tx_from_rpc:?} from RPC"
             )));
         }
 
@@ -1637,8 +1634,7 @@ impl SwapOps for ZCoin {
                 )
                 .map_err(|err| {
                     MmError::new(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Bad dex fee output: {}",
-                        err
+                        "Bad dex fee output: {err}"
                     )))
                 })?
             {
@@ -1655,10 +1651,7 @@ impl SwapOps for ZCoin {
                         &expected_memo,
                     )
                     .map_err(|err| {
-                        MmError::new(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Bad burn output: {}",
-                            err
-                        )))
+                        MmError::new(ValidatePaymentError::WrongPaymentTx(format!("Bad burn output: {err}")))
                     })?
                 {
                     burn_output_valid = true;
@@ -1671,8 +1664,7 @@ impl SwapOps for ZCoin {
         }
 
         MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-            "The dex fee tx {:?} has no shielded outputs or outputs decryption failed",
-            z_tx
+            "The dex fee tx {z_tx:?} has no shielded outputs or outputs decryption failed"
         )))
     }
 
@@ -1814,7 +1806,7 @@ impl MmCoin for ZCoin {
             },
             Err(e) => ValidateAddressResult {
                 is_valid: false,
-                reason: Some(format!("Error {} on decode_payment_address", e)),
+                reason: Some(format!("Error {e} on decode_payment_address")),
             },
         }
     }
@@ -2092,7 +2084,7 @@ impl InitWithdrawCoin for ZCoin {
         }
 
         let to_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &req.to)
-            .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{}", e)))?
+            .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{e}")))?
             .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
         let amount = if req.max {
             let fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
@@ -2111,7 +2103,7 @@ impl InitWithdrawCoin for ZCoin {
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
-                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))
+                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {amount}")))
                 .map_mm_err()?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
             viewing_key: Some(self.z_fields.evk.fvk.ovk),
@@ -2217,8 +2209,7 @@ async fn wait_for_spendable_balance_impl(
 
         if retries >= MAX_RETRIES {
             return MmError::err(GenTxError::Internal(format!(
-                "Locked notes did not become available after {} retries",
-                MAX_RETRIES
+                "Locked notes did not become available after {MAX_RETRIES} retries"
             )));
         }
 
@@ -2267,7 +2258,7 @@ pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawErro
     };
 
     MemoBytes::from_bytes(&s_bytes).map_to_mm(|_| {
-        let error = format!("Memo '{:?}' is too long", memo_str);
+        let error = format!("Memo '{memo_str:?}' is too long");
         WithdrawError::InvalidMemo(error)
     })
 }

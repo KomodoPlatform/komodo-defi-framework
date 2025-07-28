@@ -287,7 +287,7 @@ impl From<JsonRpcError> for UtxoRpcError {
 
 impl From<serialization::Error> for UtxoRpcError {
     fn from(e: serialization::Error) -> Self {
-        UtxoRpcError::InvalidResponse(format!("{:?}", e))
+        UtxoRpcError::InvalidResponse(format!("{e:?}"))
     }
 }
 

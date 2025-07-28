@@ -65,7 +65,7 @@ impl Compact {
     }
 
     pub fn from_u256(val: U256) -> Self {
-        let mut size = (val.bits() + 7) / 8;
+        let mut size = val.bits().div_ceil(8);
         let mut compact = if size <= 3 {
             (val.low_u64() << (8 * (3 - size))) as u32
         } else {

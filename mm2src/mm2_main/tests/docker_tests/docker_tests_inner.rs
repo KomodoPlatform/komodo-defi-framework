@@ -2392,15 +2392,13 @@ fn swaps_should_stop_on_stop_rpc() {
     for uuid in uuids.iter() {
         block_on(mm_bob.wait_for_log(22., |log| {
             log.contains(&format!(
-                "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-                uuid
+                "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
             ))
         }))
         .unwrap();
         block_on(mm_alice.wait_for_log(22., |log| {
             log.contains(&format!(
-                "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-                uuid
+                "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
             ))
         }))
         .unwrap();
@@ -2409,8 +2407,8 @@ fn swaps_should_stop_on_stop_rpc() {
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
     for uuid in uuids {
-        block_on(mm_bob.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {} stopped", uuid)))).unwrap();
-        block_on(mm_alice.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {} stopped", uuid)))).unwrap();
+        block_on(mm_bob.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {uuid} stopped")))).unwrap();
+        block_on(mm_alice.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {uuid} stopped")))).unwrap();
     }
 }
 

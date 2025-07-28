@@ -92,7 +92,7 @@ pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    stats_maker_swap_dir(ctx).join(format!("{}.json", uuid))
+    stats_maker_swap_dir(ctx).join(format!("{uuid}.json"))
 }
 
 async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
@@ -1866,7 +1866,7 @@ impl MakerSwapEvent {
             MakerSwapEvent::TakerPaymentSpendConfirmed => "Taker payment spend confirmed...".to_owned(),
             MakerSwapEvent::TakerPaymentSpendConfirmFailed(_) => "Taker payment spend confirm failed...".to_owned(),
             MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until } => {
-                format!("Maker payment wait refund till {} started...", wait_until)
+                format!("Maker payment wait refund till {wait_until} started...")
             },
             MakerSwapEvent::MakerPaymentRefundStarted => "Maker payment refund started...".to_owned(),
             MakerSwapEvent::MakerPaymentRefunded(_) => "Maker payment refunded...".to_owned(),

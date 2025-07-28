@@ -83,7 +83,7 @@ impl UrlBuilder {
     pub fn build(&self) -> MmResult<Url, ApiClientError> {
         let url = self.base_url.join(self.endpoint)?;
         let url = if let Some(chain_id) = self.chain_id {
-            url.join(&format!("{}/", chain_id))?
+            url.join(&format!("{chain_id}/"))?
         } else {
             url
         };

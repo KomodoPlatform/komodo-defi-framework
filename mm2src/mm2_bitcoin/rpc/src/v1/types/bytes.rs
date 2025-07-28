@@ -100,7 +100,7 @@ impl ops::Deref for Bytes {
 impl ::std::fmt::LowerHex for Bytes {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         for i in &self.0[..] {
-            write!(f, "{:02x}", i)?;
+            write!(f, "{i:02x}")?;
         }
         Ok(())
     }

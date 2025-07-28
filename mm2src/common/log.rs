@@ -580,7 +580,7 @@ impl StatusHandle {
     /// It is not enforced by the logging/dashboard subsystem.
     ///
     /// * `ms` - The time, in milliseconds since UNIX epoch,
-    ///          when the operation is bound to end regardless of its status (aka a timeout).
+    ///   when the operation is bound to end regardless of its status (aka a timeout).
     pub fn deadline(&self, ms: u64) {
         if let Some(ref status) = self.status {
             status.deadline.store(ms, Ordering::SeqCst)
@@ -593,7 +593,7 @@ impl StatusHandle {
     /// It is not enforced by the logging/dashboard subsystem.
     ///
     /// * `ms` - The time, in milliseconds since the creation of the status,
-    ///          when the operation is bound to end (aka a timeout).
+    ///   when the operation is bound to end (aka a timeout).
     pub fn timeframe(&self, ms: u64) {
         if let Some(ref status) = self.status {
             let start = status.start.load(Ordering::SeqCst);
@@ -628,7 +628,7 @@ impl Drop for StatusHandle {
 /// Generates a MM dashboard file path from the MM log file path.
 pub fn dashboard_path(log_path: &Path) -> Result<PathBuf, String> {
     let log_path = try_s!(log_path.to_str().ok_or("Non-unicode log_path?"));
-    Ok(format!("{}.dashboard", log_path).into())
+    Ok(format!("{log_path}.dashboard").into())
 }
 
 /// The shared log state of a MarketMaker instance.  
@@ -758,10 +758,7 @@ fn log_dashboard_sometimesʹ(dashboard: Vec<Arc<Status>>, dl: &mut DashboardLogg
         };
 
         let line = status.line.lock().clone();
-        buf.push_str(&format!(
-            "\n| ({}{}) [{}] {}",
-            passed_str, timeframe_str, tags_str, line
-        ));
+        buf.push_str(&format!("\n| ({passed_str}{timeframe_str}) [{tags_str}] {line}"));
     }
     chunk2log(buf, LogLevel::Info)
 }
@@ -1141,7 +1138,7 @@ impl fmt::Display for LogLevel {
             LogLevel::Debug => "DEBUG",
             LogLevel::Trace => "TRACE",
         };
-        write!(f, "{}", level)
+        write!(f, "{level}")
     }
 }
 
@@ -1190,7 +1187,7 @@ pub mod tests {
 
         let mut handle = log.status_handle();
         for n in 1..=3 {
-            handle.status(&[&"tag1", &"tag2"], &format!("line {}", n));
+            handle.status(&[&"tag1", &"tag2"], &format!("line {n}"));
 
             log.with_dashboard(&mut |dashboard| {
                 assert_eq!(dashboard.len(), 1);
@@ -1198,7 +1195,7 @@ pub mod tests {
                 assert!(status.tags.lock().iter().any(|tag| tag.key == "tag1"));
                 assert!(status.tags.lock().iter().any(|tag| tag.key == "tag2"));
                 assert_eq!(status.tags.lock().len(), 2);
-                assert_eq!(*status.line.lock(), format!("line {}", n));
+                assert_eq!(*status.line.lock(), format!("line {n}"));
             });
         }
         drop(handle);

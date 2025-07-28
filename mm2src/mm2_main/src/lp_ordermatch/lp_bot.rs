@@ -35,7 +35,7 @@ pub use simple_market_maker_bot::{
 pub mod simple_market_maker_tests;
 
 #[derive(Clone, Display)]
-#[display(fmt = "simple_market_maker_bot will stop within {} seconds", bot_refresh_rate)]
+#[display(fmt = "simple_market_maker_bot will stop within {bot_refresh_rate} seconds")]
 pub struct TradingBotStopping {
     bot_refresh_rate: f64,
 }
@@ -47,7 +47,7 @@ impl TradingBotStopping {
 }
 
 #[derive(Clone, Display)]
-#[display(fmt = "simple_market_maker_bot successfully started with {} pairs", nb_pairs)]
+#[display(fmt = "simple_market_maker_bot successfully started with {nb_pairs} pairs")]
 pub struct TradingBotStarted {
     nb_pairs: usize,
 }
@@ -59,10 +59,7 @@ impl TradingBotStarted {
 }
 
 #[derive(Clone, Display)]
-#[display(
-    fmt = "simple_market_maker_bot successfully stopped - cancelled {} orders",
-    nb_orders
-)]
+#[display(fmt = "simple_market_maker_bot successfully stopped - cancelled {nb_orders} orders")]
 pub struct TradingBotStopped {
     nb_orders: usize,
 }
@@ -211,7 +208,7 @@ impl Deref for ArcTradingBotContext {
 #[allow(clippy::single_match)]
 impl TradingBotContext {
     async fn on_trading_bot_event(&self, ctx: &MmArc, trading_bot_event: &TradingBotEvent) {
-        let msg_format = format!("{}", trading_bot_event);
+        let msg_format = format!("{trading_bot_event}");
         info!("{}", msg_format);
         let message_service_ctx = MessageServiceContext::from_ctx(ctx).unwrap();
         let message_service = message_service_ctx.message_service.lock().await;

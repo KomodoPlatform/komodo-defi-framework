@@ -280,6 +280,6 @@ async fn send_request_once(
 }
 
 fn request_failed_error(request: &Call, error: Web3RpcError) -> Error {
-    let error = format!("request {:?} failed: {}", request, error);
+    let error = format!("request {request:?} failed: {error}");
     Error::Transport(TransportError::Message(error))
 }

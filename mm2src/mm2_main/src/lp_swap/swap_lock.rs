@@ -15,12 +15,12 @@ pub type SwapLockResult<T> = Result<T, MmError<SwapLockError>>;
 
 #[derive(Debug, Display)]
 pub enum SwapLockError {
-    #[display(fmt = "Error reading timestamp: {}", _0)]
+    #[display(fmt = "Error reading timestamp: {_0}")]
     ErrorReadingTimestamp(String),
-    #[display(fmt = "Error writing timestamp: {}", _0)]
+    #[display(fmt = "Error writing timestamp: {_0}")]
     ErrorWritingTimestamp(String),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -41,11 +41,11 @@ mod native_lock {
         fn from(e: FileLockError) -> Self {
             match e {
                 FileLockError::ErrorReadingTimestamp { path, error } => {
-                    SwapLockError::ErrorReadingTimestamp(format!("Path: {:?}, Error: {}", path, error))
+                    SwapLockError::ErrorReadingTimestamp(format!("Path: {path:?}, Error: {error}"))
                 },
                 FileLockError::ErrorWritingTimestamp { path, error }
                 | FileLockError::ErrorCreatingLockFile { path, error } => {
-                    SwapLockError::ErrorWritingTimestamp(format!("Path: {:?}, Error: {}", path, error))
+                    SwapLockError::ErrorWritingTimestamp(format!("Path: {path:?}, Error: {error}"))
                 },
             }
         }
@@ -59,12 +59,12 @@ mod native_lock {
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
             let lock_path = if cfg!(feature = "new-db-arch") {
-                ctx.global_dir().join("swap_locks").join(format!("{}.lock", swap_uuid))
+                ctx.global_dir().join("swap_locks").join(format!("{swap_uuid}.lock"))
             } else {
                 ctx.global_dir()
                     .join("SWAPS")
                     .join("MY")
-                    .join(format!("{}.lock", swap_uuid))
+                    .join(format!("{swap_uuid}.lock"))
             };
             let file_lock = some_or_return_ok_none!(FileLock::lock(lock_path, ttl_sec).map_mm_err()?);
 

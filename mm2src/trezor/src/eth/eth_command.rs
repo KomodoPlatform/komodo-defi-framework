@@ -205,7 +205,7 @@ fn to_sign_eth_message(
     unsigned_tx.value().to_big_endian(&mut value);
 
     let addr_hex = if let Action::Call(addr) = unsigned_tx.action() {
-        Some(format!("{:X}", addr)) // Trezor works okay with both '0x' prefixed and non-prefixed addresses in hex
+        Some(format!("{addr:X}")) // Trezor works okay with both '0x' prefixed and non-prefixed addresses in hex
     } else {
         None
     };
@@ -255,7 +255,7 @@ fn to_sign_eth_eip1559_message(
     unsigned_tx.value().to_big_endian(&mut value);
 
     let addr_hex = if let Action::Call(addr) = unsigned_tx.action() {
-        Some(format!("{:X}", addr)) // Trezor works okay with both '0x' prefixed and non-prefixed addresses in hex
+        Some(format!("{addr:X}")) // Trezor works okay with both '0x' prefixed and non-prefixed addresses in hex
     } else {
         None
     };

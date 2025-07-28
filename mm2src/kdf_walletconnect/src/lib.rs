@@ -237,8 +237,7 @@ impl WalletConnectCtxImpl {
                 if rx.changed().await.is_err() {
                     let last_state = *rx.borrow();
                     return MmError::err(WalletConnectError::InternalError(format!(
-                        "Connection task dropped, last state was: {:?}",
-                        last_state
+                        "Connection task dropped, last state was: {last_state:?}"
                     )));
                 }
             }

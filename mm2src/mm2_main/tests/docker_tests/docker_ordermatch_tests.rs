@@ -34,10 +34,7 @@ fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     assert_eq!(
         orderbook.asks.len(),
         expected,
-        "{}/{} orderbook must have exactly {} ask(s)",
-        base,
-        rel,
-        expected
+        "{base}/{rel} orderbook must have exactly {expected} ask(s)"
     );
 }
 
@@ -56,10 +53,7 @@ fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     assert_eq!(
         orderbook.bids.len(),
         expected,
-        "{}/{} orderbook must have exactly {} bid(s)",
-        base,
-        rel,
-        expected
+        "{base}/{rel} orderbook must have exactly {expected} bid(s)"
     );
 }
 

@@ -940,7 +940,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
     log!("{:?}", block_on(enable_native(&mm_alice_dup, MYCOIN1, &[], None)));
 
     for uuid in uuids {
-        let expected_log = format!("Swap {} file lock already acquired", uuid);
+        let expected_log = format!("Swap {uuid} file lock already acquired");
         block_on(mm_bob_dup.wait_for_log(22., |log| log.contains(&expected_log))).unwrap();
         block_on(mm_alice_dup.wait_for_log(22., |log| log.contains(&expected_log))).unwrap();
     }

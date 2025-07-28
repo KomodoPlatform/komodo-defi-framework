@@ -1341,7 +1341,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let taker_funding = match state_machine.taker_coin.send_taker_funding(args).await {
             Ok(tx) => tx,
             Err(e) => {
-                let reason = AbortReason::FailedToSendTakerFunding(format!("{:?}", e));
+                let reason = AbortReason::FailedToSendTakerFunding(format!("{e:?}"));
                 return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
@@ -1611,7 +1611,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_coin_start_block: self.taker_coin_start_block,
                 taker_funding: self.taker_funding,
                 negotiation_data: self.negotiation_data,
-                reason: TakerFundingRefundReason::FundingSpendPreimageValidationFailed(format!("{:?}", e)),
+                reason: TakerFundingRefundReason::FundingSpendPreimageValidationFailed(format!("{e:?}")),
             };
             return Self::change_state(next_state, state_machine).await;
         }
@@ -1670,7 +1670,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                         taker_coin_start_block: self.taker_coin_start_block,
                         taker_funding: self.taker_funding,
                         negotiation_data: self.negotiation_data,
-                        reason: TakerFundingRefundReason::FailedToSendTakerPayment(format!("{:?}", e)),
+                        reason: TakerFundingRefundReason::FailedToSendTakerPayment(format!("{e:?}")),
                     };
                     return Self::change_state(next_state, state_machine).await;
                 },
@@ -1811,7 +1811,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 let next_state = TakerPaymentRefundRequired {
                     taker_payment: self.taker_payment,
                     negotiation_data: self.negotiation_data,
-                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{}", e)),
+                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{e}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -1918,7 +1918,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 let next_state = TakerPaymentRefundRequired {
                     taker_payment: self.taker_payment,
                     negotiation_data: self.negotiation_data,
-                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{}", e)),
+                    reason: TakerPaymentRefundReason::MakerDidNotSpendInTime(format!("{e}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -2228,7 +2228,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     taker_coin_start_block: self.taker_coin_start_block,
                     taker_funding: self.taker_funding,
                     negotiation_data: self.negotiation_data,
-                    reason: TakerFundingRefundReason::FailedToSendTakerPayment(format!("{:?}", e)),
+                    reason: TakerFundingRefundReason::FailedToSendTakerPayment(format!("{e:?}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -2342,7 +2342,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let maker_payment_spend = match state_machine.maker_coin.spend_maker_payment_v2(args).await {
             Ok(tx) => tx,
             Err(e) => {
-                let reason = AbortReason::FailedToSpendMakerPayment(format!("{:?}", e));
+                let reason = AbortReason::FailedToSpendMakerPayment(format!("{e:?}"));
                 return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };

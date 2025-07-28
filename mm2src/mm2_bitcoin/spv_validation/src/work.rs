@@ -27,11 +27,11 @@ fn is_retarget_height(height: u64) -> bool {
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum NextBlockBitsError {
-    #[display(fmt = "Block headers storage error: {}", _0)]
+    #[display(fmt = "Block headers storage error: {_0}")]
     StorageError(BlockHeaderStorageError),
-    #[display(fmt = "Can't find Block header for {} with height {}", coin, height)]
+    #[display(fmt = "Can't find Block header for {coin} with height {height}")]
     NoSuchBlockHeader { coin: String, height: u64 },
-    #[display(fmt = "Can't find a Block header for {} with no max bits", coin)]
+    #[display(fmt = "Can't find a Block header for {coin} with no max bits")]
     NoBlockHeaderWithNoMaxBits { coin: String },
 }
 

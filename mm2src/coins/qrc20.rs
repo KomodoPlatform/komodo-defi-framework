@@ -261,7 +261,7 @@ impl UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'_> {
                 let platform = self.platform.to_lowercase();
                 let data_dir = coin_daemon_data_dir(&platform, is_asset_chain);
 
-                let confname = format!("{}.conf", platform);
+                let confname = format!("{platform}.conf");
                 return Ok(data_dir.join(&confname[..]));
             },
         };
@@ -489,9 +489,9 @@ pub struct GenerateQrc20TxResult {
 
 #[derive(Debug, Display)]
 pub enum Qrc20AbiError {
-    #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
+    #[display(fmt = "Invalid QRC20 ABI params: {_0}")]
     InvalidParams(String),
-    #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[display(fmt = "QRC20 ABI error: {_0}")]
     ABIError(String),
 }
 
@@ -897,8 +897,7 @@ impl SwapOps for Qrc20Coin {
             TransactionEnum::UtxoTx(tx) => tx,
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -1135,7 +1134,7 @@ impl MarketCoinOps for Qrc20Coin {
             let spendable = match tokens.first() {
                 Some(Token::Uint(bal)) => u256_to_big_decimal(*bal, decimals).map_mm_err()?,
                 _ => {
-                    let error = format!("Expected U256 as balanceOf result but got {:?}", tokens);
+                    let error = format!("Expected U256 as balanceOf result but got {tokens:?}");
                     return MmError::err(BalanceError::InvalidResponse(error));
                 },
             };
@@ -1505,7 +1504,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let (gas_limit, gas_price) = match req.fee {
         Some(WithdrawFee::Qrc20Gas { gas_limit, gas_price }) => (gas_limit, gas_price),
         Some(fee_policy) => {
-            let error = format!("Expected 'Qrc20Gas' fee type, found {:?}", fee_policy);
+            let error = format!("Expected 'Qrc20Gas' fee type, found {fee_policy:?}");
             return MmError::err(WithdrawError::InvalidFeePolicy(error));
         },
         None => (QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT),
@@ -1586,7 +1585,7 @@ fn address_from_log_topic(topic: &str) -> Result<H160, String> {
 
 fn address_to_log_topic(address: &H160) -> String {
     let zeros = std::str::from_utf8(&[b'0'; 24]).expect("Expected a valid str from slice of '0' chars");
-    let mut topic = format!("{:02x}", address);
+    let mut topic = format!("{address:02x}");
     topic.insert_str(0, zeros);
     topic
 }

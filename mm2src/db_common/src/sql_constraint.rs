@@ -63,9 +63,9 @@ pub enum SqlConstraint {
 impl fmt::Display for SqlConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlConstraint::Unique(unique) => write!(f, "{}", unique),
-            SqlConstraint::PrimaryKey(prim_key) => write!(f, "{}", prim_key),
-            SqlConstraint::ForeignKey(foreign_key) => write!(f, "{}", foreign_key),
+            SqlConstraint::Unique(unique) => write!(f, "{unique}"),
+            SqlConstraint::PrimaryKey(prim_key) => write!(f, "{prim_key}"),
+            SqlConstraint::ForeignKey(foreign_key) => write!(f, "{foreign_key}"),
         }
     }
 }
@@ -249,7 +249,7 @@ pub mod foreign_key {
 }
 
 fn no_columns_error(constraint: &str) -> SqlError {
-    let error = format!("SQL {} CONSTRAINT must contain columns", constraint);
+    let error = format!("SQL {constraint} CONSTRAINT must contain columns");
     SqlError::ToSqlConversionFailure(StringError::from(error).into_boxed())
 }
 

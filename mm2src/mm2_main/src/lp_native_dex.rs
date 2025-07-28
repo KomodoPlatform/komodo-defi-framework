@@ -79,30 +79,26 @@ pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
 
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum P2PInitError {
-    #[display(
-        fmt = "Invalid WSS key/cert at {:?}. The file must contain {}'",
-        path,
-        expected_format
-    )]
+    #[display(fmt = "Invalid WSS key/cert at {path:?}. The file must contain {expected_format}'")]
     InvalidWssCert { path: PathBuf, expected_format: String },
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig { field: String, error: String },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig { field: String },
-    #[display(fmt = "Error reading WSS key/cert file {:?}: {}", path, error)]
+    #[display(fmt = "Error reading WSS key/cert file {path:?}: {error}")]
     ErrorReadingCertFile { path: PathBuf, error: String },
-    #[display(fmt = "Error getting my IP address: '{}'", _0)]
+    #[display(fmt = "Error getting my IP address: '{_0}'")]
     ErrorGettingMyIpAddr(String),
-    #[display(fmt = "Invalid netid: '{}'", _0)]
+    #[display(fmt = "Invalid netid: '{_0}'")]
     InvalidNetId(NetIdError),
-    #[display(fmt = "Invalid relay address: '{}'", _0)]
+    #[display(fmt = "Invalid relay address: '{_0}'")]
     InvalidRelayAddress(RelayAddressError),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
-    #[display(fmt = "Precheck failed: '{}'", reason)]
+    #[display(fmt = "Precheck failed: '{reason}'")]
     Precheck { reason: String },
-    #[display(fmt = "Internal error: '{}'", _0)]
+    #[display(fmt = "Internal error: '{_0}'")]
     Internal(String),
 }
 
@@ -125,54 +121,54 @@ impl From<AdexBehaviourError> for P2PInitError {
 pub enum MmInitError {
     Cancelled,
     #[from_trait(WithTimeout::timeout)]
-    #[display(fmt = "Initialization timeout {:?}", _0)]
+    #[display(fmt = "Initialization timeout {_0:?}")]
     Timeout(Duration),
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig {
         field: String,
     },
-    #[display(fmt = "The '{}' field has wrong value in the config: {}", field, error)]
+    #[display(fmt = "The '{field}' field has wrong value in the config: {error}")]
     FieldWrongValueInConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "P2P initializing error: '{}'", _0)]
+    #[display(fmt = "P2P initializing error: '{_0}'")]
     P2PError(P2PInitError),
-    #[display(fmt = "Error creating DB director '{:?}': {}", path, error)]
+    #[display(fmt = "Error creating DB director '{path:?}': {error}")]
     ErrorCreatingDbDir {
         path: PathBuf,
         error: String,
     },
-    #[display(fmt = "{} db dir is not writable", path)]
+    #[display(fmt = "{path} db dir is not writable")]
     DbDirectoryIsNotWritable {
         path: String,
     },
-    #[display(fmt = "{} db file is not writable", path)]
+    #[display(fmt = "{path} db file is not writable")]
     DbFileIsNotWritable {
         path: String,
     },
-    #[display(fmt = "sqlite initializing error: {}", _0)]
+    #[display(fmt = "sqlite initializing error: {_0}")]
     ErrorSqliteInitializing(String),
-    #[display(fmt = "DB migrating error: {}", _0)]
+    #[display(fmt = "DB migrating error: {_0}")]
     ErrorDbMigrating(String),
-    #[display(fmt = "Swap kick start error: {}", _0)]
+    #[display(fmt = "Swap kick start error: {_0}")]
     SwapsKickStartError(String),
-    #[display(fmt = "Order kick start error: {}", _0)]
+    #[display(fmt = "Order kick start error: {_0}")]
     OrdersKickStartError(String),
-    #[display(fmt = "Error initializing wallet: {}", _0)]
+    #[display(fmt = "Error initializing wallet: {_0}")]
     WalletInitError(String),
-    #[display(fmt = "Event streamer initialization failed: {}", _0)]
+    #[display(fmt = "Event streamer initialization failed: {_0}")]
     EventStreamerInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
     #[from_trait(WithInternal::internal)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

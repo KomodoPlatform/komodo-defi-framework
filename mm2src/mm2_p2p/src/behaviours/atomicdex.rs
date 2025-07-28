@@ -253,7 +253,7 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<PeerId>, rp_se
                 let now = common::get_utc_timestamp();
                 let now: u64 = now
                     .try_into()
-                    .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {}", now));
+                    .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {now}"));
 
                 let diff = now.abs_diff(timestamp);
 
@@ -292,7 +292,7 @@ async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: R
     match internal_response_rx.await {
         Ok(response) => response,
         Err(e) => PeerResponse::Err {
-            err: format!("Error on request the peer {:?}: \"{:?}\". Request next peer", peer, e),
+            err: format!("Error on request the peer {peer:?}: \"{e:?}\". Request next peer"),
         },
     }
 }
@@ -631,13 +631,13 @@ impl NodeType {
 
 #[derive(Debug, Display)]
 pub enum AdexBehaviourError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     ParsingRelayAddress(RelayAddressError),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     SubscriptionError(SubscriptionError),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     PublishError(PublishError),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     InitializationError(String),
 }
 
@@ -791,7 +791,7 @@ fn start_gossipsub(
             }
         },
         NodeType::RelayInMemory { port } => {
-            let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
+            let memory_addr: Multiaddr = format!("/memory/{port}").parse().unwrap();
             libp2p::Swarm::listen_on(&mut swarm, memory_addr).unwrap();
         },
         _ => (),

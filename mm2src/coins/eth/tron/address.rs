@@ -31,15 +31,14 @@ impl Address {
         let data = bs58::decode(s)
             .with_check(None)
             .into_vec()
-            .map_err(|e| format!("Invalid base58check address: {}", e))?;
+            .map_err(|e| format!("Invalid base58check address: {e}"))?;
 
         // SAFETY: Accessing `data[0]` is safe here because we first check that
         // `data.len() == ADDRESS_BYTES_LEN`, guaranteeing the slice is not empty
         // and has at least one element.
         if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_PREFIX {
             return Err(format!(
-                "Invalid address: expected {} bytes with prefix 0x{:x}",
-                ADDRESS_BYTES_LEN, ADDRESS_PREFIX
+                "Invalid address: expected {ADDRESS_BYTES_LEN} bytes with prefix 0x{ADDRESS_PREFIX:x}"
             ));
         }
 
@@ -53,15 +52,14 @@ impl Address {
     /// Construct from hex string, with or without `0x` prefix.
     pub fn from_hex(s: &str) -> Result<Self, String> {
         let s = s.strip_prefix("0x").unwrap_or(s);
-        let data = hex::decode(s).map_err(|e| format!("Invalid hex address: {}", e))?;
+        let data = hex::decode(s).map_err(|e| format!("Invalid hex address: {e}"))?;
 
         // SAFETY: Accessing `data[0]` is safe here because we first check that
         // `data.len() == ADDRESS_BYTES_LEN`, guaranteeing the slice is not empty
         // and has at least one element.
         if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_PREFIX {
             return Err(format!(
-                "Invalid address: expected {} bytes with prefix 0x{:x}",
-                ADDRESS_BYTES_LEN, ADDRESS_PREFIX
+                "Invalid address: expected {ADDRESS_BYTES_LEN} bytes with prefix 0x{ADDRESS_PREFIX:x}"
             ));
         }
 
@@ -150,8 +148,7 @@ impl FromStr for Address {
         }
 
         Err(format!(
-            "Invalid TRON address '{}': must be Base58 (34 chars starting with 'T') or hex (42 chars without 0x, 44 chars with 0x prefix)",
-            s
+            "Invalid TRON address '{s}': must be Base58 (34 chars starting with 'T') or hex (42 chars without 0x, 44 chars with 0x prefix)"
         ))
     }
 }

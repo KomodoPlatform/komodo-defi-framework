@@ -98,7 +98,7 @@ impl<'de> Deserialize<'de> for RpcDerivationPath {
         D: Deserializer<'de>,
     {
         let path = String::deserialize(deserializer)?;
-        let inner = DerivationPath::from_str(&path).map_err(|e| D::Error::custom(format!("{}", e)))?;
+        let inner = DerivationPath::from_str(&path).map_err(|e| D::Error::custom(format!("{e}")))?;
         Ok(RpcDerivationPath(inner))
     }
 }

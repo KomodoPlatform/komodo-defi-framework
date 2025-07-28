@@ -252,7 +252,7 @@ where
     P: IntoIterator + fmt::Debug + rusqlite::Params,
     P::Item: ToSql,
 {
-    let row_number = format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by);
+    let row_number = format!("ROW_NUMBER() OVER (ORDER BY {order_by}) AS row");
     let subquery = query_builder
         .clone()
         .field(&row_number)

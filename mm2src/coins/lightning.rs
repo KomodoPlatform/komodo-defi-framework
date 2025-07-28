@@ -268,7 +268,7 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
-                .map_to_mm(|e| PaymentError::Keysend(format!("{:?}", e)))
+                .map_to_mm(|e| PaymentError::Keysend(format!("{e:?}")))
         })
         .await?;
 
@@ -441,8 +441,7 @@ impl LightningCoin {
             ln_p2p::connect_to_ln_node(node_pubkey, node_addr, self.peer_manager.clone())
                 .await
                 .error_log_with_msg(&format!(
-                    "Channel with node: {} can't be used for invoice routing hints due to connection error.",
-                    node_pubkey
+                    "Channel with node: {node_pubkey} can't be used for invoice routing hints due to connection error."
                 ));
         }
 
@@ -592,19 +591,16 @@ impl LightningCoin {
                     // But keeping it just in case any changes happen in rust-lightning
                     if amount_claimable != Some(amt_msat as i64) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, amount_claimable, amt_msat
+                            "Provided payment {payment_hex} amount {amount_claimable:?} doesn't match required amount {amt_msat}"
                         )));
                     }
                     Ok(())
                 },
                 Ok(None) => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment {} is not in the database when it should be!",
-                    payment_hex
+                    "Payment {payment_hex} is not in the database when it should be!"
                 ))),
                 Err(e) => MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Unable to retrieve payment {} from the database error: {}",
-                    payment_hex, e
+                    "Unable to retrieve payment {payment_hex} from the database error: {e}"
                 ))),
             }
         };
@@ -850,7 +846,7 @@ impl SwapOps for LightningCoin {
         .repeat_every_secs(WAIT_FOR_REFUND_INTERVAL)
         .until_s(locktime)
         .await
-        .map_err(|e| RefundError::Timeout(format!("{:?}", e)))?
+        .map_err(|e| RefundError::Timeout(format!("{e:?}")))?
     }
 
     fn negotiate_swap_contract_addr(
@@ -946,7 +942,7 @@ impl SwapOps for LightningCoin {
 
 #[derive(Debug, Display)]
 pub enum PaymentHashFromSliceErr {
-    #[display(fmt = "Invalid data length of {}", _0)]
+    #[display(fmt = "Invalid data length of {_0}")]
     InvalidLength(usize),
 }
 
@@ -985,7 +981,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let mut _message_prefix = self.conf.sign_message_prefix.clone()?;
-        let prefixed_message = format!("{}{}", _message_prefix, message);
+        let prefixed_message = format!("{_message_prefix}{message}");
         Some(dhash256(prefixed_message.as_bytes()).take())
     }
 
@@ -1282,7 +1278,7 @@ impl MmCoin for LightningCoin {
             },
             Err(e) => ValidateAddressResult {
                 is_valid: false,
-                reason: Some(format!("Error {} on parsing node public key", e)),
+                reason: Some(format!("Error {e} on parsing node public key")),
             },
         }
     }
