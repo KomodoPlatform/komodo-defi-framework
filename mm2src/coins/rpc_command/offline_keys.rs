@@ -233,7 +233,7 @@ fn get_pubkey_for_protocol(key_pair: &KeyPair, protocol: &CoinProtocol) -> Resul
         },
         _ => {
             // For other protocols, use compressed public keys
-            Ok(key_pair.public().to_vec().to_hex().to_string())
+            Ok(key_pair.public().to_vec().to_hex())
         },
     }
 }
@@ -244,8 +244,8 @@ fn format_pubkey_for_display(pubkey: &str, protocol: &CoinProtocol) -> String {
     match protocol {
         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
             // For ETH, strip the 04 prefix and add 0x prefix
-            if pubkey.starts_with("04") {
-                format!("0x{}", &pubkey[2..])
+            if let Some(stripped_pubkey) = pubkey.strip_prefix("04") {
+                format!("0x{}", stripped_pubkey)
             } else {
                 format!("0x{}", pubkey)
             }
