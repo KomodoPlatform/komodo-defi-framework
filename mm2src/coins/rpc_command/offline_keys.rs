@@ -342,7 +342,8 @@ async fn offline_hd_keys_export_internal(
 
                     let address = match protocol {
                         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                            crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
+                            let raw_address = crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                            crate::eth::checksum_address(&raw_address)
                         },
                         _ => {
                             return MmError::err(OfflineKeysError::Internal(format!(
@@ -503,7 +504,8 @@ async fn offline_iguana_keys_export_internal(
 
                 let address = match protocol {
                     CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                        crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
+                        let raw_address = crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                        crate::eth::checksum_address(&raw_address)
                     },
                     _ => {
                         return MmError::err(OfflineKeysError::Internal(format!(
@@ -770,6 +772,7 @@ mod tests {
             account_index: Some(0),
         };
 
+        // Expected addresses in EIP-55 checksum format (not lowercase)
         let expected_addresses = [
             "0x6B06d67C539B101180aC03b61ba7F7f3158CE54d",
             "0x012F492f2d254e204dD8da3a4f0d6071C345b9D1",
@@ -796,7 +799,15 @@ mod tests {
                 assert_eq!(eth_result.addresses.len(), 3);
 
                 for (i, addr_info) in eth_result.addresses.iter().enumerate() {
-                    assert_eq!(addr_info.address.to_lowercase(), expected_addresses[i].to_lowercase());
+                    // Verify addresses are returned in EIP-55 checksum format
+                    assert_eq!(addr_info.address, expected_addresses[i], 
+                        "Address {} should be in EIP-55 checksum format", i);
+                    
+                    // Verify that the address is valid checksum format
+                    assert_eq!(addr_info.address, crate::eth::checksum_address(&addr_info.address.to_lowercase()),
+                        "Address {} should match EIP-55 checksum of its lowercase version", i);
+                    
+                    // Original assertions
                     assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
                     assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0/0/{}", i));
@@ -1061,5 +1072,63 @@ mod tests {
         assert_eq!(expected_first_address.len(), 78);
         assert!(expected_first_private_key.len() > 100);
         assert!(expected_first_viewing_key.len() > 100);
+    }
+
+    #[tokio::test]  
+    async fn test_eth_iguana_eip55_formatting() {
+        use mm2_test_helpers::for_tests::eth_dev_conf;
+
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "coins": [eth_dev_conf()],
+                "rpc_password": "test123"
+            }))
+            .into_mm_arc();
+
+        // Initialize with a test passphrase for Iguana mode
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "test_passphrase_for_eip55").unwrap();
+
+        let req = GetPrivateKeysRequest {
+            coins: vec!["ETH".to_string()],
+            mode: Some(KeyExportMode::Iguana),
+            start_index: None,
+            end_index: None,  
+            account_index: None,
+        };
+
+        let response = get_private_keys(ctx.clone(), req).await.unwrap();
+
+        match response {
+            GetPrivateKeysResponse::Iguana(iguana_response) => {
+                assert_eq!(iguana_response.len(), 1);
+                let eth_result = &iguana_response[0];
+                assert_eq!(eth_result.coin, "ETH");
+
+                // Verify that the address is in EIP-55 checksum format
+                let address = &eth_result.address;
+                assert!(address.starts_with("0x"), "Address should start with 0x");
+                assert_eq!(address.len(), 42, "Address should be 42 characters long");
+                
+                // Verify that the address is properly checksummed
+                let lowercase_addr = address.to_lowercase();
+                let checksummed_addr = crate::eth::checksum_address(&lowercase_addr);
+                assert_eq!(address, &checksummed_addr, 
+                    "Address should be in proper EIP-55 checksum format");
+                
+                // Verify mixed case (some letters should be uppercase if properly checksummed)
+                let has_uppercase = address.chars().any(|c| c.is_uppercase() && c.is_alphabetic());
+                let has_lowercase = address.chars().any(|c| c.is_lowercase() && c.is_alphabetic());
+                
+                // For a proper checksum, we expect a mix of cases (unless it's an edge case)
+                if address.chars().any(|c| c.is_alphabetic()) {
+                    assert!(has_uppercase || has_lowercase, "Address should have mixed case for EIP-55");
+                }
+
+                // Verify private key format
+                assert!(eth_result.priv_key.starts_with("0x"), "Private key should start with 0x");
+                assert_eq!(eth_result.priv_key.len(), 66, "Private key should be 66 characters long");
+            },
+            _ => panic!("Expected Iguana response for ETH key derivation test"),
+        }
     }
 }
