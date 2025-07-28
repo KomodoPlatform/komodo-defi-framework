@@ -14,9 +14,8 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::str::FromStr;
-use zcash_client_backend::encoding::{
-    encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
-};
+use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key,
+                                     encode_payment_address};
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::zip32::{ChildIndex, ExtendedSpendingKey};
 
@@ -166,7 +165,7 @@ fn extract_prefix_values(
             }))
         },
         CoinProtocol::TENDERMINT(protocol_info) => Ok(Some(PrefixValues::Tendermint {
-            account_prefix: protocol_info.account_prefix.clone(),
+            account_prefix: protocol_info.account_prefix,
         })),
         CoinProtocol::TENDERMINTTOKEN(token_info) => {
             let platform_conf = crate::coin_conf(ctx, &token_info.platform);
@@ -185,7 +184,7 @@ fn extract_prefix_values(
                 })?;
             match platform_protocol {
                 CoinProtocol::TENDERMINT(platform_info) => Ok(Some(PrefixValues::Tendermint {
-                    account_prefix: platform_info.account_prefix.clone(),
+                    account_prefix: platform_info.account_prefix,
                 })),
                 _ => Err(OfflineKeysError::Internal(format!(
                     "Platform protocol for {} is not TENDERMINT: {:?}",
@@ -194,7 +193,7 @@ fn extract_prefix_values(
             }
         },
         CoinProtocol::ZHTLC(protocol_info) => Ok(Some(PrefixValues::Zhtlc {
-            _protocol_info: protocol_info.clone(),
+            _protocol_info: protocol_info,
         })),
         _ => Err(OfflineKeysError::Internal(format!(
             "Unsupported protocol for {}: {:?}",
@@ -328,7 +327,7 @@ async fn offline_hd_keys_export_internal(
                         AddressBuilder::new(address_format, ChecksumType::DSHA256, address_prefixes, bech32_hrp)
                             .as_pkh_from_pk(*key_pair.public())
                             .build()
-                            .map_err(|e| OfflineKeysError::Internal(e.to_string()))?;
+                            .map_err(OfflineKeysError::Internal)?;
 
                     (address.to_string(), private.to_string(), None)
                 },
@@ -343,8 +342,7 @@ async fn offline_hd_keys_export_internal(
 
                     let address = match protocol {
                         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                            crate::eth::addr_from_pubkey_str(&pubkey)
-                                .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
+                            crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
                         },
                         _ => {
                             return MmError::err(OfflineKeysError::Internal(format!(
@@ -491,7 +489,7 @@ async fn offline_iguana_keys_export_internal(
                     AddressBuilder::new(AddressFormat::Standard, ChecksumType::DSHA256, address_prefixes, None)
                         .as_pkh_from_pk(*key_pair.public())
                         .build()
-                        .map_err(|e| OfflineKeysError::Internal(e.to_string()))?;
+                        .map_err(OfflineKeysError::Internal)?;
 
                 (address.to_string(), private.to_string())
             },
@@ -505,8 +503,7 @@ async fn offline_iguana_keys_export_internal(
 
                 let address = match protocol {
                     CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                        crate::eth::addr_from_pubkey_str(&pubkey)
-                            .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
+                        crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
                     },
                     _ => {
                         return MmError::err(OfflineKeysError::Internal(format!(
