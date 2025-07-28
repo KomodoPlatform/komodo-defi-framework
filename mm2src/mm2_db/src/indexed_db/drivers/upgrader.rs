@@ -44,9 +44,9 @@ impl DbUpgrader {
         // We use the [in-line](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Basic_Concepts_Behind_IndexedDB#gloss_inline_key) primary keys.
         let key_path = JsValue::from(ITEM_KEY_PATH);
 
-        let mut params = IdbObjectStoreParameters::new();
-        params.key_path(Some(&key_path));
-        params.auto_increment(true);
+        let params = IdbObjectStoreParameters::new();
+        params.set_key_path(&key_path);
+        params.set_auto_increment(true);
 
         match self.db.create_object_store_with_optional_parameters(table, &params) {
             Ok(object_store) => Ok(TableUpgrader { object_store }),
@@ -77,8 +77,8 @@ impl TableUpgrader {
     /// Creates an index.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_index(&self, index: &str, unique: bool) -> OnUpgradeResult<()> {
-        let mut params = IdbIndexParameters::new();
-        params.unique(unique);
+        let params = IdbIndexParameters::new();
+        params.set_unique(unique);
         self.object_store
             .create_index_with_str_and_optional_parameters(index, index, &params)
             .map(|_| ())
@@ -93,8 +93,8 @@ impl TableUpgrader {
     /// Such indexes are used to find records that satisfy constraints imposed on multiple fields.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_multi_index(&self, index: &str, fields: &[&str], unique: bool) -> OnUpgradeResult<()> {
-        let mut params = IdbIndexParameters::new();
-        params.unique(unique);
+        let params = IdbIndexParameters::new();
+        params.set_unique(unique);
 
         let fields_key_path = Array::new();
         for field in fields {

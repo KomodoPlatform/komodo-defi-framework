@@ -220,12 +220,17 @@ impl FetchRequest {
     async fn fetch(request: Self) -> FetchResult<JsResponse> {
         let uri = request.uri;
 
-        let mut req_init = RequestInit::new();
-        req_init.method(request.method.as_str());
-        req_init.body(request.body.map(RequestBody::into_js_value).as_ref());
+        let req_init = RequestInit::new();
+        req_init.set_method(request.method.as_str());
+
+        let body = request
+            .body
+            .map(RequestBody::into_js_value)
+            .ok_or_else(|| SlurpError::Internal("Failed to create request body".to_owned()))?;
+        req_init.set_body(&body);
 
         if let Some(mode) = request.mode {
-            req_init.mode(mode);
+            req_init.set_mode(mode);
         }
 
         let js_request = JsRequest::new_with_str_and_init(&uri, &req_init)
