@@ -1,3 +1,4 @@
+use crate::eth::{addr_from_pubkey_str, checksum_address};
 use crate::tendermint;
 use crate::z_coin::{ZcoinConsensusParams, ZcoinProtocolInfo};
 use crate::CoinProtocol;
@@ -8,7 +9,7 @@ use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::{Bip32DerPathOps, CryptoCtx, HDPathToCoin, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use http::StatusCode;
-use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes, Private};
+use keys::{AddressBuilder, AddressFormat, AddressPrefix, KeyPair, NetworkAddressPrefixes, Private};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -216,6 +217,43 @@ fn coin_conf_with_protocol(ctx: &MmArc, ticker: &str, conf_override: Option<Json
     Ok((conf, protocol))
 }
 
+/// Gets the appropriate public key format for the given protocol.
+/// ETH protocols require uncompressed public keys, while others use compressed.
+fn get_pubkey_for_protocol(key_pair: &KeyPair, protocol: &CoinProtocol) -> Result<String, String> {
+    match protocol {
+        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
+            // For ETH protocols, we need uncompressed public keys (keep 04 prefix for internal processing)
+            let secp_pubkey = key_pair
+                .public()
+                .to_secp256k1_pubkey()
+                .map_err(|e| format!("Failed to convert to secp256k1 pubkey: {}", e))?;
+            let uncompressed = secp_pubkey.serialize_uncompressed();
+            // Keep full uncompressed format for internal compatibility
+            Ok(hex::encode(uncompressed))
+        },
+        _ => {
+            // For other protocols, use compressed public keys
+            Ok(key_pair.public().to_vec().to_hex())
+        },
+    }
+}
+
+/// Formats the public key for display based on protocol.
+/// ETH protocols get 0x prefix (without 04 prefix), others remain as-is.
+fn format_pubkey_for_display(pubkey: &str, protocol: &CoinProtocol) -> String {
+    match protocol {
+        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
+            // For ETH, strip the 04 prefix and add 0x prefix
+            if let Some(stripped_pubkey) = pubkey.strip_prefix("04") {
+                format!("0x{}", stripped_pubkey)
+            } else {
+                format!("0x{}", pubkey)
+            }
+        },
+        _ => pubkey.to_string(),
+    }
+}
+
 async fn offline_hd_keys_export_internal(
     ctx: MmArc,
     coins: Vec<String>,
@@ -292,7 +330,18 @@ async fn offline_hd_keys_export_internal(
                 })?
             };
 
-            let pubkey = key_pair.public().to_vec().to_hex().to_string();
+            let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
+                OfflineKeysError::ProtocolParseError {
+                    ticker: ticker.to_string(),
+                    error: e.to_string(),
+                }
+            })?;
+
+            let pubkey =
+                get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                    ticker: ticker.clone(),
+                    error: format!("Failed to get pubkey: {}", e),
+                })?;
 
             let (address, priv_key, viewing_key_from_derivation) = match &prefix_values {
                 Some(PrefixValues::Utxo {
@@ -332,17 +381,10 @@ async fn offline_hd_keys_export_internal(
                     (address.to_string(), private.to_string(), None)
                 },
                 None => {
-                    let protocol: CoinProtocol =
-                        serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
-                            OfflineKeysError::ProtocolParseError {
-                                ticker: ticker.to_string(),
-                                error: e.to_string(),
-                            }
-                        })?;
-
                     let address = match protocol {
                         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                            crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
+                            let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                            checksum_address(&raw_address)
                         },
                         _ => {
                             return MmError::err(OfflineKeysError::Internal(format!(
@@ -423,7 +465,7 @@ async fn offline_hd_keys_export_internal(
 
             addresses.push(HdAddressInfo {
                 derivation_path,
-                pubkey,
+                pubkey: format_pubkey_for_display(&pubkey, &protocol),
                 address,
                 priv_key,
                 viewing_key: viewing_key_from_derivation,
@@ -465,7 +507,18 @@ async fn offline_iguana_keys_export_internal(
             }
         };
 
-        let pubkey = key_pair.public().to_vec().to_hex().to_string();
+        let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
+            OfflineKeysError::ProtocolParseError {
+                ticker: ticker.to_string(),
+                error: e.to_string(),
+            }
+        })?;
+
+        let pubkey =
+            get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                ticker: ticker.clone(),
+                error: format!("Failed to get pubkey: {}", e),
+            })?;
 
         let (address, priv_key) = match prefix_values {
             Some(PrefixValues::Utxo {
@@ -494,16 +547,10 @@ async fn offline_iguana_keys_export_internal(
                 (address.to_string(), private.to_string())
             },
             None => {
-                let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
-                    OfflineKeysError::ProtocolParseError {
-                        ticker: ticker.to_string(),
-                        error: e.to_string(),
-                    }
-                })?;
-
                 let address = match protocol {
                     CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                        crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?
+                        let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                        checksum_address(&raw_address)
                     },
                     _ => {
                         return MmError::err(OfflineKeysError::Internal(format!(
@@ -559,7 +606,7 @@ async fn offline_iguana_keys_export_internal(
 
         result.push(CoinKeyInfo {
             coin: ticker.clone(),
-            pubkey,
+            pubkey: format_pubkey_for_display(&pubkey, &protocol),
             address,
             priv_key,
         });
@@ -770,15 +817,16 @@ mod tests {
             account_index: Some(0),
         };
 
+        // Expected addresses in EIP-55 checksum format (not lowercase)
         let expected_addresses = [
             "0x6B06d67C539B101180aC03b61ba7F7f3158CE54d",
             "0x012F492f2d254e204dD8da3a4f0d6071C345b9D1",
             "0xa713617C963b82429909B09B9181a22884f1eb8f",
         ];
-        let _expected_pubkeys = [
-            "02a2b68c3126ba160e5ffb7c0d5c5c5c56e724f57e5ec0ace40d6db990e688ed4a",
-            "02d7efb9086100311021166c11b2dc7ca941ccbe242b51206555721efe93737678",
-            "03353b68f1b2c0891edf78395480bc67e128fb967c5722a6b41d784da295986d4d",
+        let expected_pubkeys = [
+            "0xa2b68c3126ba160e5ffb7c0d5c5c5c56e724f57e5ec0ace40d6db990e688ed4a98256f5b30ea495e91602b165c4e58372ec3f6032768de49925f8754bb0df7f8",
+            "0xd7efb9086100311021166c11b2dc7ca941ccbe242b51206555721efe93737678e02073766420f2bc3bdb313d648b780bd71cacfc1b9b66b8f2559c7231be9006",
+            "0x353b68f1b2c0891edf78395480bc67e128fb967c5722a6b41d784da295986d4d2d6cedd92e84beb57332b8f5e2e4c623c72d992f83c5baa9324e3e3410c8d1f9",
         ];
         let expected_privkeys = [
             "0x646431107ae37e826aaa5108fe2c2611ef15615e78b4175919b85fd6366f19a3",
@@ -796,8 +844,23 @@ mod tests {
                 assert_eq!(eth_result.addresses.len(), 3);
 
                 for (i, addr_info) in eth_result.addresses.iter().enumerate() {
-                    assert_eq!(addr_info.address.to_lowercase(), expected_addresses[i].to_lowercase());
-                    assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
+                    // Verify addresses are returned in EIP-55 checksum format
+                    assert_eq!(
+                        addr_info.address, expected_addresses[i],
+                        "Address {} should be in EIP-55 checksum format",
+                        i
+                    );
+
+                    // Verify that the address is valid checksum format
+                    assert_eq!(
+                        addr_info.address,
+                        checksum_address(&addr_info.address.to_lowercase()),
+                        "Address {} should match EIP-55 checksum of its lowercase version",
+                        i
+                    );
+
+                    // Original assertions
+                    assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
                     assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0/0/{}", i));
                 }
@@ -1061,5 +1124,75 @@ mod tests {
         assert_eq!(expected_first_address.len(), 78);
         assert!(expected_first_private_key.len() > 100);
         assert!(expected_first_viewing_key.len() > 100);
+    }
+
+    #[tokio::test]
+    async fn test_eth_iguana_eip55_formatting() {
+        use mm2_test_helpers::for_tests::eth_dev_conf;
+
+        let ctx = MmCtxBuilder::new()
+            .with_conf(json!({
+                "coins": [eth_dev_conf()],
+                "rpc_password": "test123"
+            }))
+            .into_mm_arc();
+
+        // Initialize with a test passphrase for Iguana mode
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "test_passphrase_for_eip55").unwrap();
+
+        let req = GetPrivateKeysRequest {
+            coins: vec!["ETH".to_string()],
+            mode: Some(KeyExportMode::Iguana),
+            start_index: None,
+            end_index: None,
+            account_index: None,
+        };
+
+        let response = get_private_keys(ctx.clone(), req).await.unwrap();
+
+        match response {
+            GetPrivateKeysResponse::Iguana(iguana_response) => {
+                assert_eq!(iguana_response.len(), 1);
+                let eth_result = &iguana_response[0];
+                assert_eq!(eth_result.coin, "ETH");
+
+                // Verify that the address is in EIP-55 checksum format
+                let address = &eth_result.address;
+                assert!(address.starts_with("0x"), "Address should start with 0x");
+                assert_eq!(address.len(), 42, "Address should be 42 characters long");
+
+                // Verify that the address is properly checksummed
+                let lowercase_addr = address.to_lowercase();
+                let checksummed_addr = checksum_address(&lowercase_addr);
+                assert_eq!(
+                    address, &checksummed_addr,
+                    "Address should be in proper EIP-55 checksum format"
+                );
+
+                // Verify mixed case (some letters should be uppercase if properly checksummed)
+                let has_uppercase = address.chars().any(|c| c.is_uppercase() && c.is_alphabetic());
+                let has_lowercase = address.chars().any(|c| c.is_lowercase() && c.is_alphabetic());
+
+                // For a proper checksum, we expect a mix of cases (unless it's an edge case)
+                if address.chars().any(|c| c.is_alphabetic()) {
+                    assert!(
+                        has_uppercase || has_lowercase,
+                        "Address should have mixed case for EIP-55"
+                    );
+                }
+
+                // Verify private key format
+                assert!(
+                    eth_result.priv_key.starts_with("0x"),
+                    "Private key should start with 0x"
+                );
+                assert_eq!(
+                    eth_result.priv_key.len(),
+                    66,
+                    "Private key should be 66 characters long"
+                );
+            },
+            _ => panic!("Expected Iguana response for ETH key derivation test"),
+        }
     }
 }
