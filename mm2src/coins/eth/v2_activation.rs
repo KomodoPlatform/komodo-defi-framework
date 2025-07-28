@@ -534,7 +534,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             address_nonce_locks: self.address_nonce_locks.clone(),
             erc20_tokens_infos: Default::default(),
-            nfts_infos: Default::default(),
+            nfts_by_address: Default::default(),
             gas_limit,
             gas_limit_v2,
             abortable_system,
@@ -592,6 +592,10 @@ impl EthCoin {
         let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
             .await
             .map_mm_err()?;
+        let mut nfts_by_address = HashMap::new();
+        nfts_by_address.insert(my_address, nft_infos);
+        drop_mutability!(nfts_by_address);
+
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
@@ -623,7 +627,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             address_nonce_locks: self.address_nonce_locks.clone(),
             erc20_tokens_infos: Default::default(),
-            nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
+            nfts_by_address: Arc::new(AsyncMutex::new(nfts_by_address)),
             gas_limit,
             gas_limit_v2,
             abortable_system,
@@ -763,7 +767,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         address_nonce_locks,
         erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
+        nfts_by_address: Default::default(),
         gas_limit,
         gas_limit_v2,
         abortable_system,
