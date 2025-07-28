@@ -48,6 +48,8 @@ pub struct CoinKeyInfo {
     pub pubkey: String,
     pub address: String,
     pub priv_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    viewing_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -250,6 +252,9 @@ fn format_pubkey_for_display(pubkey: &str, protocol: &CoinProtocol) -> String {
                 format!("0x{}", pubkey)
             }
         },
+        // A standard public key is not applicable for shielded Z-addresses.
+        // The relevant public component is the viewing key, which is handled elsewhere.
+        CoinProtocol::ZHTLC { .. } => "".to_string(),
         _ => pubkey.to_string(),
     }
 }
@@ -493,6 +498,7 @@ async fn offline_iguana_keys_export_internal(
     let mut result = Vec::with_capacity(req.coins.len());
 
     for ticker in &req.coins {
+        let mut viewing_key = None;
         let (coin_conf, _) = coin_conf_with_protocol(&ctx, ticker, None)
             .map_err(|_| OfflineKeysError::CoinConfigNotFound(ticker.clone()))?;
 
@@ -605,6 +611,12 @@ async fn offline_iguana_keys_export_internal(
                 let priv_key =
                     encode_extended_spending_key(consensus_params.hrp_sapling_extended_spending_key(), &spending_key);
 
+                let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(&spending_key);
+                viewing_key = Some(encode_extended_full_viewing_key(
+                    consensus_params.hrp_sapling_extended_full_viewing_key(),
+                    &extended_fvk,
+                ));
+
                 (address, priv_key)
             },
         };
@@ -614,6 +626,7 @@ async fn offline_iguana_keys_export_internal(
             pubkey: format_pubkey_for_display(&pubkey, &protocol),
             address,
             priv_key,
+            viewing_key,
         });
     }
 
