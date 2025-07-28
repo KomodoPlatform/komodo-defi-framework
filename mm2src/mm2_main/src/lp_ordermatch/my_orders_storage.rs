@@ -676,13 +676,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.price.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.max_base_vol.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
@@ -707,13 +707,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.request.rel_amount.to_decimal() / order.request.base_amount.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.request.base_amount.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 

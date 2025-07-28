@@ -98,7 +98,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         Err(e) => {
             let error = StartupError::new(
                 StartupResultCode::InvalidParams,
-                format!("Expected 'MainParams' as the first argument, found {:?}: {}", params, e),
+                format!("Expected 'MainParams' as the first argument, found {params:?}: {e}"),
             );
             console_err!("{}", error.message());
             return Err(error.into());
@@ -143,7 +143,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
             ctx
         },
         Err(err) => {
-            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {}", err));
+            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {err}"));
             console_err!("{}", error.message());
             LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
             return Err(error.into());
@@ -181,7 +181,6 @@ impl From<WasmRpcResponse> for Mm2RpcResponse {
 }
 
 /// The errors can be thrown when using the `mm2_rpc` function incorrectly.
-#[wasm_bindgen]
 #[derive(Primitive)]
 pub enum Mm2RpcErr {
     NotRunning = 1,

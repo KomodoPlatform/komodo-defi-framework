@@ -376,8 +376,7 @@ mod wasm_impl {
                 1 => break,
                 unsupported => {
                     return MmError::err(SavedSwapError::InternalError(format!(
-                        "Unsupported migration {}",
-                        unsupported
+                        "Unsupported migration {unsupported}"
                     )))
                 },
             }

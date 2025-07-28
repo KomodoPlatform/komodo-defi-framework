@@ -62,7 +62,7 @@ struct HistoryId(String);
 
 impl HistoryId {
     fn new(ticker: &str, wallet_address: &str) -> HistoryId {
-        HistoryId(format!("{}_{}", ticker, wallet_address))
+        HistoryId(format!("{ticker}_{wallet_address}"))
     }
 
     fn as_str(&self) -> &str {

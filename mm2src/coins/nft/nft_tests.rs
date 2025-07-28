@@ -156,7 +156,7 @@ cross_test!(
         use crate::nft::nft_structs::UriMeta;
 
         let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
-        let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
+        let uri_decode = format!("{BLOCKLIST_API_ENDPOINT}/url/decode/{hex_token_uri}");
         let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
         let uri_meta: UriMeta = serde_json::from_value(decode_res).unwrap();
         assert_eq!(

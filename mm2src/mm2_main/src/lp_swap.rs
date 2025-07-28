@@ -385,20 +385,19 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
 
             #[cfg(target_arch = "wasm32")]
             return MmError::err(P2PRequestError::DecodeError(format!(
-                "Couldn't deserialize 'SwapMsg': {}",
-                swap_msg_err
+                "Couldn't deserialize 'SwapMsg': {swap_msg_err}"
             )));
         },
     };
 
-    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
+    debug!("Processing swap msg {msg:?} for uuid {uuid}");
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
             msg.0.swap_msg_to_store(msg_store);
         } else {
-            warn!("Received message from unexpected sender for swap {}", uuid);
+            warn!("Received message from unexpected sender for swap {uuid}");
         }
     };
 

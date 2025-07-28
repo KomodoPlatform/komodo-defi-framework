@@ -60,7 +60,7 @@ pub enum EthActivationV2Error {
     HDWalletStorageError(String),
     #[cfg(target_arch = "wasm32")]
     #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     MetamaskError(MetamaskRpcError),
     #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {_0}")]
