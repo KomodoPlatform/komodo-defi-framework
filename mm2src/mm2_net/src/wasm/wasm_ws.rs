@@ -788,9 +788,7 @@ mod tests {
                     reason: _reason @ ClosureReason::ClientClosedOnUnderlyingError,
                 },
             )) => (),
-            other => panic!(
-                "Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {other:?}"
-            ),
+            other => panic!("Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {other:?}"),
         }
     }
 }

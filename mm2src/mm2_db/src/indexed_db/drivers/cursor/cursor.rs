@@ -31,9 +31,7 @@ type CursorCondition = Box<dyn Fn(Json) -> CursorResult<bool> + Send + 'static>;
 
 #[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum CursorError {
-    #[display(
-        fmt = "Error serializing the '{value}' value of the index field '{field}' : {description:?}"
-    )]
+    #[display(fmt = "Error serializing the '{value}' value of the index field '{field}' : {description:?}")]
     ErrorSerializingIndexFieldValue {
         field: String,
         value: String,
@@ -51,9 +49,7 @@ pub enum CursorError {
     InvalidKeyRange { description: String },
     #[display(fmt = "Type mismatch: expected '{expected}', found '{found}'")]
     TypeMismatch { expected: String, found: String },
-    #[display(
-        fmt = "Incorrect number of keys per a DB index: expected '{expected}', found '{found}'"
-    )]
+    #[display(fmt = "Incorrect number of keys per a DB index: expected '{expected}', found '{found}'")]
     IncorrectNumberOfKeysPerIndex { expected: usize, found: usize },
     #[display(fmt = "Error occurred due to an unexpected state: {_0:?}")]
     #[from_trait(WithInternal::internal)]

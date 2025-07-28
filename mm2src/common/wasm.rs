@@ -42,9 +42,7 @@ impl<T, E: fmt::Debug> WasmUnwrapExt<T> for Result<T, E> {
             Ok(t) => t,
             Err(e) => {
                 let (file, line) = caller_file_line();
-                let error = format!(
-                    "{file}:{line}] 'Result::unwrap_w' called on an 'Err' value: {e:?}"
-                );
+                let error = format!("{file}:{line}] 'Result::unwrap_w' called on an 'Err' value: {e:?}");
                 wasm_bindgen::throw_str(&error)
             },
         }
@@ -95,9 +93,7 @@ impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
         match self {
             Ok(t) => {
                 let (file, line) = caller_file_line();
-                let error = format!(
-                    "{file}:{line}] 'Result::unwrap_err_w' called on an 'Ok' value: {t:?}"
-                );
+                let error = format!("{file}:{line}] 'Result::unwrap_err_w' called on an 'Ok' value: {t:?}");
                 wasm_bindgen::throw_str(&error)
             },
             Err(e) => e,

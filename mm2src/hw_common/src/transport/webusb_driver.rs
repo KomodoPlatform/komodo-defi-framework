@@ -26,13 +26,9 @@ pub enum WebUsbError {
     ErrorRequestingDevice(String),
     #[display(fmt = "Error getting devices: {_0}")]
     ErrorGettingDevices(String),
-    #[display(
-        fmt = "Error setting configuration: configurationNumber={configuration_number}, error='{error}'"
-    )]
+    #[display(fmt = "Error setting configuration: configurationNumber={configuration_number}, error='{error}'")]
     ErrorSettingConfiguration { configuration_number: u8, error: String },
-    #[display(
-        fmt = "Error claiming an interface: interfaceNumber={interface_number}, error='{error}'"
-    )]
+    #[display(fmt = "Error claiming an interface: interfaceNumber={interface_number}, error='{error}'")]
     ErrorClaimingInterface { interface_number: u8, error: String },
     #[display(fmt = "Error opening a device: {_0}")]
     ErrorOpeningDevice(String),
@@ -294,7 +290,10 @@ impl WebUsbDevice {
                     result_tx,
                 } => {
                     result_tx
-                        .send(WebUsbDevice::on_write_chunk(&device, endpoint_number, chunk).await)
+                        .send(
+                            WebUsbDevice::on_write_chunk(&device, endpoint_number, Uint8Array::from(chunk.as_slice()))
+                                .await,
+                        )
                         .ok();
                 },
                 DeviceEvent::ReadChunk {
@@ -348,10 +347,14 @@ impl WebUsbDevice {
         Ok(())
     }
 
-    async fn on_write_chunk(device: &UsbDevice, endpoint_number: u8, mut chunk: Vec<u8>) -> WebUsbResult<()> {
-        if let Err(e) = JsFuture::from(device.transfer_out_with_u8_array(endpoint_number, &mut chunk)).await {
-            return MmError::err(WebUsbError::ErrorWritingChunk(stringify_js_error(&e)));
-        }
+    async fn on_write_chunk(device: &UsbDevice, endpoint_number: u8, chunk: Uint8Array) -> WebUsbResult<()> {
+        let data = device
+            .transfer_out_with_u8_array(endpoint_number, &chunk)
+            .map_to_mm(|e| WebUsbError::ErrorWritingChunk(stringify_js_error(&e)))?;
+        JsFuture::from(data)
+            .await
+            .map_to_mm(|e| WebUsbError::ErrorWritingChunk(stringify_js_error(&e)))?;
+
         Ok(())
     }
 
