@@ -1,6 +1,7 @@
 use crate::tendermint;
 use crate::z_coin::{ZcoinConsensusParams, ZcoinProtocolInfo};
 use crate::CoinProtocol;
+use crate::eth::{addr_from_pubkey_str, checksum_address};
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
@@ -342,8 +343,8 @@ async fn offline_hd_keys_export_internal(
 
                     let address = match protocol {
                         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                            let raw_address = crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
-                            crate::eth::checksum_address(&raw_address)
+                            let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                            checksum_address(&raw_address)
                         },
                         _ => {
                             return MmError::err(OfflineKeysError::Internal(format!(
@@ -504,8 +505,8 @@ async fn offline_iguana_keys_export_internal(
 
                 let address = match protocol {
                     CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                        let raw_address = crate::eth::addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
-                        crate::eth::checksum_address(&raw_address)
+                        let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                        checksum_address(&raw_address)
                     },
                     _ => {
                         return MmError::err(OfflineKeysError::Internal(format!(
@@ -804,7 +805,7 @@ mod tests {
                         "Address {} should be in EIP-55 checksum format", i);
                     
                     // Verify that the address is valid checksum format
-                    assert_eq!(addr_info.address, crate::eth::checksum_address(&addr_info.address.to_lowercase()),
+                    assert_eq!(addr_info.address, checksum_address(&addr_info.address.to_lowercase()),
                         "Address {} should match EIP-55 checksum of its lowercase version", i);
                     
                     // Original assertions
@@ -1111,7 +1112,7 @@ mod tests {
                 
                 // Verify that the address is properly checksummed
                 let lowercase_addr = address.to_lowercase();
-                let checksummed_addr = crate::eth::checksum_address(&lowercase_addr);
+                let checksummed_addr = checksum_address(&lowercase_addr);
                 assert_eq!(address, &checksummed_addr, 
                     "Address should be in proper EIP-55 checksum format");
                 
