@@ -62,6 +62,8 @@ pub struct HdCoinKeyInfo {
 #[derive(Debug, Serialize)]
 pub struct HdAddressInfo {
     pub derivation_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub z_derivation_path: Option<String>,
     pub pubkey: String,
     pub address: String,
     pub priv_key: String,
@@ -355,9 +357,11 @@ async fn offline_hd_keys_export_internal(
 
                 // The derivation path for a Z-coin account correctly stops at the account index.
                 let derivation_path = format!("{}/{}'", base_derivation_path, account_index);
+                let z_derivation_path = format!("{}/{}", z_derivation_path_str, account_index);
 
                 addresses.push(HdAddressInfo {
                     derivation_path,
+                    z_derivation_path: Some(z_derivation_path),
                     pubkey: "".to_string(), // A UTXO-style public key is not applicable.
                     address,
                     priv_key,
@@ -475,6 +479,7 @@ async fn offline_hd_keys_export_internal(
 
                     addresses.push(HdAddressInfo {
                         derivation_path,
+                        z_derivation_path: None,
                         pubkey: format_pubkey_for_display(&pubkey, &protocol),
                         address,
                         priv_key,
