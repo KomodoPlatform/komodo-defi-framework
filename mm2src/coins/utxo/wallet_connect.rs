@@ -116,12 +116,17 @@ pub async fn get_pubkey_via_wallatconnect_signature(
         )));
     }
 
-    let decoded_signature = BASE64_ENGINE.decode(&signature_response.signature).map_err(|e| {
-        WalletConnectError::InternalError(format!(
-            "Failed to decode signature={}: {:?}",
-            signature_response.signature, e
-        ))
-    })?;
+    let decoded_signature = match hex::decode(&signature_response.signature) {
+        Ok(decoded) => decoded,
+        Err(hex_decode_err) => BASE64_ENGINE
+            .decode(&signature_response.signature)
+            .map_err(|base64_decode_err| {
+                WalletConnectError::InternalError(format!(
+                    "Failed to decode signature={} from hex (error={:?}) and from base64 (error={:?})",
+                    signature_response.signature, hex_decode_err, base64_decode_err
+                ))
+            })?,
+    };
     let signature = CompactSignature::try_from(decoded_signature).map_err(|e| {
         WalletConnectError::InternalError(format!(
             "Failed to parse signature={} into compact signature: {:?}",
