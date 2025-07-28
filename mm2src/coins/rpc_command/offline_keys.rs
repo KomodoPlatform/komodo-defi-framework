@@ -308,168 +308,173 @@ async fn offline_hd_keys_export_internal(
             },
         };
 
-        for index in start_index..=end_index {
-            let derivation_path = format!("{}/{}'/0/{}", base_derivation_path, account_index, index);
-            let hd_path =
-                StandardHDPath::from_str(&derivation_path).map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                    ticker: ticker.clone(),
-                    error: format!("Invalid derivation path {}: {:?}", derivation_path, e),
-                })?;
+        if let Some(PrefixValues::Zhtlc { .. }) = &prefix_values {
+            // Z-coins use a single address per account, so we derive it once and ignore the index range.
+            let mut spending_key = ExtendedSpendingKey::master(global_hd_ctx.root_seed_bytes());
 
-            let key_pair = {
-                let secret = global_hd_ctx
-                    .derive_secp256k1_secret(&hd_path.to_derivation_path())
-                    .map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                        ticker: ticker.clone(),
-                        error: format!("Failed to derive key at path {}: {}", derivation_path, e),
-                    })?;
+            let z_derivation_path_str = coin_conf["protocol"]["protocol_data"]["z_derivation_path"]
+                .as_str()
+                .ok_or_else(|| OfflineKeysError::Internal("z_derivation_path not found".to_string()))?;
 
-                key_pair_from_secret(&secret.take()).map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                    ticker: ticker.clone(),
-                    error: format!("Failed to create key pair: {}", e),
-                })?
-            };
+            let z_derivation_path: HDPathToCoin = z_derivation_path_str
+                .parse()
+                .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {:?}", e)))?;
 
-            let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
-                OfflineKeysError::ProtocolParseError {
-                    ticker: ticker.to_string(),
-                    error: e.to_string(),
-                }
-            })?;
+            let path_to_account = z_derivation_path
+                .to_derivation_path()
+                .into_iter()
+                .map(|child| ChildIndex::from_index(child.0))
+                .chain(std::iter::once(ChildIndex::Hardened(account_index)));
 
-            let pubkey =
-                get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| OfflineKeysError::KeyDerivationFailed {
-                    ticker: ticker.clone(),
-                    error: format!("Failed to get pubkey: {}", e),
-                })?;
+            for child_index in path_to_account {
+                spending_key = spending_key.derive_child(child_index);
+            }
 
-            let (address, priv_key, viewing_key_from_derivation) = match &prefix_values {
-                Some(PrefixValues::Utxo {
-                    wif_type,
-                    pub_type,
-                    p2sh_type,
-                }) => {
-                    let private = Private {
-                        prefix: *wif_type,
-                        secret: key_pair.private().secret,
-                        compressed: true,
-                        checksum_type: ChecksumType::DSHA256,
-                    };
+            let (_, payment_address) = spending_key.default_address().unwrap();
 
-                    let address_prefixes = NetworkAddressPrefixes {
-                        p2pkh: AddressPrefix::from([*pub_type]),
-                        p2sh: AddressPrefix::from([*p2sh_type]),
-                    };
+            let consensus_params: ZcoinConsensusParams =
+                serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
+                    .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e)))?;
 
-                    let address_format = if let Some(format_config) = coin_conf.get("address_format") {
-                        serde_json::from_value(format_config.clone()).unwrap_or(AddressFormat::Standard)
-                    } else {
-                        AddressFormat::Standard
-                    };
+            let address = encode_payment_address(consensus_params.hrp_sapling_payment_address(), &payment_address);
 
-                    let bech32_hrp = coin_conf
-                        .get("bech32_hrp")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+            let priv_key =
+                encode_extended_spending_key(consensus_params.hrp_sapling_extended_spending_key(), &spending_key);
 
-                    let address =
-                        AddressBuilder::new(address_format, ChecksumType::DSHA256, address_prefixes, bech32_hrp)
-                            .as_pkh_from_pk(*key_pair.public())
-                            .build()
-                            .map_err(OfflineKeysError::Internal)?;
+            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(&spending_key);
+            let viewing_key = encode_extended_full_viewing_key(
+                consensus_params.hrp_sapling_extended_full_viewing_key(),
+                &extended_fvk,
+            );
 
-                    (address.to_string(), private.to_string(), None)
-                },
-                None => {
-                    let address = match protocol {
-                        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
-                            let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
-                            checksum_address(&raw_address)
-                        },
-                        _ => {
-                            return MmError::err(OfflineKeysError::Internal(format!(
-                                "Unsupported non-UTXO protocol: {:?}",
-                                protocol
-                            )))
-                        },
-                    };
-
-                    let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
-
-                    (address, priv_key, None)
-                },
-                Some(PrefixValues::Tendermint { account_prefix }) => {
-                    let address = tendermint::account_id_from_pubkey_hex(account_prefix, &pubkey)
-                        .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
-                        .to_string();
-
-                    let priv_key = key_pair.private().secret.to_hex();
-
-                    (address, priv_key, None)
-                },
-                Some(PrefixValues::Zhtlc { _protocol_info: _ }) => {
-                    let mut spending_key = ExtendedSpendingKey::master(global_hd_ctx.root_seed_bytes());
-
-                    let z_derivation_path_str = coin_conf["protocol"]["protocol_data"]["z_derivation_path"]
-                        .as_str()
-                        .ok_or_else(|| OfflineKeysError::Internal("z_derivation_path not found".to_string()))?;
-
-                    let z_derivation_path: HDPathToCoin = z_derivation_path_str.parse().map_err(|e| {
-                        OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {:?}", e))
-                    })?;
-
-                    let path_to_account = z_derivation_path
-                        .to_derivation_path()
-                        .into_iter()
-                        .map(|child| ChildIndex::from_index(child.0))
-                        .chain(std::iter::once(ChildIndex::Hardened(account_index)));
-
-                    for child_index in path_to_account {
-                        spending_key = spending_key.derive_child(child_index);
-                    }
-
-                    if index > 0 {
-                        // Derive change (0) and address index
-                        spending_key = spending_key.derive_child(ChildIndex::NonHardened(0)); // change
-                        spending_key = spending_key.derive_child(ChildIndex::NonHardened(index));
-                        // address index
-                    }
-
-                    let (_, payment_address) = spending_key.default_address().unwrap();
-
-                    let consensus_params: ZcoinConsensusParams =
-                        serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
-                            .map_err(|e| {
-                                OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e))
-                            })?;
-
-                    let address =
-                        encode_payment_address(consensus_params.hrp_sapling_payment_address(), &payment_address);
-
-                    let priv_key = encode_extended_spending_key(
-                        consensus_params.hrp_sapling_extended_spending_key(),
-                        &spending_key,
-                    );
-
-                    let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(&spending_key);
-                    let viewing_key = encode_extended_full_viewing_key(
-                        consensus_params.hrp_sapling_extended_full_viewing_key(),
-                        &extended_fvk,
-                    );
-
-                    (address, priv_key, Some(viewing_key))
-                },
-            };
-
-            let derivation_path = format!("{}/{}/0/{}", base_derivation_path, account_index, index);
+            // The derivation path for a Z-coin account correctly stops at the account index.
+            let derivation_path = format!("{}/{}'", base_derivation_path, account_index);
 
             addresses.push(HdAddressInfo {
                 derivation_path,
-                pubkey: format_pubkey_for_display(&pubkey, &protocol),
+                pubkey: "".to_string(), // A UTXO-style public key is not applicable.
                 address,
                 priv_key,
-                viewing_key: viewing_key_from_derivation,
+                viewing_key: Some(viewing_key),
             });
+        } else {
+            // Standard logic for UTXO, ETH, and other coins that use address indexes.
+            for index in start_index..=end_index {
+                let derivation_path = format!("{}/{}'/0/{}", base_derivation_path, account_index, index);
+                let hd_path =
+                    StandardHDPath::from_str(&derivation_path).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: format!("Invalid derivation path {}: {:?}", derivation_path, e),
+                    })?;
+
+                let key_pair = {
+                    let secret = global_hd_ctx
+                        .derive_secp256k1_secret(&hd_path.to_derivation_path())
+                        .map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                            ticker: ticker.clone(),
+                            error: format!("Failed to derive key at path {}: {}", derivation_path, e),
+                        })?;
+
+                    key_pair_from_secret(&secret.take()).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: format!("Failed to create key pair: {}", e),
+                    })?
+                };
+
+                let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
+                    OfflineKeysError::ProtocolParseError {
+                        ticker: ticker.to_string(),
+                        error: e.to_string(),
+                    }
+                })?;
+
+                let pubkey = get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| {
+                    OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: format!("Failed to get pubkey: {}", e),
+                    }
+                })?;
+
+                let (address, priv_key) = match &prefix_values {
+                    Some(PrefixValues::Utxo {
+                        wif_type,
+                        pub_type,
+                        p2sh_type,
+                    }) => {
+                        let private = Private {
+                            prefix: *wif_type,
+                            secret: key_pair.private().secret,
+                            compressed: true,
+                            checksum_type: ChecksumType::DSHA256,
+                        };
+
+                        let address_prefixes = NetworkAddressPrefixes {
+                            p2pkh: AddressPrefix::from([*pub_type]),
+                            p2sh: AddressPrefix::from([*p2sh_type]),
+                        };
+
+                        let address_format = if let Some(format_config) = coin_conf.get("address_format") {
+                            serde_json::from_value(format_config.clone()).unwrap_or(AddressFormat::Standard)
+                        } else {
+                            AddressFormat::Standard
+                        };
+
+                        let bech32_hrp = coin_conf
+                            .get("bech32_hrp")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        let address =
+                            AddressBuilder::new(address_format, ChecksumType::DSHA256, address_prefixes, bech32_hrp)
+                                .as_pkh_from_pk(*key_pair.public())
+                                .build()
+                                .map_err(OfflineKeysError::Internal)?;
+
+                        (address.to_string(), private.to_string())
+                    },
+                    None => {
+                        let address = match protocol {
+                            CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
+                                let raw_address = addr_from_pubkey_str(&pubkey).map_err(OfflineKeysError::Internal)?;
+                                checksum_address(&raw_address)
+                            },
+                            _ => {
+                                return MmError::err(OfflineKeysError::Internal(format!(
+                                    "Unsupported non-UTXO protocol: {:?}",
+                                    protocol
+                                )))
+                            },
+                        };
+
+                        let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+
+                        (address, priv_key)
+                    },
+                    Some(PrefixValues::Tendermint { account_prefix }) => {
+                        let address = tendermint::account_id_from_pubkey_hex(account_prefix, &pubkey)
+                            .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
+                            .to_string();
+
+                        let priv_key = key_pair.private().secret.to_hex();
+
+                        (address, priv_key)
+                    },
+                    // This case is logically impossible due to the outer `if` condition.
+                    Some(PrefixValues::Zhtlc { .. }) => {
+                        return Err(MmError::new(OfflineKeysError::Internal(
+                            "Attempted to process ZHTLC in indexed coin loop".to_string(),
+                        )))
+                    },
+                };
+
+                addresses.push(HdAddressInfo {
+                    derivation_path,
+                    pubkey: format_pubkey_for_display(&pubkey, &protocol),
+                    address,
+                    priv_key,
+                    viewing_key: None,
+                });
+            }
         }
 
         result.push(HdCoinKeyInfo {
@@ -728,7 +733,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0'/0/{}", i));
                 }
             },
             Err(e) => panic!("BTC HD key derivation test failed: {:?}", e),
@@ -787,7 +792,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0'/0/{}", i));
                 }
             },
             Err(e) => panic!("BTC-Segwit HD key derivation test failed: {:?}", e),
@@ -862,7 +867,7 @@ mod tests {
                     // Original assertions
                     assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0'/0/{}", i));
                 }
             },
             Err(e) => panic!("ETH HD key derivation test failed: {:?}", e),
@@ -925,7 +930,7 @@ mod tests {
 
                 for (i, addr_info) in atom_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address, expected_addresses[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0'/0/{}", i));
                 }
             },
             Err(e) => panic!("ATOM HD key derivation test failed: {:?}", e),
@@ -1090,10 +1095,10 @@ mod tests {
                 assert_eq!(hd_response.len(), 1);
                 let arrr_result = &hd_response[0];
                 assert_eq!(arrr_result.coin, "ARRR");
-                assert_eq!(arrr_result.addresses.len(), 2);
+                assert_eq!(arrr_result.addresses.len(), 1);
 
                 let first_key = &arrr_result.addresses[0];
-                assert_eq!(first_key.derivation_path, "m/44'/141'/0/0/0");
+                assert_eq!(first_key.derivation_path, "m/44'/141'/0'");
                 assert!(first_key.address.starts_with("zs1"));
                 assert!(first_key.priv_key.starts_with("secret-extended-key-main"));
                 assert!(first_key.viewing_key.as_ref().unwrap().starts_with("zxviews"));
