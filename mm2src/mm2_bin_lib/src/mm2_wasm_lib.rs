@@ -181,17 +181,12 @@ impl From<WasmRpcResponse> for Mm2RpcResponse {
 }
 
 /// The errors can be thrown when using the `mm2_rpc` function incorrectly.
+#[wasm_bindgen]
 #[derive(Primitive)]
 pub enum Mm2RpcErr {
     NotRunning = 1,
     InvalidPayload = 2,
     InternalError = 3,
-}
-
-impl From<Mm2RpcErr> for JsValue {
-    fn from(e: Mm2RpcErr) -> Self {
-        JsValue::from(e as i32)
-    }
 }
 
 /// Invokes an RPC request.
