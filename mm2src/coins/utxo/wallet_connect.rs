@@ -1,7 +1,7 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
 use std::convert::TryFrom;
 
-use crate::utxo::utxo_common;
+use bitcrypto::sign_message_hash;
 use chain::hash::H256;
 use crypto::StandardHDPath;
 use kdf_walletconnect::{
@@ -133,7 +133,7 @@ pub async fn get_pubkey_via_wallatconnect_signature(
             signature_response.signature, e
         ))
     })?;
-    let message_hash = utxo_common::sign_message_hash(sign_message_prefix, AUTH_MSG);
+    let message_hash = sign_message_hash(sign_message_prefix, AUTH_MSG);
     let pubkey = Public::recover_compact(&H256::from(message_hash), &signature).map_err(|e| {
         WalletConnectError::InternalError(format!(
             "Failed to recover public key from walletconnect signature={:?}: {:?}",

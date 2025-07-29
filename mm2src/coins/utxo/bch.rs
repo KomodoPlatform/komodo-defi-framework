@@ -29,6 +29,7 @@ use crate::{
     VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
     WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
 };
+use bitcrypto::sign_message_hash;
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use derive_more::Display;
@@ -1188,7 +1189,7 @@ impl MarketCoinOps for BchCoin {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let prefix = self.as_ref().conf.sign_message_prefix.as_ref()?;
-        Some(utxo_common::sign_message_hash(prefix, message))
+        Some(sign_message_hash(prefix, message))
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {

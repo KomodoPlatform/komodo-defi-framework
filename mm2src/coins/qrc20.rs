@@ -35,7 +35,7 @@ use crate::{
     WithdrawResult,
 };
 use async_trait::async_trait;
-use bitcrypto::{dhash160, sha256};
+use bitcrypto::{dhash160, sha256, sign_message_hash};
 use chain::TransactionOutput;
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
@@ -1106,7 +1106,7 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let prefix = self.as_ref().conf.sign_message_prefix.as_ref()?;
-        Some(utxo_common::sign_message_hash(prefix, message))
+        Some(sign_message_hash(prefix, message))
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {

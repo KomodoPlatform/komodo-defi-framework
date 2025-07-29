@@ -35,7 +35,7 @@ use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use bitcrypto::{dhash256, ripemd160};
+use bitcrypto::{ripemd160, sign_message_hash};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionInput, TransactionOutput};
 use common::executor::Timer;
@@ -64,10 +64,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{
-    deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
-    SERIALIZE_TRANSACTION_WITNESS,
-};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -2940,19 +2937,6 @@ pub fn burn_address<T: UtxoCommonOps + SwapOps>(coin: &T) -> Result<Address, Str
         coin.as_ref().conf.bech32_hrp.clone(),
         coin.addr_format().clone(),
     )
-}
-
-/// Hash message for signature using Bitcoin's message signing format.
-/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-pub fn sign_message_hash(sign_message_prefix: &str, message: &str) -> [u8; 32] {
-    let mut stream = Stream::new();
-    let prefix_len = CompactInteger::from(sign_message_prefix.len());
-    prefix_len.serialize(&mut stream);
-    stream.append_slice(sign_message_prefix.as_bytes());
-    let msg_len = CompactInteger::from(message.len());
-    msg_len.serialize(&mut stream);
-    stream.append_slice(message.as_bytes());
-    dhash256(&stream.out()).take()
 }
 
 pub fn sign_message(
