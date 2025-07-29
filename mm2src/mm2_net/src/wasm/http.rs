@@ -223,11 +223,9 @@ impl FetchRequest {
         let req_init = RequestInit::new();
         req_init.set_method(request.method.as_str());
 
-        let body = request
-            .body
-            .map(RequestBody::into_js_value)
-            .ok_or_else(|| SlurpError::Internal("Failed to create request body".to_owned()))?;
-        req_init.set_body(&body);
+        if let Some(body) = request.body {
+            req_init.set_body(&RequestBody::into_js_value(body));
+        }
 
         if let Some(mode) = request.mode {
             req_init.set_mode(mode);
