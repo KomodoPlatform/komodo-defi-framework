@@ -4733,7 +4733,12 @@ pub trait IguanaBalanceOps {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    UTXO,
+    UTXO {
+        /// A CAIP-2 compliant chain ID. Starts with `b122:`
+        /// This is used to identify the blockchain when using WalletConnect.
+        /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
+        chain_id: Option<String>,
+    },
     QTUM,
     QRC20 {
         platform: String,
@@ -4816,7 +4821,7 @@ impl CoinProtocol {
             CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
             #[cfg(not(target_arch = "wasm32"))]
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
-            CoinProtocol::UTXO
+            CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
             | CoinProtocol::ETH { .. }
             | CoinProtocol::TRX { .. }
@@ -4835,7 +4840,7 @@ impl CoinProtocol {
                 Some(contract_address)
             },
             CoinProtocol::SLPTOKEN { .. }
-            | CoinProtocol::UTXO
+            | CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
             | CoinProtocol::ETH { .. }
             | CoinProtocol::TRX { .. }
@@ -5127,7 +5132,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     let protocol: CoinProtocol = try_s!(json::from_value(coins_en["protocol"].clone()));
 
     let coin: MmCoinEnum = match &protocol {
-        CoinProtocol::UTXO => {
+        CoinProtocol::UTXO { .. } => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(utxo_standard_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
@@ -5800,7 +5805,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         },
         // Todo: implement TRX address generation
         CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
+        CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {

@@ -38,7 +38,7 @@ impl TryFromCoinProtocol for UtxoStandardProtocolInfo {
         Self: Sized,
     {
         match proto {
-            CoinProtocol::UTXO => Ok(UtxoStandardProtocolInfo),
+            CoinProtocol::UTXO { .. } => Ok(UtxoStandardProtocolInfo),
             protocol => MmError::err(protocol),
         }
     }

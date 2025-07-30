@@ -14,8 +14,9 @@ use crate::utxo::{
     UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT,
 };
 use crate::{
-    BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey, PrivKeyBuildPolicy,
-    PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler, UtxoActivationParams,
+    BlockchainNetwork, CoinProtocol, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
+    PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler,
+    UtxoActivationParams,
 };
 use async_trait::async_trait;
 use chain::TxHashAlgo;
@@ -586,14 +587,26 @@ pub trait UtxoCoinBuilderCommonOps {
 
     /// Returns WcChainId for this coin. Parsed from the coin config.
     fn wallet_connect_chain_id(&self) -> UtxoCoinBuildResult<WcChainId> {
-        let chain_id = self.conf()["chain_id"].as_str().ok_or_else(|| {
-            WalletConnectError::InvalidChainId(format!(
-            "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
-            self.ticker()
-        ))
+        let protocol: CoinProtocol = json::from_value(self.conf()["protocol"].clone()).map_to_mm(|e| {
+            UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(format!(
+                "Couldn't parse protocol info: {e}"
+            )))
         })?;
-        let chain_id = WcChainId::try_from_str(chain_id).map_mm_err()?;
-        Ok(chain_id)
+
+        if let CoinProtocol::UTXO { chain_id } = protocol {
+            let chain_id = chain_id.ok_or_else(|| {
+                WalletConnectError::InvalidChainId(format!(
+                    "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
+                    self.ticker()
+                ))
+            })?;
+            let chain_id = WcChainId::try_from_str(&chain_id).map_mm_err()?;
+            Ok(chain_id)
+        } else {
+            MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(
+                format!("Expected UTXO protocol, got: {protocol:?}"),
+            )))
+        }
     }
 
     /// Constructs the full HD derivation path from the coin config and the activation params partial paths.

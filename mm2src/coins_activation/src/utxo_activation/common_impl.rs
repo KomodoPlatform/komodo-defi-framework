@@ -49,7 +49,10 @@ where
                 ctx,
                 task_handle.clone(),
                 xpub_extractor_rpc_statuses(),
-                coins::CoinProtocol::UTXO,
+                coins::CoinProtocol::UTXO {
+                    // Note that the actual chain_id isn't needed by trezor XPUB extractor.
+                    chain_id: None,
+                },
             )
             .mm_err(|_| InitUtxoStandardError::HwError(HwRpcError::NotInitialized))?,
         )

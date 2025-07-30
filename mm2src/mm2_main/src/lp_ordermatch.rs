@@ -6346,7 +6346,7 @@ fn orderbook_address(
         },
         // Todo: implement TRX address generation
         CoinProtocol::TRX { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
+        CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
