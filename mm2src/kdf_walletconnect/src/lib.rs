@@ -55,6 +55,13 @@ use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymK
 const PUBLISH_TIMEOUT_SECS: f64 = 6.;
 const CONNECTION_TIMEOUT_S: f64 = 30.;
 
+/// The necessary data to establish a new WalletConnect connection to a newly
+/// established pairing by KDF (via [`WalletConnectCtxImpl::new_connection`]).
+pub struct NewConnection {
+    pub url: String,
+    pub pairing_topic: Topic,
+}
+
 /// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
@@ -289,7 +296,7 @@ impl WalletConnectCtxImpl {
         &self,
         required_namespaces: serde_json::Value,
         optional_namespaces: Option<serde_json::Value>,
-    ) -> MmResult<String, WalletConnectError> {
+    ) -> MmResult<NewConnection, WalletConnectError> {
         self.await_connection().await?;
 
         let required_namespaces = serde_json::from_value(required_namespaces)?;
@@ -317,7 +324,10 @@ impl WalletConnectCtxImpl {
         //       ref. https://specs.walletconnect.com/2.0/specs/clients/sign#context
         send_session_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
 
-        Ok(url)
+        Ok(NewConnection {
+            url,
+            pairing_topic: topic,
+        })
     }
 
     /// Get symmetric key associated with a for `topic`.
