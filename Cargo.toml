@@ -87,7 +87,7 @@ directories = "5.0"
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 either = "1.6"
 enum-primitive-derive = "0.2"
-env_logger = "0.9.3"
+env_logger = { version = "0.11", default-features = false }
 ethabi = "17.0.0"
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }

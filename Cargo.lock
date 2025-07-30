@@ -272,17 +272,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atty"
-version = "0.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
-dependencies = [
- "hermit-abi 0.1.14",
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "autocfg"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,16 +1820,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_logger"
-version = "0.9.3"
+name = "env_filter"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
+checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
 dependencies = [
- "atty",
- "humantime",
  "log",
- "regex",
- "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c012a26a7f605efc424dd53697843a72be7dc86ad2d01f7814337794a12231d"
+dependencies = [
+ "env_filter",
+ "log",
 ]
 
 [[package]]
@@ -2653,12 +2648,6 @@ name = "httpdate"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
-
-[[package]]
-name = "humantime"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hw_common"
