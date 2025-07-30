@@ -235,8 +235,7 @@ impl BchCoin {
                 .get(&prev_tx_hash)
                 .or_mm_err(|| {
                     UtxoRpcError::Internal(format!(
-                        "'get_verbose_transactions_from_cache_or_rpc' should have returned '{:?}'",
-                        prev_tx_hash
+                        "'get_verbose_transactions_from_cache_or_rpc' should have returned '{prev_tx_hash:?}'"
                     ))
                 })?
                 .to_inner();
@@ -521,7 +520,7 @@ impl BchCoin {
         match slp_details.transaction {
             SlpTransaction::Genesis(params) => Ok(params),
             _ => {
-                let error = format!("SLP token ID '{}' is not a genesis TX", token_id);
+                let error = format!("SLP token ID '{token_id}' is not a genesis TX");
                 MmError::err(UtxoTxDetailsError::InvalidTransaction(error))
             },
         }
@@ -955,8 +954,7 @@ impl SwapOps for BchCoin {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };

@@ -18,12 +18,12 @@ type WalletsDBResult<T> = Result<T, MmError<WalletsDBError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum WalletsDBError {
-    #[display(fmt = "Error deserializing '{}': {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}': {error}")]
     DeserializationError {
         field: String,
         error: String,
     },
-    #[display(fmt = "Error serializing '{}': {}", field, error)]
+    #[display(fmt = "Error serializing '{field}': {error}")]
     SerializationError {
         field: String,
         error: String,

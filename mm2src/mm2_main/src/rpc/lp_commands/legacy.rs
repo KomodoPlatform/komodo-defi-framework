@@ -71,10 +71,10 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Ok(Some(t)) if t.is_available() => t,
         Ok(Some(t)) if !t.is_available() && force_disable => t,
         Err(err) => {
-            return disable_coin_err(format!("!lp_coinfind({}): ", err), &[], &[], &[]);
+            return disable_coin_err(format!("!lp_coinfind({err}): "), &[], &[], &[]);
         },
         _ => {
-            return disable_coin_err(format!("No such coin: {}", ticker), &[], &[], &[]);
+            return disable_coin_err(format!("No such coin: {ticker}"), &[], &[], &[]);
         },
     };
 

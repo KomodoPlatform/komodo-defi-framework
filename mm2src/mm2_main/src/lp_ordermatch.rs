@@ -160,22 +160,19 @@ pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError
 
 #[derive(Display)]
 pub enum OrderbookP2PHandlerError {
-    #[display(fmt = "'{}' is an invalid topic for the orderbook handler.", _0)]
+    #[display(fmt = "'{_0}' is an invalid topic for the orderbook handler.")]
     InvalidTopic(String),
 
-    #[display(fmt = "Message decoding was failed. Error: {}", _0)]
+    #[display(fmt = "Message decoding was failed. Error: {_0}")]
     DecodeError(String),
 
-    #[display(fmt = "Pubkey '{}' is not allowed.", _0)]
+    #[display(fmt = "Pubkey '{_0}' is not allowed.")]
     PubkeyNotAllowed(String),
 
-    #[display(fmt = "P2P request error: {}", _0)]
+    #[display(fmt = "P2P request error: {_0}")]
     P2PRequestError(String),
 
-    #[display(
-        fmt = "Couldn't find an order {}, ignoring, it will be synced upon pubkey keep alive",
-        _0
-    )]
+    #[display(fmt = "Couldn't find an order {_0}, ignoring, it will be synced upon pubkey keep alive")]
     OrderNotFound(Uuid),
 
     Internal(String),
@@ -201,7 +198,7 @@ pub type OrdermatchInitResult<T> = Result<T, MmError<OrdermatchInitError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum OrdermatchInitError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
@@ -341,8 +338,7 @@ async fn process_orders_keep_alive(
     .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
-            "No response was received from peer {} for SyncPubkeyOrderbookState request!",
-            propagated_from_peer
+            "No response was received from peer {propagated_from_peer} for SyncPubkeyOrderbookState request!"
         )))
     })?;
 
@@ -859,7 +855,7 @@ enum TrieDiffHistoryError {
 
 impl std::fmt::Display for TrieDiffHistoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "({:?})", self)
+        write!(f, "({self:?})")
     }
 }
 
@@ -5653,9 +5649,9 @@ pub struct CancelOrderReq {
 pub enum CancelOrderError {
     #[display(fmt = "Cannot retrieve order match context.")]
     CannotRetrieveOrderMatchContext,
-    #[display(fmt = "Order {} is being matched now, can't cancel", uuid)]
+    #[display(fmt = "Order {uuid} is being matched now, can't cancel")]
     OrderBeingMatched { uuid: Uuid },
-    #[display(fmt = "Order {} not found", uuid)]
+    #[display(fmt = "Order {uuid} not found")]
     UUIDNotFound { uuid: Uuid },
 }
 
@@ -5891,17 +5887,17 @@ fn my_orders_history_dir(ctx: &MmArc) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
+    my_maker_orders_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
+    my_taker_orders_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_orders_history_dir(ctx).join(format!("{}.json", uuid))
+    my_orders_history_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -6384,8 +6380,7 @@ fn orderbook_address(
                 )
                 .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(format!(
-                    "Platform protocol {:?} is not TENDERMINT",
-                    platform_protocol
+                    "Platform protocol {platform_protocol:?} is not TENDERMINT"
                 ))),
             }
         },
@@ -6399,6 +6394,6 @@ fn orderbook_address(
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
         // TODO implement for SIA "this is needed to show the address in the orderbook"
         #[cfg(feature = "enable-sia")]
-        CoinProtocol::SIA { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }

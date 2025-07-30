@@ -23,18 +23,18 @@ pub use native_impl::MyOrdersStorage;
 
 #[derive(Debug, Display, Eq, PartialEq)]
 pub enum MyOrdersError {
-    #[display(fmt = "Order with uuid {} is not found", uuid)]
+    #[display(fmt = "Order with uuid {uuid} is not found")]
     NoSuchOrder { uuid: Uuid },
-    #[display(fmt = "Error saving an order: {}", _0)]
+    #[display(fmt = "Error saving an order: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading an order: {}", _0)]
+    #[display(fmt = "Error loading an order: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing an order: {}", _0)]
+    #[display(fmt = "Error deserializing an order: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing an order: {}", _0)]
+    #[display(fmt = "Error serializing an order: {_0}")]
     ErrorSerializing(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -676,13 +676,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.price.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.max_base_vol.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
@@ -707,13 +707,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.request.rel_amount.to_decimal() / order.request.base_amount.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.request.base_amount.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 

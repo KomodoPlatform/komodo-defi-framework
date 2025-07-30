@@ -28,7 +28,7 @@ pub enum CryptoInitError {
     InitializedAlready,
     #[display(fmt = "Passphrase cannot be an empty string")]
     EmptyPassphrase,
-    #[display(fmt = "Invalid passphrase: '{}'", _0)]
+    #[display(fmt = "Invalid passphrase: '{_0}'")]
     InvalidPassphrase(PrivKeyError),
     Internal(String),
 }
@@ -52,7 +52,7 @@ impl From<SharedDbIdError> for CryptoInitError {
 pub enum CryptoCtxError {
     #[display(fmt = "'CryptoCtx' is not initialized")]
     NotInitialized,
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

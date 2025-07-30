@@ -63,7 +63,7 @@ pub enum P2PRequestError {
     DecodeError(String),
     SendError(String),
     ResponseError(String),
-    #[display(fmt = "Expected 1 response, found {}", _0)]
+    #[display(fmt = "Expected 1 response, found {_0}")]
     ExpectedSingleResponseError(usize),
     ValidationFailed(String),
 }
@@ -77,10 +77,10 @@ pub enum P2PProcessError {
     /// Message signature is invalid.
     InvalidSignature(String),
     /// Unexpected message sender.
-    #[display(fmt = "Unexpected message sender {}", _0)]
+    #[display(fmt = "Unexpected message sender {_0}")]
     UnexpectedSender(String),
     /// Message did not pass additional validation
-    #[display(fmt = "Message validation failed: {}", _0)]
+    #[display(fmt = "Message validation failed: {_0}")]
     ValidationFailed(String),
 }
 
@@ -448,9 +448,9 @@ pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAdd
 
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum NetIdError {
-    #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
+    #[display(fmt = "Netid {netid} is larger than max {max_netid}")]
     LargerThanMax { netid: u16, max_netid: u16 },
-    #[display(fmt = "{} netid is deprecated.", netid)]
+    #[display(fmt = "{netid} netid is deprecated.")]
     Deprecated { netid: u16 },
 }
 

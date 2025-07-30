@@ -54,7 +54,7 @@ mod tests {
         assert!(delta < 0.04, "{}", delta);
         crate::block_on(ti);
         let delta = now_float() - started;
-        println!("time delta is {}", delta);
+        println!("time delta is {delta}");
         assert!(delta > 0.2);
         assert!(delta < 0.4)
     }

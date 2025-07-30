@@ -201,10 +201,7 @@ where
                 tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic_fee_rate));
             },
             Some(ref fee_policy) => {
-                let error = format!(
-                    "Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {:?}",
-                    fee_policy
-                );
+                let error = format!("Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {fee_policy:?}");
                 return MmError::err(WithdrawError::InvalidFeePolicy(error));
             },
             None => (),
@@ -346,7 +343,7 @@ where
                 }));
             },
             unexpected => {
-                let error = format!("Unexpected number of outputs: {}", unexpected);
+                let error = format!("Unexpected number of outputs: {unexpected}");
                 return MmError::err(WithdrawError::InternalError(error));
             },
         }

@@ -36,7 +36,7 @@ impl fmt::Display for NetworkPrefix {
             NetworkPrefix::SlpTest => "slptest",
             NetworkPrefix::Other(network) => network,
         };
-        write!(f, "{}", as_str)
+        write!(f, "{as_str}")
     }
 }
 

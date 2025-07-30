@@ -46,30 +46,30 @@ type CreateAccountXPubExtractor = RpcTaskXPubExtractor<InitCreateAccountTask>;
 pub enum CreateAccountRpcError {
     #[display(fmt = "Hardware Wallet context is not initialized")]
     HwContextNotInitialized,
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    #[display(fmt = "RPC 'task' is awaiting '{expected}' user action")]
     UnexpectedUserAction { expected: String },
     #[from_trait(WithTimeout::timeout)]
-    #[display(fmt = "RPC timed out {:?}", _0)]
+    #[display(fmt = "RPC timed out {_0:?}")]
     Timeout(Duration),
     #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
     CoinIsActivatedNotWithHDWallet,
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "Accounts limit reached. Max number of accounts: {}", max_accounts_number)]
+    #[display(fmt = "Accounts limit reached. Max number of accounts: {max_accounts_number}")]
     AccountLimitReached { max_accounts_number: u32 },
-    #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
+    #[display(fmt = "Electrum/Native RPC invalid response: {_0}")]
     RpcInvalidResponse(String),
-    #[display(fmt = "HD wallet storage error: {}", _0)]
+    #[display(fmt = "HD wallet storage error: {_0}")]
     WalletStorageError(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
     #[from_trait(WithInternal::internal)]
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
 }
 
@@ -104,7 +104,7 @@ impl From<NewAccountCreationError> for CreateAccountRpcError {
                 CreateAccountRpcError::AccountLimitReached { max_accounts_number }
             },
             NewAccountCreationError::ErrorSavingAccountToStorage(e) => {
-                let error = format!("Error uploading HD account info to the storage: {}", e);
+                let error = format!("Error uploading HD account info to the storage: {e}");
                 CreateAccountRpcError::WalletStorageError(error)
             },
             NewAccountCreationError::Internal(internal) => CreateAccountRpcError::Internal(internal),

@@ -33,9 +33,9 @@ pub type PrivKeyResult<T> = Result<T, MmError<PrivKeyError>>;
 pub enum PrivKeyError {
     #[display(fmt = "Provided WIF passphrase has invalid checksum!")]
     WifPassphraseInvalidChecksum,
-    #[display(fmt = "Error parsing passphrase: {}", _0)]
+    #[display(fmt = "Error parsing passphrase: {_0}")]
     ErrorParsingPassphrase(String),
-    #[display(fmt = "Invalid private key: {}", _0)]
+    #[display(fmt = "Invalid private key: {_0}")]
     InvalidPrivKey(String),
     #[display(fmt = "We only support compressed keys at the moment")]
     ExpectedCompressedKeys,
@@ -200,7 +200,7 @@ fn serializable_secp256k1_keypair_test() {
     let key_pair = KeyPair::random_compressed();
     let serializable = SerializableSecp256k1Keypair { inner: key_pair };
     let serialized = json::to_string(&serializable).unwrap();
-    println!("{}", serialized);
+    println!("{serialized}");
     let deserialized = json::from_str(&serialized).unwrap();
     assert_eq!(serializable, deserialized);
 
@@ -210,5 +210,5 @@ fn serializable_secp256k1_keypair_test() {
     ];
     let invalid_privkey_serialized = json::to_string(&invalid_privkey).unwrap();
     let err = json::from_str::<SerializableSecp256k1Keypair>(&invalid_privkey_serialized).unwrap_err();
-    println!("{}", err);
+    println!("{err}");
 }

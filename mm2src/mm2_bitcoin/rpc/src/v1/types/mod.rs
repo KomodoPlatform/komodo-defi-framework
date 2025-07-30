@@ -31,7 +31,7 @@ pub trait ToTxHash {
 
 impl ToTxHash for Bytes {
     fn to_tx_hash(&self) -> String {
-        format!("{:02x}", self)
+        format!("{self:02x}")
     }
 }
 

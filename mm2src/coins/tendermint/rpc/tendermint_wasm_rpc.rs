@@ -42,7 +42,7 @@ pub enum PerformError {
     TendermintRpc(TendermintRpcError),
     Slurp(SlurpError),
     Internal(String),
-    #[display(fmt = "Request failed with status code {}, response {}", status_code, response)]
+    #[display(fmt = "Request failed with status code {status_code}, response {response}")]
     StatusCode {
         status_code: StatusCode,
         response: String,

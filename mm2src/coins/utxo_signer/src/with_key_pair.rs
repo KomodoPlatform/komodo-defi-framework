@@ -20,22 +20,16 @@ pub type UtxoSignWithKeyPairResult<T> = Result<T, MmError<UtxoSignWithKeyPairErr
 #[derive(Debug, Display)]
 pub enum UtxoSignWithKeyPairError {
     #[display(
-        fmt = "{} script '{}' built from input key pair doesn't match expected prev script '{}'",
-        script_type,
-        script,
-        prev_script
+        fmt = "{script_type} script '{script}' built from input key pair doesn't match expected prev script '{prev_script}'"
     )]
     MismatchScript {
         script_type: String,
         script: Script,
         prev_script: Script,
     },
-    #[display(fmt = "Input index '{}' is out of bound. Total length = {}", index, len)]
+    #[display(fmt = "Input index '{index}' is out of bound. Total length = {len}")]
     InputIndexOutOfBound { len: usize, index: usize },
-    #[display(
-        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
-        script
-    )]
+    #[display(fmt = "Can't spend the UTXO with script = '{script}'. This script format isn't supported")]
     UnspendableUTXO { script: Script },
     #[display(fmt = "Error signing using a private key")]
     ErrorSigning(keys::Error),

@@ -25,7 +25,7 @@ pub struct GetCurrentMtpResponse {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetCurrentMtpError {
     NoSuchCoin(String),
-    #[display(fmt = "Requested coin: {}; is not supported for this action.", _0)]
+    #[display(fmt = "Requested coin: {_0}; is not supported for this action.")]
     NotSupportedCoin(String),
     RpcError(String),
 }

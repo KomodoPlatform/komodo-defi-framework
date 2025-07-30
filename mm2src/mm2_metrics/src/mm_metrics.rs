@@ -216,8 +216,8 @@ pub(crate) fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> 
         .iter()
         .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(key, value)| match value {
-            PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
-            PreparedMetric::Float(v) => format!("{}={:?}", key, v),
+            PreparedMetric::Unsigned(v) => format!("{key}={v:?}"),
+            PreparedMetric::Float(v) => format!("{key}={v:?}"),
             PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
         })
         .join(" ")
@@ -482,14 +482,13 @@ mod test {
             let index = actual
                 .iter()
                 .position(|metric| metric == expected)
-                .unwrap_or_else(|| panic!("Couldn't find expected metric: {:#?} \n in {:#?}", expected, actual));
+                .unwrap_or_else(|| panic!("Couldn't find expected metric: {expected:#?} \n in {actual:#?}"));
             actual.remove(index);
         }
 
         assert!(
             actual.is_empty(),
-            "More metrics collected than expected. Excess metrics: {:?}",
-            actual
+            "More metrics collected than expected. Excess metrics: {actual:?}"
         );
     }
 

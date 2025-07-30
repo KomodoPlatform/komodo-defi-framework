@@ -71,7 +71,7 @@ pub enum UtxoCoinBuildError {
     InvalidBlockchainNetwork(String),
     #[display(fmt = "Can not detect the user home directory")]
     CantDetectUserHome,
-    #[display(fmt = "Private key policy is not allowed: {}", _0)]
+    #[display(fmt = "Private key policy is not allowed: {_0}")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Hardware Wallet context is not initialized")]
     HwContextNotInitialized,
@@ -81,14 +81,14 @@ pub enum UtxoCoinBuildError {
     )]
     CoinDoesntSupportTrezor,
     BlockHeaderStorageError(BlockHeaderStorageError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
     #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
     SPVError(SPVError),
     ErrorCalculatingStartingHeight(String),
     #[display(fmt = "Failed spawning balance events. Error: {_0}")]
     FailedSpawningBalanceEvents(String),
-    #[display(fmt = "Can not enable balance events for {} mode.", mode)]
+    #[display(fmt = "Can not enable balance events for {mode} mode.")]
     UnsupportedModeForBalanceEvents {
         mode: String,
     },
@@ -313,7 +313,7 @@ where
 
     // Construct the PrivKeyPolicy (of WalletConnect type).
     let pubkey = PublicKey::from_str(&pubkey).map_err(|e| {
-        WalletConnectError::ClientError(format!("Received a bad pubkey={} from WalletConnect: {}", pubkey, e))
+        WalletConnectError::ClientError(format!("Received a bad pubkey={pubkey} from WalletConnect: {e}"))
     })?;
     let public_key = pubkey.serialize().into();
     let public_key_uncompressed = pubkey.serialize_uncompressed().into();
@@ -340,12 +340,11 @@ where
     // corresponds to the public key we have. Otherwise, the wallet (or our address builder) is messed up.
     let my_address_serialized = my_address
         .display_address()
-        .map_err(|e| UtxoCoinBuildError::Internal(format!("Failed to serialize address: {}", e)))?;
+        .map_err(|e| UtxoCoinBuildError::Internal(format!("Failed to serialize address: {e}")))?;
     if my_address_serialized != address {
         return MmError::err(
             WalletConnectError::ClientError(format!(
-            "Received address={} from WalletConnect doesn't match the expected address={} derived via the public key",
-            my_address_serialized, address
+            "Received address={my_address_serialized} from WalletConnect doesn't match the expected address={address} derived via the public key"
         ))
             .into(),
         );
@@ -529,8 +528,7 @@ pub trait UtxoCoinBuilderCommonOps {
             Some(from_req) => {
                 if from_req.is_segwit() != format_from_conf.is_segwit() {
                     let error = format!(
-                        "Both conf {:?} and request {:?} must be either Segwit or Standard/CashAddress",
-                        format_from_conf, from_req
+                        "Both conf {format_from_conf:?} and request {from_req:?} must be either Segwit or Standard/CashAddress"
                     );
                     return MmError::err(UtxoCoinBuildError::from(UtxoConfError::InvalidAddressFormat(error)));
                 } else {
@@ -621,7 +619,7 @@ pub trait UtxoCoinBuilderCommonOps {
         let full_derivation_path = path_account_to_address
             .to_derivation_path(&path_purpose_to_coin)
             .map_err(|e| {
-                UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to construct full derivation path: {}", e))
+                UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to construct full derivation path: {e}"))
             })?;
         let full_derivation_path = StandardHDPath::try_from(full_derivation_path).map_err(|e| {
             UtxoCoinBuildError::InvalidPathToAddress(format!("Failed to parse full derivation path: {e:?}"))
@@ -722,7 +720,7 @@ pub trait UtxoCoinBuilderCommonOps {
         let mm_version = ctx.mm_version().to_string();
         let (min_connected, max_connected) = (min_connected.unwrap_or(1), max_connected.unwrap_or(servers.len()));
         let client_settings = ElectrumClientSettings {
-            client_name: format!("{} GUI/MM2 {}", gui, mm_version),
+            client_name: format!("{gui} GUI/MM2 {mm_version}"),
             servers: servers.clone(),
             coin_ticker,
             spawn_ping: args.spawn_ping,
@@ -750,7 +748,7 @@ pub trait UtxoCoinBuilderCommonOps {
         let network = self.network()?;
         let (rpc_port, rpc_user, rpc_password) = read_native_mode_conf(&native_conf_path, &network)
             .map_to_mm(UtxoCoinBuildError::ErrorReadingNativeModeConf)?;
-        let auth_str = format!("{}:{}", rpc_user, rpc_password);
+        let auth_str = format!("{rpc_user}:{rpc_password}");
         let rpc_port = match rpc_port {
             Some(p) => p,
             None => self.conf()["rpcport"]
@@ -766,7 +764,7 @@ pub trait UtxoCoinBuilderCommonOps {
             ];
         let client = Arc::new(NativeClientImpl {
             coin_ticker,
-            uri: format!("http://127.0.0.1:{}", rpc_port),
+            uri: format!("http://127.0.0.1:{rpc_port}"),
             auth: format!("Basic {}", URL_SAFE.encode(auth_str)),
             event_handlers,
             request_id: 0u64.into(),
@@ -797,7 +795,7 @@ pub trait UtxoCoinBuilderCommonOps {
                     }
                 };
                 let data_dir = coin_daemon_data_dir(name, is_asset_chain);
-                let confname = format!("{}.conf", name);
+                let confname = format!("{name}.conf");
 
                 return Ok(data_dir.join(&confname[..]));
             },

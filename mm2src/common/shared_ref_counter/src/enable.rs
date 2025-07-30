@@ -89,7 +89,7 @@ impl<T> SharedRc<T> {
     /// This behavior is considered acceptable since the `enable` feature is expected to be used for **debug** purposes only.
     pub fn existing_pointers(&self) -> Vec<&'static Location<'static>> {
         let existing_pointers = self.existing_pointers.read().expect(LOCKING_ERROR);
-        let locations: Vec<_> = existing_pointers.iter().map(|(_index, location)| *location).collect();
+        let locations: Vec<_> = existing_pointers.values().copied().collect();
         locations
     }
 

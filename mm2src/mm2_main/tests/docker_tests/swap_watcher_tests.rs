@@ -107,7 +107,7 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
+    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{alice_privkey}"), &coins);
     if let Some(locktime) = custom_locktime {
         alice_conf.conf["payment_locktime"] = locktime.into();
     }
@@ -121,7 +121,7 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let mut bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    let mut bob_conf = Mm2TestConf::light_node(&format!("0x{bob_privkey}"), &coins, &[&mm_alice.ip.to_string()]);
     if let Some(locktime) = custom_locktime {
         bob_conf.conf["payment_locktime"] = locktime.into();
     }
@@ -171,7 +171,7 @@ fn start_swaps_and_get_balances(
     };
 
     let mut watcher_conf = Mm2TestConf::watcher_light_node(
-        &format!("0x{}", watcher_privkey),
+        &format!("0x{watcher_privkey}"),
         &coins,
         &[&mm_alice.ip.to_string()],
         watcher_conf,
@@ -293,7 +293,7 @@ fn run_taker_node(
     custom_locktime: Option<u64>,
 ) -> (MarketMakerIt, Mm2TestConf) {
     let privkey = hex::encode(random_secp256k1_secret());
-    let mut conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
+    let mut conf = Mm2TestConf::light_node(&format!("0x{privkey}"), coins, seednodes);
     if let Some(locktime) = custom_locktime {
         conf.conf["payment_locktime"] = locktime.into();
     }
@@ -341,9 +341,9 @@ fn run_maker_node(
 ) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
     let mut conf = if seednodes.is_empty() {
-        Mm2TestConf::seednode(&format!("0x{}", privkey), coins)
+        Mm2TestConf::seednode(&format!("0x{privkey}"), coins)
     } else {
-        Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes)
+        Mm2TestConf::light_node(&format!("0x{privkey}"), coins, seednodes)
     };
     if let Some(locktime) = custom_locktime {
         conf.conf["payment_locktime"] = locktime.into();
@@ -374,7 +374,7 @@ fn run_watcher_node(
     custom_locktime: Option<u64>,
 ) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
-    let mut conf = Mm2TestConf::watcher_light_node(&format!("0x{}", privkey), coins, seednodes, watcher_conf).conf;
+    let mut conf = Mm2TestConf::watcher_light_node(&format!("0x{privkey}"), coins, seednodes, watcher_conf).conf;
     if let Some(locktime) = custom_locktime {
         conf["payment_locktime"] = locktime.into();
     }

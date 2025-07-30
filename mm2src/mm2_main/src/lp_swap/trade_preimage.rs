@@ -184,11 +184,7 @@ impl TradePreimageResponse {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TradePreimageRpcError {
     #[display(
-        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBalance {
         coin: String,
@@ -198,11 +194,7 @@ pub enum TradePreimageRpcError {
         locked_by_swaps: Option<BigDecimal>,
     },
     #[display(
-        fmt = "Not enough base coin {} balance for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough base coin {coin} balance for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBaseCoinBalance {
         coin: String,
@@ -211,30 +203,25 @@ pub enum TradePreimageRpcError {
         #[serde(skip_serializing_if = "Option::is_none")]
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(
-        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
-        volume,
-        coin,
-        threshold
-    )]
+    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
         threshold: BigDecimal,
     },
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "Coin {} is wallet only", coin)]
+    #[display(fmt = "Coin {coin} is wallet only")]
     CoinIsWalletOnly { coin: String },
     #[display(fmt = "Rel coin can not be same as base")]
     BaseEqualRel,
-    #[display(fmt = "Incorrect use of the '{}' parameter: {}", param, reason)]
+    #[display(fmt = "Incorrect use of the '{param}' parameter: {reason}")]
     InvalidParam { param: String, reason: String },
-    #[display(fmt = "Price {} is too low, required at least {}", price, threshold)]
+    #[display(fmt = "Price {price} is too low, required at least {threshold}")]
     PriceTooLow { price: BigDecimal, threshold: BigDecimal },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -357,7 +344,7 @@ impl TradePreimageRpcError {
             error @ MakerOrderBuildError::MinBaseVolTooLow { .. }
             | error @ MakerOrderBuildError::ConfSettingsNotSet
             | error @ MakerOrderBuildError::MaxBaseVolBelowMinBaseVol { .. } => {
-                TradePreimageRpcError::InternalError(format!("Unexpected MakerOrderBuildError: {}", error))
+                TradePreimageRpcError::InternalError(format!("Unexpected MakerOrderBuildError: {error}"))
             },
         }
     }
@@ -384,7 +371,7 @@ impl TradePreimageRpcError {
             | error @ TakerOrderBuildError::MaxBaseVolBelowMinBaseVol { .. }
             | error @ TakerOrderBuildError::SenderPubkeyIsZero
             | error @ TakerOrderBuildError::ConfsSettingsNotSet => {
-                TradePreimageRpcError::InternalError(format!("Unexpected TakerOrderBuildError: {}", error))
+                TradePreimageRpcError::InternalError(format!("Unexpected TakerOrderBuildError: {error}"))
             },
         }
     }

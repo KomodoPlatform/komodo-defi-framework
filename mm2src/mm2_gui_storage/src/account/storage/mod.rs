@@ -25,21 +25,21 @@ pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
 #[derive(Debug, Display)]
 pub enum AccountStorageError {
-    #[display(fmt = "No such account {:?}", _0)]
+    #[display(fmt = "No such account {_0:?}")]
     NoSuchAccount(AccountId),
     #[display(fmt = "No enabled account yet")]
     NoEnabledAccount,
-    #[display(fmt = "Account {:?} exists already", _0)]
+    #[display(fmt = "Account {_0:?} exists already")]
     AccountExistsAlready(AccountId),
-    #[display(fmt = "Error saving changes in accounts storage: {}", _0)]
+    #[display(fmt = "Error saving changes in accounts storage: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading account: {}", _0)]
+    #[display(fmt = "Error loading account: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing an account: {}", _0)]
+    #[display(fmt = "Error deserializing an account: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing an account: {}", _0)]
+    #[display(fmt = "Error serializing an account: {_0}")]
     ErrorSerializing(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -47,10 +47,7 @@ impl StdError for AccountStorageError {}
 
 impl AccountStorageError {
     pub(crate) fn unknown_account_in_enabled_table(account_id: AccountId) -> AccountStorageError {
-        let error = format!(
-            "'EnabledAccountTable' contains an account {:?} that is not in 'AccountTable'",
-            account_id
-        );
+        let error = format!("'EnabledAccountTable' contains an account {account_id:?} that is not in 'AccountTable'");
         AccountStorageError::Internal(error)
     }
 }
@@ -86,10 +83,7 @@ impl AccountId {
             (AccountType::HD, account_idx) if device_pubkey == DEFAULT_DEVICE_PUB => Ok(AccountId::HD { account_idx }),
             (AccountType::HW, DEFAULT_ACCOUNT_IDX) => Ok(AccountId::HW { device_pubkey }),
             (_, _) => {
-                let error = format!(
-                    "An invalid AccountId tuple: {:?}/{:?}/{:?}",
-                    account_type, account_idx, device_pubkey
-                );
+                let error = format!("An invalid AccountId tuple: {account_type:?}/{account_idx:?}/{device_pubkey:?}");
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }
@@ -116,7 +110,7 @@ impl EnabledAccountId {
             (EnabledAccountType::Iguana, DEFAULT_ACCOUNT_IDX) => Ok(EnabledAccountId::Iguana),
             (EnabledAccountType::HD, account_idx) => Ok(EnabledAccountId::HD { account_idx }),
             (_, _) => {
-                let error = format!("An invalid AccountId tuple: {:?}/{:?}", account_type, account_idx);
+                let error = format!("An invalid AccountId tuple: {account_type:?}/{account_idx:?}");
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }

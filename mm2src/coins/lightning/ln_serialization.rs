@@ -37,26 +37,26 @@ impl<'de> de::Deserialize<'de> for NodeAddress {
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 let mut pubkey_and_addr = v.split('@');
                 let pubkey_str = pubkey_and_addr.next().ok_or_else(|| {
-                    let err = format!("Could not parse node address from str {}", v);
+                    let err = format!("Could not parse node address from str {v}");
                     de::Error::custom(err)
                 })?;
                 let addr_str = pubkey_and_addr.next().ok_or_else(|| {
-                    let err = format!("Could not parse node address from str {}", v);
+                    let err = format!("Could not parse node address from str {v}");
                     de::Error::custom(err)
                 })?;
                 let pubkey = PublicKey::from_str(pubkey_str).map_err(|e| {
-                    let err = format!("Could not parse node pubkey from str {}, err {}", pubkey_str, e);
+                    let err = format!("Could not parse node pubkey from str {pubkey_str}, err {e}");
                     de::Error::custom(err)
                 })?;
                 let addr = addr_str
                     .to_socket_addrs()
                     .map(|mut r| r.next())
                     .map_err(|e| {
-                        let err = format!("Could not parse socket address from str {}, err {}", addr_str, e);
+                        let err = format!("Could not parse socket address from str {addr_str}, err {e}");
                         de::Error::custom(err)
                     })?
                     .ok_or_else(|| {
-                        let err = format!("Could not parse socket address from str {}", addr_str);
+                        let err = format!("Could not parse socket address from str {addr_str}");
                         de::Error::custom(err)
                     })?;
                 Ok(NodeAddress { pubkey, addr })
@@ -95,7 +95,7 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 let pubkey = PublicKey::from_str(v).map_err(|e| {
-                    let err = format!("Could not parse public key from str {}, err {}", v, e);
+                    let err = format!("Could not parse public key from str {v}, err {e}");
                     de::Error::custom(err)
                 })?;
                 Ok(PublicKeyForRPC(pubkey))

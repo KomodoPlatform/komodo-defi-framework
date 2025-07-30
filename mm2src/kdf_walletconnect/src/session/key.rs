@@ -196,7 +196,7 @@ mod session_key_tests {
         let public_key = PublicKey::from(&static_secret);
         let session_key = SessionKey::new(public_key);
 
-        let debug_str = format!("{:?}", session_key);
+        let debug_str = format!("{session_key:?}");
         assert!(debug_str.contains("SessionKey"));
         assert!(debug_str.contains("sym_key: \"*******\""));
     }

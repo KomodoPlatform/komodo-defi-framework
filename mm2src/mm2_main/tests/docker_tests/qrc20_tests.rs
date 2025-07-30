@@ -102,7 +102,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
     let name = "qtum";
     let mut conf_path = temp_dir().join("qtum-regtest");
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", name));
+    conf_path.push(format!("{name}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), name))
@@ -1113,7 +1113,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
     for _ in 0..4 {
         let amount = rng.gen_range(100000, 10000000);
         let amount = big_decimal_from_sat(amount, 8);
-        qtum_balance_steps = format!("{} + {}", qtum_balance_steps, amount);
+        qtum_balance_steps = format!("{qtum_balance_steps} + {amount}");
         qtum_balance = &qtum_balance + &amount;
         fill_address(&coin, &my_address, amount, 30);
     }

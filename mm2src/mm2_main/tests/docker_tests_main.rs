@@ -164,7 +164,7 @@ fn remove_docker_containers(name: &str) {
     let stdout = Command::new("docker")
         .arg("ps")
         .arg("-f")
-        .arg(format!("ancestor={}", name))
+        .arg(format!("ancestor={name}"))
         .arg("-q")
         .output()
         .expect("Failed to execute docker command");

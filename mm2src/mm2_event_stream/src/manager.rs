@@ -491,7 +491,7 @@ mod tests {
 
         // We should be hooked now. try to receive some events from the streamer.
         for i in 1..=3 {
-            let msg = format!("send{}", i);
+            let msg = format!("send{i}");
             manager.send(&streamer_id, msg.clone()).unwrap();
             // Wait for a little bit to make sure the streamer received the data we sent.
             Timer::sleep(0.1).await;

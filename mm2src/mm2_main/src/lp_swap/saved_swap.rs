@@ -15,17 +15,17 @@ pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
 #[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
-    #[display(fmt = "Error saving the a swap: {}", _0)]
+    #[display(fmt = "Error saving the a swap: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error loading a swap: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
     CursorError(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -376,8 +376,7 @@ mod wasm_impl {
                 1 => break,
                 unsupported => {
                     return MmError::err(SavedSwapError::InternalError(format!(
-                        "Unsupported migration {}",
-                        unsupported
+                        "Unsupported migration {unsupported}"
                     )))
                 },
             }

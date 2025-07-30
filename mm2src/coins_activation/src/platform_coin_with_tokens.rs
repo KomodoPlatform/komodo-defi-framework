@@ -236,38 +236,38 @@ pub struct EnablePlatformCoinWithTokensReq<T: Clone> {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnablePlatformCoinWithTokensError {
     PlatformIsAlreadyActivated(String),
-    #[display(fmt = "Platform {} config is not found", _0)]
+    #[display(fmt = "Platform {_0} config is not found")]
     PlatformConfigIsNotFound(String),
-    #[display(fmt = "Platform coin {} protocol parsing failed: {}", ticker, error)]
+    #[display(fmt = "Platform coin {ticker} protocol parsing failed: {error}")]
     CoinProtocolParseError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected platform protocol {protocol} for {ticker}")]
     UnexpectedPlatformProtocol {
         ticker: String,
         protocol: Json,
     },
-    #[display(fmt = "Token {} config is not found", _0)]
+    #[display(fmt = "Token {_0} config is not found")]
     TokenConfigIsNotFound(String),
-    #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
+    #[display(fmt = "Token {ticker} protocol parsing failed: {error}")]
     TokenProtocolParseError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {protocol} for {ticker}")]
     UnexpectedTokenProtocol {
         ticker: String,
         protocol: Json,
     },
-    #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
+    #[display(fmt = "Error on platform coin {ticker} creation: {error}")]
     PlatformCoinCreationError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Private key is not allowed: {}", _0)]
+    #[display(fmt = "Private key is not allowed: {_0}")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
-    #[display(fmt = "Unexpected derivation method: {}", _0)]
+    #[display(fmt = "Unexpected derivation method: {_0}")]
     UnexpectedDerivationMethod(String),
     Transport(String),
     AtLeastOneNodeRequired(String),
@@ -275,17 +275,17 @@ pub enum EnablePlatformCoinWithTokensError {
     #[display(fmt = "Failed spawning balance events. Error: {_0}")]
     FailedSpawningBalanceEvents(String),
     Internal(String),
-    #[display(fmt = "No such task '{}'", _0)]
+    #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
-    #[display(fmt = "Custom token error: {}", _0)]
+    #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
-    #[display(fmt = "WalletConnect Error: {}", _0)]
+    #[display(fmt = "WalletConnect Error: {_0}")]
     WalletConnectError(String),
 }
 

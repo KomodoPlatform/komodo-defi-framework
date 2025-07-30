@@ -98,7 +98,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         Err(e) => {
             let error = StartupError::new(
                 StartupResultCode::InvalidParams,
-                format!("Expected 'MainParams' as the first argument, found {:?}: {}", params, e),
+                format!("Expected 'MainParams' as the first argument, found {params:?}: {e}"),
             );
             console_err!("{}", error.message());
             return Err(error.into());
@@ -143,7 +143,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
             ctx
         },
         Err(err) => {
-            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {}", err));
+            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {err}"));
             console_err!("{}", error.message());
             LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
             return Err(error.into());
@@ -187,12 +187,6 @@ pub enum Mm2RpcErr {
     NotRunning = 1,
     InvalidPayload = 2,
     InternalError = 3,
-}
-
-impl From<Mm2RpcErr> for JsValue {
-    fn from(e: Mm2RpcErr) -> Self {
-        JsValue::from(e as i32)
-    }
 }
 
 /// Invokes an RPC request.

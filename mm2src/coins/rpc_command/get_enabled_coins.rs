@@ -9,7 +9,7 @@ use mm2_err_handle::prelude::*;
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetEnabledCoinsError {
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -42,8 +42,8 @@ pub async fn get_enabled_coins_rpc(
     let coins_map = coins_ctx.coins.lock().await;
 
     let coins = coins_map
-        .iter()
-        .map(|(ticker, _coin)| EnabledCoinV2 { ticker: ticker.clone() })
+        .keys()
+        .map(|ticker| EnabledCoinV2 { ticker: ticker.clone() })
         .collect();
     Ok(GetEnabledCoinsResponse { coins })
 }

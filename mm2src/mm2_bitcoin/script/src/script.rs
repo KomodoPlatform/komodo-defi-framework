@@ -540,12 +540,12 @@ impl Script {
             Some(Ok(instruction)) => match instruction.opcode {
                 Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
                     Some(bytes) => Ok(bytes.to_vec()),
-                    None => Err(format!("No data at instruction 0 of script {:?}", self)),
+                    None => Err(format!("No data at instruction 0 of script {self:?}")),
                 },
-                opcode => Err(format!("Unexpected opcode {:?}", opcode)),
+                opcode => Err(format!("Unexpected opcode {opcode:?}")),
             },
-            Some(Err(e)) => Err(format!("Error {} on getting instruction 0 of script {:?}", e, self)),
-            None => Err(format!("None instruction 0 of script {:?}", self)),
+            Some(Err(e)) => Err(format!("Error {e} on getting instruction 0 of script {self:?}")),
+            None => Err(format!("None instruction 0 of script {self:?}")),
         }
     }
 
@@ -716,7 +716,7 @@ mod tests {
             .into_script();
         let s = "Script { data: 0103010293 }";
         let mut res = String::new();
-        write!(&mut res, "{:?}", script).unwrap();
+        write!(&mut res, "{script:?}").unwrap();
         assert_eq!(s.to_string(), res);
     }
 

@@ -100,7 +100,7 @@ impl Link for UdpLink {
             if n == chunk_len as usize {
                 Ok(chunk)
             } else {
-                Err(io::Error::new(io::ErrorKind::Other, "invalid read size"))
+                Err(io::Error::other("invalid read size"))
             }
         })
         .await

@@ -67,8 +67,7 @@ pub async fn get_walletconnect_address(
             } else {
                 // Otherwise, the response includes a derivation path, which means we didn't find the one that the user was interested in.
                 MmError::err(WalletConnectError::NoAccountFound(format!(
-                    "No address found for derivation path: {}",
-                    derivation_path
+                    "No address found for derivation path: {derivation_path}"
                 )))
             }
         },
@@ -136,8 +135,7 @@ pub async fn get_pubkey_via_wallatconnect_signature(
     let message_hash = sign_message_hash(sign_message_prefix, AUTH_MSG);
     let pubkey = Public::recover_compact(&H256::from(message_hash), &signature).map_err(|e| {
         WalletConnectError::InternalError(format!(
-            "Failed to recover public key from walletconnect signature={:?}: {:?}",
-            signature, e
+            "Failed to recover public key from walletconnect signature={signature:?}: {e:?}"
         ))
     })?;
 

@@ -374,8 +374,7 @@ impl SwapOps for UtxoStandardCoin {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -719,8 +718,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                     })?
                     .map_err(|e| {
                         SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
-                            "Couldn't get instruction at index 1: {}",
-                            e
+                            "Couldn't get instruction at index 1: {e}"
                         ))
                     })?;
                 match maybe_first_op_if.opcode {
@@ -737,8 +735,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                             .try_into()
                             .map_err(|e| {
                                 SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
-                                    "Failed to parse data at instruction with index 1 as [u8; 32]: {}",
-                                    e
+                                    "Failed to parse data at instruction with index 1 as [u8; 32]: {e}"
                                 ))
                             })?,
                     })),
@@ -746,8 +743,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
                         Ok(Some(FundingTxSpend::TransferredToTakerPayment(found.spending_tx)))
                     },
                     unexpected => Err(SearchForFundingSpendErr::FailedToProcessSpendTx(format!(
-                        "Got unexpected opcode {:?} at instruction with index 1",
-                        unexpected
+                        "Got unexpected opcode {unexpected:?} at instruction with index 1"
                     ))),
                 }
             },

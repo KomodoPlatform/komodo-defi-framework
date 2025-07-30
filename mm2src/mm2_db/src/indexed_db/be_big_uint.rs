@@ -58,9 +58,9 @@ use std::ops::Add;
 pub enum BigUintError {
     #[display(fmt = "Expected at least one digit")]
     NoDigits,
-    #[display(fmt = "Unexpected number of digits: expected '{}', found '{}'", expected, found)]
+    #[display(fmt = "Unexpected number of digits: expected '{expected}', found '{found}'")]
     InvalidNumberOfDigits { expected: u32, found: usize },
-    #[display(fmt = "The number is too large: {}", _0)]
+    #[display(fmt = "The number is too large: {_0}")]
     NumberIsTooLarge(BigUint),
 }
 
@@ -228,7 +228,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_be_big_uint_debug_display() {
         let num = BeBigUint::from(1023u32);
-        assert_eq!("1023", format!("{:?}", num));
+        assert_eq!("1023", format!("{num:?}"));
         assert_eq!("1023", num.to_string());
     }
 }
