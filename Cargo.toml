@@ -102,7 +102,7 @@ futures01 = { version = "0.1", package = "futures" }
 futures-rustls = { version = "0.24", default-features = false }
 futures-ticker = "0.0.3"
 futures-timer = "3.0"
-futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["sink", "std"] }
 fnv = "1.0.6"
 group = "0.8.0"
 gstuff = { version = "0.7" }
