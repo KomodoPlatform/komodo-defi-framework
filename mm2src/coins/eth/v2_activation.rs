@@ -884,10 +884,11 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let wc = WalletConnectCtx::from_ctx(ctx).map_err(|e| {
                 EthActivationV2Error::WalletConnectError(format!("Failed to get WalletConnect context: {}", e))
             })?;
-            let chain_id = chain_spec
-                .ok_or(EthActivationV2Error::ChainIdNotSet)?
-                .chain_id()
-                .ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let chain_spec = chain_spec.ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
+                chain: chain_spec.kind().to_string(),
+                feature: "WalletConnect".to_string(),
+            })?;
             let (public_key_uncompressed, address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
                 .await
                 .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
