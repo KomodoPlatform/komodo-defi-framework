@@ -310,10 +310,8 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     utxo.is_trezor(),
-                    CoinProtocol::UTXO {
-                        // Note that the actual chain_id isn't needed by trezor XPUB extractor.
-                        chain_id: None,
-                    },
+                    // Note that the actual UtxoProtocolInfo isn't needed by trezor XPUB extractor.
+                    CoinProtocol::UTXO(Default::default()),
                 )
                 .await?,
             )),

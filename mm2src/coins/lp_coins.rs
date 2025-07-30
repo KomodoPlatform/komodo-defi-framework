@@ -4687,16 +4687,20 @@ pub trait IguanaBalanceOps {
     async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject>;
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Information about the UTXO protocol used by a coin.
+pub struct UtxoProtocolInfo {
+    /// A CAIP-2 compliant chain ID. Starts with `b122:`
+    /// This is used to identify the blockchain when using WalletConnect.
+    /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
+    chain_id: Option<String>,
+}
+
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    UTXO {
-        /// A CAIP-2 compliant chain ID. Starts with `b122:`
-        /// This is used to identify the blockchain when using WalletConnect.
-        /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
-        chain_id: Option<String>,
-    },
+    UTXO(UtxoProtocolInfo),
     QTUM,
     QRC20 {
         platform: String,
