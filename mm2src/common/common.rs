@@ -1201,8 +1201,10 @@ pub fn get_utc_timestamp() -> i64 {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp_nanos() -> i64 {
-    Utc::now().timestamp_nanos()
+pub fn get_utc_timestamp_nanos() -> Result<i64, String> {
+    Utc::now()
+        .timestamp_nanos_opt()
+        .ok_or("Failed to get timestamp in nanoseconds; the system clock may be unreliable.".to_owned())
 }
 
 #[inline(always)]

@@ -110,6 +110,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "android-tzdata"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -737,18 +743,17 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.23"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b0a3d9ed01224b22057780a37bb8c5dbfe1be8ba48678e7bf57ec4b385411f"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
+ "android-tzdata",
  "iana-time-zone",
  "js-sys",
- "num-integer",
  "num-traits",
  "serde",
- "time 0.1.43",
  "wasm-bindgen",
- "winapi",
+ "windows-link",
 ]
 
 [[package]]
@@ -919,7 +924,7 @@ dependencies = [
  "sia-rust",
  "spv_validation",
  "tendermint-rpc",
- "time 0.3.41",
+ "time",
  "timed-map",
  "tokio",
  "tokio-rustls 0.24.1",
@@ -5461,7 +5466,7 @@ checksum = "ffbe84efe2f38dea12e9bfc1f65377fdf03e53a18cb3b995faedf7934c7e785b"
 dependencies = [
  "pem",
  "ring 0.16.20",
- "time 0.3.41",
+ "time",
  "yasna",
 ]
 
@@ -5804,7 +5809,7 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "smallvec 1.6.1",
- "time 0.3.41",
+ "time",
 ]
 
 [[package]]
@@ -6474,7 +6479,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.41",
+ "time",
 ]
 
 [[package]]
@@ -6975,7 +6980,7 @@ dependencies = [
  "subtle",
  "subtle-encoding",
  "tendermint-proto",
- "time 0.3.41",
+ "time",
  "zeroize",
 ]
 
@@ -7008,7 +7013,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "subtle-encoding",
- "time 0.3.41",
+ "time",
 ]
 
 [[package]]
@@ -7034,7 +7039,7 @@ dependencies = [
  "tendermint-config",
  "tendermint-proto",
  "thiserror",
- "time 0.3.41",
+ "time",
  "url",
  "uuid",
  "walkdir",
@@ -7091,16 +7096,6 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.37",
  "syn 2.0.87",
-]
-
-[[package]]
-name = "time"
-version = "0.1.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
-dependencies = [
- "libc",
- "winapi",
 ]
 
 [[package]]
@@ -8117,6 +8112,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows-link"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
+
+[[package]]
 name = "windows-result"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8481,7 +8482,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
 dependencies = [
- "time 0.3.41",
+ "time",
 ]
 
 [[package]]
@@ -8510,7 +8511,7 @@ dependencies = [
  "protobuf-codegen-pure",
  "rand_core 0.5.1",
  "subtle",
- "time 0.3.41",
+ "time",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -8530,7 +8531,7 @@ dependencies = [
  "protobuf",
  "rand_core 0.5.1",
  "rusqlite",
- "time 0.3.41",
+ "time",
  "tokio",
  "zcash_client_backend",
  "zcash_extras",
@@ -8548,7 +8549,7 @@ dependencies = [
  "jubjub",
  "protobuf",
  "rand_core 0.5.1",
- "time 0.3.41",
+ "time",
  "zcash_client_backend",
  "zcash_primitives",
 ]
