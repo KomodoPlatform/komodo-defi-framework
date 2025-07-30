@@ -16,7 +16,7 @@ use crate::utxo::{
 use crate::{
     BlockchainNetwork, CoinProtocol, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
     PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler,
-    UtxoActivationParams, UtxoProtocolInfo,
+    UtxoActivationParams,
 };
 use async_trait::async_trait;
 use chain::TxHashAlgo;
@@ -591,14 +591,14 @@ pub trait UtxoCoinBuilderCommonOps {
             )))
         })?;
 
-        if let CoinProtocol::UTXO(UtxoProtocolInfo { chain_id }) = protocol {
-            let chain_id = chain_id.ok_or_else(|| {
+        if let CoinProtocol::UTXO(utxo_info) = protocol {
+            let utxo_info = utxo_info.ok_or_else(|| {
                 WalletConnectError::InvalidChainId(format!(
                     "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
                     self.ticker()
                 ))
             })?;
-            let chain_id = WcChainId::try_from_str(&chain_id).map_mm_err()?;
+            let chain_id = WcChainId::try_from_str(&utxo_info.chain_id).map_mm_err()?;
             Ok(chain_id)
         } else {
             MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(

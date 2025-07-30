@@ -4693,14 +4693,15 @@ pub struct UtxoProtocolInfo {
     /// A CAIP-2 compliant chain ID. Starts with `b122:`
     /// This is used to identify the blockchain when using WalletConnect.
     /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
-    chain_id: Option<String>,
+    chain_id: String,
 }
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    UTXO(UtxoProtocolInfo),
+    // TODO: Nest this option deep into the innert struct fields when more fields are added to the UTXO protocol info.
+    UTXO(Option<UtxoProtocolInfo>),
     QTUM,
     QRC20 {
         platform: String,
