@@ -165,6 +165,14 @@ impl TokenInitializer for TendermintTokenInitializer {
     fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin {
         &self.platform_coin
     }
+
+    fn validate_token_params(
+        &self,
+        _params: &[TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>],
+    ) -> MmResult<(), Self::InitTokensError> {
+        // there is no platform coin in TendermintTokenProtocolInfo to validate
+        Ok(())
+    }
 }
 
 impl TryFromCoinProtocol for TendermintProtocolInfo {
