@@ -5747,7 +5747,7 @@ fn test_scan_and_deserialize_block_headers() {
         let mut num_to_fetch = CHUNK_SIZE;
         if let Some(end_h) = END_HEIGHT {
             if current_height > end_h {
-                println!("Reached configured end height of {}. Scan complete.", end_h);
+                println!("Reached configured end height of {end_h}. Scan complete.");
                 break;
             }
             let remaining = end_h.saturating_sub(current_height) + 1;
@@ -5758,7 +5758,7 @@ fn test_scan_and_deserialize_block_headers() {
             break;
         }
 
-        println!("Fetching {} headers from height {}", num_to_fetch, current_height);
+        println!("Fetching {num_to_fetch} headers from height {current_height}");
         let headers_res =
             block_on_f01(client.blockchain_block_headers(current_height, NonZeroU64::new(num_to_fetch).unwrap()))
                 .expect("Failed to get block headers");
@@ -5792,7 +5792,7 @@ fn test_scan_and_deserialize_block_headers() {
         }
 
         // If the loop completes, the entire chunk was successfully parsed.
-        println!("Successfully deserialized chunk starting at height {}.", current_height);
+        println!("Successfully deserialized chunk starting at height {current_height}.");
         current_height += headers_res.count;
     }
 
