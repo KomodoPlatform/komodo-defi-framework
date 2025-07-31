@@ -275,7 +275,7 @@ impl UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'_> {
         };
 
         if rel_to_home {
-            let home = dirs::home_dir().or_mm_err(|| UtxoCoinBuildError::CantDetectUserHome)?;
+            let home = std::env::home_dir().or_mm_err(|| UtxoCoinBuildError::CantDetectUserHome)?;
             Ok(home.join(confpath))
         } else {
             Ok(confpath.into())

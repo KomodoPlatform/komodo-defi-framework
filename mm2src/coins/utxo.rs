@@ -57,8 +57,6 @@ use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
 use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
-#[cfg(not(target_arch = "wasm32"))]
-use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -92,6 +90,8 @@ use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+#[cfg(not(target_arch = "wasm32"))]
+use std::env::home_dir;
 use std::hash::Hash;
 use std::num::{NonZeroU64, TryFromIntError};
 use std::ops::Deref;
@@ -1465,7 +1465,7 @@ pub fn zcash_params_path() -> PathBuf {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     // komodo/util.cpp/GetDefaultDataDir
-    let mut data_dir = match dirs::home_dir() {
+    let mut data_dir = match std::env::home_dir() {
         Some(hd) => hd,
         None => Path::new("/").to_path_buf(),
     };

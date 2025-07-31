@@ -4330,6 +4330,7 @@ pub(crate) async fn create_withdraw_msg_as_any(
                 amount: amount.into(),
             },
         )
+        .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
         .to_any()
     } else {
         MsgSend {
