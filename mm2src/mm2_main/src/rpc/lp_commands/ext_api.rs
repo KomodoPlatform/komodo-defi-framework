@@ -5,9 +5,11 @@ use coins::eth::wei_from_big_decimal;
 use coins::{CoinWithDerivationMethod, MmCoin};
 use ext_api_errors::ExtApiRpcError;
 use ext_api_helpers::{make_classic_swap_create_params, make_classic_swap_quote_params};
-use ext_api_types::{AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapDetails,
-                    ClassicSwapLiquiditySourcesRequest, ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest,
-                    ClassicSwapResponse, ClassicSwapTokensRequest, ClassicSwapTokensResponse};
+use ext_api_types::{
+    AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapDetails, ClassicSwapLiquiditySourcesRequest,
+    ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
+    ClassicSwapTokensResponse,
+};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use trading_api::one_inch_api::classic_swap_types::{ProtocolsResponse, TokensResponse};
@@ -15,7 +17,8 @@ use trading_api::one_inch_api::client::{ApiClient, SwapApiMethods, SwapUrlBuilde
 
 pub(crate) mod ext_api_errors;
 pub(crate) mod ext_api_helpers;
-#[cfg(test)] mod ext_api_tests;
+#[cfg(test)]
+mod ext_api_tests;
 pub(crate) mod ext_api_types;
 
 /// "1inch_v6_0_classic_swap_contract" rpc impl

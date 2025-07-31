@@ -57,7 +57,9 @@ pub enum ValidatePaymentError {
 }
 
 impl From<SPVError> for ValidatePaymentError {
-    fn from(err: SPVError) -> Self { Self::SPVError(err) }
+    fn from(err: SPVError) -> Self {
+        Self::SPVError(err)
+    }
 }
 
 impl From<UtxoRpcError> for ValidatePaymentError {

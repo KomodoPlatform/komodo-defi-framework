@@ -4,9 +4,10 @@ use super::ext_api::ext_api_errors::ExtApiRpcError;
 use super::ext_api::ext_api_types::ClassicSwapDetails;
 use crate::lr_swap::lr_helpers::sell_buy_method;
 use crate::lr_swap::lr_quote::find_best_swap_path_with_lr;
-use lr_api_types::{AtomicSwapRpcParams, LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse,
-                   LrFindBestQuoteRequest, LrFindBestQuoteResponse, LrGetQuotesForTokensRequest,
-                   LrGetQuotesForTokensResponse};
+use lr_api_types::{
+    AtomicSwapRpcParams, LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest,
+    LrFindBestQuoteResponse, LrGetQuotesForTokensRequest, LrGetQuotesForTokensResponse,
+};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResultExt;
 use mm2_err_handle::{map_mm_error::MapMmError, mm_error::MmResult};

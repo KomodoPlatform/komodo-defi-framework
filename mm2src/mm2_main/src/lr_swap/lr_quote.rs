@@ -23,8 +23,9 @@ use num_traits::CheckedDiv;
 use std::collections::HashMap;
 use std::ops::Deref;
 use trading_api::one_inch_api::classic_swap_types::{ClassicSwapData, ClassicSwapQuoteCallBuilder};
-use trading_api::one_inch_api::client::{ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods,
-                                        SwapUrlBuilder};
+use trading_api::one_inch_api::client::{
+    ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods, SwapUrlBuilder,
+};
 use trading_api::one_inch_api::errors::OneInchError;
 use trading_api::one_inch_api::portfolio_types::{CrossPriceParams, CrossPricesSeries, DataGranularity};
 
@@ -158,7 +159,9 @@ struct LrStepDataMut0<'a> {
 impl<'a> Iterator for LrStepDataMut0<'a> {
     type Item = &'a mut LrStepData;
 
-    fn next(&mut self) -> Option<Self::Item> { self.inner.next().and_then(|item| item.lr_data_0.as_mut()) }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().and_then(|item| item.lr_data_0.as_mut())
+    }
 }
 
 /// Mutable iterator over lr_data_1 field
@@ -169,7 +172,9 @@ struct LrStepDataMut1<'a> {
 impl<'a> Iterator for LrStepDataMut1<'a> {
     type Item = &'a mut LrStepData;
 
-    fn next(&mut self) -> Option<Self::Item> { self.inner.next().and_then(|item| item.lr_data_1.as_mut()) }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().and_then(|item| item.lr_data_1.as_mut())
+    }
 }
 
 impl LrSwapCandidates {

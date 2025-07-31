@@ -1,6 +1,9 @@
-use crate::rpc::lp_commands::ext_api::{ext_api_types::{ClassicSwapCreateOptParams, ClassicSwapCreateRequest,
-                                                       ClassicSwapQuoteOptParams, ClassicSwapQuoteRequest},
-                                       one_inch_v6_0_classic_swap_create_rpc, one_inch_v6_0_classic_swap_quote_rpc};
+use crate::rpc::lp_commands::ext_api::{
+    ext_api_types::{
+        ClassicSwapCreateOptParams, ClassicSwapCreateRequest, ClassicSwapQuoteOptParams, ClassicSwapQuoteRequest,
+    },
+    one_inch_v6_0_classic_swap_create_rpc, one_inch_v6_0_classic_swap_quote_rpc,
+};
 use coins::eth::EthCoin;
 use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
 use common::block_on;

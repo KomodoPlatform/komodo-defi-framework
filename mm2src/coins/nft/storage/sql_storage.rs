@@ -1,9 +1,12 @@
 use crate::hd_wallet::AddrToString;
-use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, Nft, NftCommon, NftList, NftListFilters,
-                              NftTokenAddrId, NftTransferCommon, NftTransferHistory, NftTransferHistoryFilters,
-                              NftsTransferHistoryList, TransferMeta, UriMeta};
-use crate::nft::storage::{get_offset_limit, NftDetailsJson, NftListStorageOps, NftMigrationOps, NftStorageError,
-                          NftTransferHistoryStorageOps, RemoveNftResult, TransferDetailsJson};
+use crate::nft::nft_structs::{
+    Chain, ContractType, ConvertChain, Nft, NftCommon, NftList, NftListFilters, NftTokenAddrId, NftTransferCommon,
+    NftTransferHistory, NftTransferHistoryFilters, NftsTransferHistoryList, TransferMeta, UriMeta,
+};
+use crate::nft::storage::{
+    get_offset_limit, NftDetailsJson, NftListStorageOps, NftMigrationOps, NftStorageError,
+    NftTransferHistoryStorageOps, RemoveNftResult, TransferDetailsJson,
+};
 use async_trait::async_trait;
 use db_common::async_sql_conn::{AsyncConnError, AsyncConnection, InternalError};
 use db_common::sql_build::{SqlCondition, SqlQuery};
@@ -223,10 +226,10 @@ fn nft_history_table_builder_preimage(
             sql_builder.and_where_eq("status", "'Receive'");
         }
         if let Some(date) = filters.from_date {
-            sql_builder.and_where(format!("block_timestamp >= {}", date));
+            sql_builder.and_where(format!("block_timestamp >= {date}"));
         }
         if let Some(date) = filters.to_date {
-            sql_builder.and_where(format!("block_timestamp <= {}", date));
+            sql_builder.and_where(format!("block_timestamp <= {date}"));
         }
         if filters.exclude_spam {
             sql_builder.and_where("possible_spam == 0");
@@ -531,9 +534,13 @@ fn delete_nft_sql(safe_table_name: SafeTableName) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn block_number_from_row(row: &Row<'_>) -> Result<i64, SqlError> { row.get::<_, i64>(0) }
+fn block_number_from_row(row: &Row<'_>) -> Result<i64, SqlError> {
+    row.get::<_, i64>(0)
+}
 
-fn nft_amount_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
+fn nft_amount_from_row(row: &Row<'_>) -> Result<String, SqlError> {
+    row.get(0)
+}
 
 fn get_nfts_by_token_address_statement(
     conn: &Connection,
@@ -942,8 +949,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         self.call(move |conn| {
             let table_name = safe_table_name.inner();
             let sql_query = format!(
-                "SELECT DISTINCT animation_domain FROM {} UNION SELECT DISTINCT external_domain FROM {}",
-                table_name, table_name
+                "SELECT DISTINCT animation_domain FROM {table_name} UNION SELECT DISTINCT external_domain FROM {table_name}"
             );
             let mut stmt = conn.prepare(&sql_query)?;
             let domains = stmt
@@ -1027,10 +1033,10 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         self.call(move |conn| {
             conn.execute(&sql_transfer_history, []).map(|_| ())?;
             conn.execute(&create_schema_versions_sql()?, []).map(|_| ())?;
-            conn.execute(&insert_schema_version_sql()?, [
-                table_name.inner(),
-                &CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
-            ])
+            conn.execute(
+                &insert_schema_version_sql()?,
+                [table_name.inner(), &CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string()],
+            )
             .map(|_| ())?;
             Ok(())
         })
@@ -1309,8 +1315,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         self.call(move |conn| {
             let table_name = safe_table_name.inner();
             let sql_query = format!(
-                "SELECT DISTINCT token_domain FROM {} UNION SELECT DISTINCT image_domain FROM {}",
-                table_name, table_name
+                "SELECT DISTINCT token_domain FROM {table_name} UNION SELECT DISTINCT image_domain FROM {table_name}"
             );
             let mut stmt = conn.prepare(&sql_query)?;
             let domains = stmt
@@ -1418,10 +1423,13 @@ fn migrate_tx_history_table_from_schema_0_to_2(
     );
     sql_tx.execute(&rename_table_sql, [])?;
 
-    sql_tx.execute(&update_schema_version_sql(schema_table), [
-        history_table.inner().to_string(),
-        CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
-    ])?;
+    sql_tx.execute(
+        &update_schema_version_sql(schema_table),
+        [
+            history_table.inner().to_string(),
+            CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
+        ],
+    )?;
 
     sql_tx.commit()?;
 
@@ -1475,8 +1483,7 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
                     },
                     unsupported_version => {
                         return Err(AsyncConnError::Internal(InternalError(format!(
-                            "Unsupported schema version {}",
-                            unsupported_version
+                            "Unsupported schema version {unsupported_version}"
                         ))));
                     },
                 }

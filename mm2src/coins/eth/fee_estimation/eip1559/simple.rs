@@ -35,10 +35,14 @@ impl FeePerGasSimpleEstimator {
     const ADJUST_MAX_PRIORITY_FEE: [f64; FEE_PER_GAS_LEVELS] = [1.0, 1.0, 1.0];
 
     /// block depth for eth_feeHistory
-    pub fn history_depth() -> u64 { Self::FEE_PRIORITY_DEPTH }
+    pub fn history_depth() -> u64 {
+        Self::FEE_PRIORITY_DEPTH
+    }
 
     /// percentiles for priority rewards obtained with eth_feeHistory
-    pub fn history_percentiles() -> &'static [f64] { &Self::HISTORY_PERCENTILES }
+    pub fn history_percentiles() -> &'static [f64] {
+        &Self::HISTORY_PERCENTILES
+    }
 
     /// percentile for vector
     fn percentile_of(v: &[U256], percent: f64) -> U256 {
@@ -69,7 +73,9 @@ impl FeePerGasSimpleEstimator {
         }
     }
 
-    fn predict_base_fee(base_fees: &[U256]) -> U256 { Self::percentile_of(base_fees, Self::BASE_FEE_PERCENTILE) }
+    fn predict_base_fee(base_fees: &[U256]) -> U256 {
+        Self::percentile_of(base_fees, Self::BASE_FEE_PERCENTILE)
+    }
 
     fn priority_fee_for_level(
         level: PriorityLevelId,
