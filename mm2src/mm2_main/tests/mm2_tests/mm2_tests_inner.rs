@@ -968,7 +968,7 @@ fn test_withdraw_and_send() {
         None,
         "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
         &enable_res,
-        "-0.00101",
+        "-0.00100245",
         0.001,
     );
 
@@ -2429,7 +2429,7 @@ fn test_electrum_tx_history() {
         None,
         &receiving_address,
         &enable_res_bob,
-        "-0.00101",
+        "-0.00100245",
         0.001,
     );
 

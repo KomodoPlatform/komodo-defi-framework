@@ -2627,6 +2627,7 @@ impl TransactionDetails {
     }
 }
 
+/// Transaction fee to pay for swap transactions (could be total for two transactions: taker fee and payment fee txns)
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TradeFee {
     pub coin: String,
@@ -2712,6 +2713,8 @@ impl AddAssign for CoinBalance {
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
+/// Also used to indicate refund fee is needed for eth
+/// Also used to indicate utxo fee correction is needed due to a possible change output
 #[derive(Clone, Copy, Debug)]
 pub enum FeeApproxStage {
     /// Do not increase the trade fee.
@@ -2722,8 +2725,12 @@ pub enum FeeApproxStage {
     WatcherPreimage,
     /// Increase the trade fee significantly.
     OrderIssue,
-    /// Increase the trade fee largely.
+    /// Increase the trade fee significantly (used to calculate max volume).
+    OrderIssueMax,
+    /// Increase the trade fee largely in the trade_preimage rpc.
     TradePreimage,
+    /// Increase the trade fee in the trade_preimage rpc (used to calculate max volume for trade preimage).
+    TradePreimageMax,
 }
 
 #[derive(Debug)]
@@ -3622,7 +3629,6 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee>;
 
     /// Get fee to be paid by receiver per whole swap and check if the wallet has sufficient balance to pay the fee.

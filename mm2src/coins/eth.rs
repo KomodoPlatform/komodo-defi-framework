@@ -5986,7 +5986,6 @@ impl MmCoin for EthCoin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         let pay_for_gas_option = self
             .get_swap_pay_for_gas_option(self.get_swap_transaction_fee_policy())
@@ -5996,7 +5995,7 @@ impl MmCoin for EthCoin {
         let gas_limit = match self.coin_type {
             EthCoinType::Eth => {
                 // this gas_limit includes gas for `ethPayment` and optionally `senderRefund` contract calls
-                if include_refund_fee {
+                if matches!(stage, FeeApproxStage::OrderIssueMax | FeeApproxStage::TradePreimageMax) {
                     U256::from(self.gas_limit.eth_payment) + U256::from(self.gas_limit.eth_sender_refund)
                 } else {
                     U256::from(self.gas_limit.eth_payment)
@@ -6026,7 +6025,7 @@ impl MmCoin for EthCoin {
                     gas += approve_gas_limit;
                 }
                 // add 'senderRefund' gas if requested
-                if include_refund_fee {
+                if matches!(stage, FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax) {
                     gas += U256::from(self.gas_limit.erc20_sender_refund);
                 }
                 gas
@@ -6815,10 +6814,10 @@ fn increase_gas_price_by_stage(pay_for_gas_option: PayForGasOption, level: &FeeA
             FeeApproxStage::StartSwap => {
                 increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP)
             },
-            FeeApproxStage::OrderIssue => {
+            FeeApproxStage::OrderIssue | FeeApproxStage::OrderIssueMax => {
                 increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE)
             },
-            FeeApproxStage::TradePreimage => {
+            FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax => {
                 increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE)
             },
             FeeApproxStage::WatcherPreimage => {

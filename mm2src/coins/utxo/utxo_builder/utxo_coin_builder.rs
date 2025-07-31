@@ -7,7 +7,7 @@ use crate::utxo::rpc_clients::{
 };
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
+use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoFeeConfig};
 use crate::utxo::wallet_connect::{get_pubkey_via_wallatconnect_signature, get_walletconnect_address};
 use crate::utxo::{
     output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoHDWallet,
@@ -632,9 +632,9 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<FeeRate> {
-        let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => FeeRate::FixedPerKb(1000),
-            Some(0) => {
+        let tx_fee = match UtxoFeeConfig::parse_val(self.conf()) {
+            UtxoFeeConfig::NotSet => FeeRate::FixedPerKb(1000),
+            UtxoFeeConfig::Dynamic => {
                 let fee_method = match &rpc_client {
                     UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
                     UtxoRpcClientEnum::Native(client) => client
@@ -645,7 +645,8 @@ pub trait UtxoCoinBuilderCommonOps {
                 };
                 FeeRate::Dynamic(fee_method)
             },
-            Some(fee) => FeeRate::FixedPerKb(fee),
+            UtxoFeeConfig::FixedPerKb(fee) => FeeRate::FixedPerKb(fee),
+            UtxoFeeConfig::FixedPerKbDingo(fee) => FeeRate::FixedPerKbDingo(fee),
         };
         Ok(tx_fee)
     }

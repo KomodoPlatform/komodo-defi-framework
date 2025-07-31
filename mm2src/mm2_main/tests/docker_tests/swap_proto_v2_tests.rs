@@ -372,7 +372,7 @@ fn send_and_spend_taker_payment_dex_fee_burn_kmd() {
     assert_eq!(taker_payment_spend_preimage.preimage.outputs.len(), 3);
     assert_eq!(taker_payment_spend_preimage.preimage.outputs[0].value, 75000000);
     assert_eq!(taker_payment_spend_preimage.preimage.outputs[1].value, 25000000);
-    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699998000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699999008);
 
     block_on(
         maker_coin.validate_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &taker_payment_spend_preimage),
@@ -479,7 +479,7 @@ fn send_and_spend_taker_payment_dex_fee_burn_non_kmd() {
     assert_eq!(taker_payment_spend_preimage.preimage.outputs.len(), 3);
     assert_eq!(taker_payment_spend_preimage.preimage.outputs[0].value, 75_000_000);
     assert_eq!(taker_payment_spend_preimage.preimage.outputs[1].value, 25_000_000);
-    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699998000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699999008);
 
     block_on(
         maker_coin.validate_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &taker_payment_spend_preimage),
@@ -716,15 +716,15 @@ fn test_v2_swap_utxo_utxo_impl() {
     // coins must be virtually locked until swap transactions are sent
     let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
     assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    let expected: MmNumberMultiRepr = MmNumber::from("777.00000274").into();
     assert_eq!(locked_bob.locked_amount, expected);
 
     let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
     assert_eq!(locked_alice.coin, MYCOIN1);
     let expected: MmNumberMultiRepr = if SET_BURN_PUBKEY_TO_ALICE.get() {
-        MmNumber::from("777.00001").into() // no dex fee if dex pubkey is alice
+        MmNumber::from("777.00000274").into()
     } else {
-        MmNumber::from("778.00001").into()
+        MmNumber::from("778.00000274").into()
     };
     assert_eq!(locked_alice.locked_amount, expected);
 
@@ -851,12 +851,12 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     // coins must be virtually locked after kickstart until swap transactions are sent
     let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
     assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = MmNumber::from("778.00001").into();
+    let expected: MmNumberMultiRepr = MmNumber::from("778.00000274").into();
     assert_eq!(locked_alice.locked_amount, expected);
 
     let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
     assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    let expected: MmNumberMultiRepr = MmNumber::from("777.00000274").into();
     assert_eq!(locked_bob.locked_amount, expected);
 
     // amount must unlocked after funding tx is sent

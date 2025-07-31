@@ -81,7 +81,6 @@ pub async fn check_my_coin_balance_for_swap(
             locked_by_swaps: Some(locked.to_decimal()),
         });
     }
-
     Ok(balance.into())
 }
 

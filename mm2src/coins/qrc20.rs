@@ -541,7 +541,9 @@ impl Qrc20Coin {
     /// or should be sum of gas fee of all contract calls.
     pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, String> {
         match try_s!(self.get_fee_rate().await) {
-            ActualFeeRate::Dynamic(amount) | ActualFeeRate::FixedPerKb(amount) => Ok(amount + gas_fee),
+            ActualFeeRate::Dynamic(amount)
+            | ActualFeeRate::FixedPerKb(amount)
+            | ActualFeeRate::FixedPerKbDingo(amount) => Ok(amount + gas_fee),
         }
     }
 
@@ -1292,7 +1294,6 @@ impl MmCoin for Qrc20Coin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         let decimals = self.utxo.decimals;
         // pass the dummy params
@@ -1326,7 +1327,7 @@ impl MmCoin for Qrc20Coin {
         };
 
         // Optionally calculate refund fee.
-        let sender_refund_fee = if include_refund_fee {
+        let sender_refund_fee = if matches!(stage, FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax) {
             let sender_refund_output = self
                 .sender_refund_output(&self.swap_contract_address, swap_id, value, secret_hash, receiver_addr)
                 .map_mm_err()?;

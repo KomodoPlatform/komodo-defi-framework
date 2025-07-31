@@ -331,34 +331,26 @@ fn get_sender_trade_preimage() {
     let actual = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(150.into()),
         FeeApproxStage::WithoutApprox,
-        true,
     ))
     .expect("!get_sender_trade_fee");
-    let expected = expected_fee(GAS_PRICE, gas_limit::ETH_PAYMENT + gas_limit::ETH_SENDER_REFUND);
+    let expected = expected_fee(GAS_PRICE, gas_limit::ETH_PAYMENT);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(100.into(), 18).expect("!u256_to_big_decimal");
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue, true))
-            .expect("!get_sender_trade_fee");
-    let expected = expected_fee(
-        GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE,
-        gas_limit::ETH_PAYMENT + gas_limit::ETH_SENDER_REFUND,
-    );
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue))
+        .expect("!get_sender_trade_fee");
+    let expected = expected_fee(GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE, gas_limit::ETH_PAYMENT);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(1.into(), 18).expect("!u256_to_big_decimal");
-    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::StartSwap, true))
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::StartSwap))
         .expect("!get_sender_trade_fee");
-    let expected = expected_fee(
-        GAS_PRICE_APPROXIMATION_ON_START_SWAP,
-        gas_limit::ETH_PAYMENT + gas_limit::ETH_SENDER_REFUND,
-    );
+    let expected = expected_fee(GAS_PRICE_APPROXIMATION_ON_START_SWAP, gas_limit::ETH_PAYMENT);
     assert_eq!(actual, expected);
 
     let value = u256_to_big_decimal(10000000000u64.into(), 18).expect("!u256_to_big_decimal");
     let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage, true))
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimageMax))
             .expect("!get_sender_trade_fee");
     let expected = expected_fee(
         GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE,
@@ -405,25 +397,18 @@ fn get_erc20_sender_trade_preimage() {
     // value is allowed
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
-    let actual = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::UpperBound(value),
-        FeeApproxStage::WithoutApprox,
-        true,
-    ))
-    .expect("!get_sender_trade_fee");
+    let actual =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     log!("{:?}", actual.amount.to_decimal());
     unsafe { assert!(!ESTIMATE_GAS_CALLED) }
-    assert_eq!(
-        actual,
-        expected_trade_fee(gas_limit::ERC20_PAYMENT + gas_limit::ERC20_SENDER_REFUND, GAS_PRICE)
-    );
+    assert_eq!(actual, expected_trade_fee(gas_limit::ERC20_PAYMENT, GAS_PRICE));
 
     // value is greater than allowance
     unsafe { ALLOWANCE = 999 };
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap, true))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap))
+        .expect("!get_sender_trade_fee");
     unsafe {
         assert!(ESTIMATE_GAS_CALLED);
         ESTIMATE_GAS_CALLED = false;
@@ -431,7 +416,7 @@ fn get_erc20_sender_trade_preimage() {
     assert_eq!(
         actual,
         expected_trade_fee(
-            gas_limit::ERC20_PAYMENT + gas_limit::ERC20_SENDER_REFUND + APPROVE_GAS_LIMIT,
+            gas_limit::ERC20_PAYMENT + APPROVE_GAS_LIMIT,
             GAS_PRICE_APPROXIMATION_ON_START_SWAP
         )
     );
@@ -439,24 +424,19 @@ fn get_erc20_sender_trade_preimage() {
     // value is allowed
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(999.into(), 18).expect("u256_to_big_decimal");
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue, true))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue))
+        .expect("!get_sender_trade_fee");
     unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(
         actual,
-        expected_trade_fee(
-            gas_limit::ERC20_PAYMENT + gas_limit::ERC20_SENDER_REFUND,
-            GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE
-        )
+        expected_trade_fee(gas_limit::ERC20_PAYMENT, GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE)
     );
 
     // value is greater than allowance
     unsafe { ALLOWANCE = 1000 };
     let value = u256_to_big_decimal(1500.into(), 18).expect("u256_to_big_decimal");
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage, true))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage))
+        .expect("!get_sender_trade_fee");
     unsafe {
         assert!(ESTIMATE_GAS_CALLED);
         ESTIMATE_GAS_CALLED = false;

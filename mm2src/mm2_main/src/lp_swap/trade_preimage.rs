@@ -326,15 +326,21 @@ impl TradePreimageRpcError {
     ) -> TradePreimageRpcError {
         match maker_order_err {
             MakerOrderBuildError::BaseEqualRel => TradePreimageRpcError::BaseEqualRel,
+            // TODO: this error is displayed as 'The volume .. of the .. coin less than minimum transaction amount <threshold>'
+            // what may be thought as 'dust' but this is 'min order amount'
+            // better fix display as 'minimum order amount'
             MakerOrderBuildError::MaxBaseVolTooLow { actual, threshold } => TradePreimageRpcError::VolumeTooLow {
                 coin: base.to_owned(),
                 volume: actual.to_decimal(),
-                threshold: threshold.to_decimal(),
+                threshold: threshold.to_decimal(), // TODO: this is reported as 'The volume .. of the .. coin less than minimum transaction amount' what may be thought as dust ut this is 'min volume'
             },
             MakerOrderBuildError::PriceTooLow { actual, threshold } => TradePreimageRpcError::PriceTooLow {
                 price: actual.to_decimal(),
                 threshold: threshold.to_decimal(),
             },
+            // TODO: this error is displayed as 'The volume .. of the .. coin less than minimum transaction amount <threshold>'
+            // what may be thought as 'dust' but this is 'min order amount'
+            // better fix display as 'minimum order amount'
             MakerOrderBuildError::RelVolTooLow { actual, threshold } => TradePreimageRpcError::VolumeTooLow {
                 coin: rel.to_owned(),
                 volume: actual.to_decimal(),

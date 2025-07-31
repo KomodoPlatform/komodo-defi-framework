@@ -113,6 +113,7 @@ pub async fn get_fee_rate(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualFeeRate>
             Ok(ActualFeeRate::Dynamic(fee_rate))
         },
         FeeRate::FixedPerKb(satoshis) => Ok(ActualFeeRate::FixedPerKb(*satoshis)),
+        FeeRate::FixedPerKbDingo(satoshis) => Ok(ActualFeeRate::FixedPerKbDingo(*satoshis)),
     }
 }
 
@@ -316,7 +317,7 @@ pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
             // increase dynamic fee for a chance if it grows in the swap
             ActualFeeRate::Dynamic(increase_dynamic_fee_by_stage(coin, dynamic_fee_rate, stage))
         },
-        ActualFeeRate::FixedPerKb(_) => fee_rate,
+        ActualFeeRate::FixedPerKb(_) | ActualFeeRate::FixedPerKbDingo(_) => fee_rate,
     };
 
     let min_relay_fee_rate = get_min_relay_rate(coin).await.map_mm_err()?;
@@ -4143,6 +4144,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
         let amount = match fee {
             ActualFeeRate::Dynamic(f) => f,
             ActualFeeRate::FixedPerKb(f) => f,
+            ActualFeeRate::FixedPerKbDingo(f) => f,
         };
         Ok(TradeFee {
             coin: ticker,
@@ -4212,7 +4214,9 @@ where
 
             // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
                 // take into account the change output
                 data.fee_amount + actual_fee_rate.get_tx_fee_for_change(0)
             } else {
@@ -4221,7 +4225,7 @@ where
             };
             Ok(big_decimal_from_sat(total_fee as i64, decimals))
         },
-        ActualFeeRate::FixedPerKb(_fee) => {
+        ActualFeeRate::FixedPerKb(_fee) | ActualFeeRate::FixedPerKbDingo(_fee) => {
             let outputs_count = outputs.len();
             let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
             let mut tx_builder = UtxoTxBuilder::new(coin)
@@ -4237,9 +4241,13 @@ where
                 TradePreimageError::from_generate_tx_error(e, ticker.to_string(), decimals, is_amount_upper_bound)
             })?;
 
-            // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
+            // We need to add extra tx fee for the absent change output for e.g. to ensure max_maker_vol or max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
+                // Do this for TradePreimageMax stage only to ensure max vol is not too low.
+                // Don't do this for TradePreimage stage (or others) as an insufficient amount error may be collected
                 let tx = UtxoTx::from(tx);
                 let tx_bytes = serialize(&tx);
                 // take into account the change output
@@ -4969,12 +4977,12 @@ where
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::OrderIssue => base_percent * 2.,
+        FeeApproxStage::OrderIssue | FeeApproxStage::OrderIssueMax => base_percent * 2.,
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until an order is issued;
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::TradePreimage => base_percent * 2.5,
+        FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax => base_percent * 2.5,
     };
     increase_by_percent(dynamic_fee, percent)
 }

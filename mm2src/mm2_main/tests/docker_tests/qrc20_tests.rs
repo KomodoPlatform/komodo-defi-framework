@@ -1014,8 +1014,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // So we should deduct trade fee from the output.
     let max_trade_fee = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(qtum_balance.clone()),
-        FeeApproxStage::TradePreimage,
-        true,
+        FeeApproxStage::TradePreimageMax,
     ))
     .expect("!get_sender_trade_fee");
     let max_trade_fee = max_trade_fee.amount.to_decimal();
@@ -1030,7 +1029,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
     // `taker_fee` is sent using general withdraw, and the fee get be obtained from withdraw result
     let max_fee_to_send_taker_fee =
-        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimage))
+        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimageMax))
             .expect("!get_fee_to_send_taker_fee");
     let max_fee_to_send_taker_fee = max_fee_to_send_taker_fee.amount.to_decimal();
     log!("max_fee_to_send_taker_fee: {}", max_fee_to_send_taker_fee);
