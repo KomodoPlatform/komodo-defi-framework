@@ -251,6 +251,71 @@ async fn sign_p2sh_with_walletconnect(
     signed_transaction
 }
 
+// fixme: remove the panics
+pub async fn sign_p2wpkh_with_walletconect(
+    wc: &WalletConnectCtx,
+    session_topic: &WcTopic,
+    chain_id: &WcChainId,
+    signing_address: &Address,
+    tx_input_signer: &TransactionInputSigner,
+) -> UtxoTx {
+    let signing_address = signing_address.display_address().unwrap();
+    let unsigned_tx = unsigned_tx_from_input_signer(tx_input_signer);
+
+    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
+    for (psbt_input, input) in psbt.inputs.iter_mut().zip(tx_input_signer.inputs.iter()) {
+        psbt_input.sighash_type = Some(EcdsaSighashType::All.into());
+        psbt_input.witness_utxo = Some(bitcoin::TxOut {
+            value: input.amount,
+            script_pubkey: input.prev_script.to_vec().into(),
+        });
+    }
+
+    let mut serialized_psbt = Vec::new();
+    psbt.consensus_encode(&mut serialized_psbt).unwrap();
+    let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
+
+    let signed_psbt = sign_psbt(
+        wc,
+        session_topic,
+        chain_id,
+        serialized_psbt,
+        BTreeMap::from(
+            psbt.inputs
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| (idx as u32, (signing_address.clone(), vec![EcdsaSighashType::All as u8])))
+                .collect::<BTreeMap<_, _>>(),
+        ),
+        false,
+    )
+    .await
+    .unwrap();
+    let signed_psbt = BASE64_ENGINE
+        .decode(signed_psbt.psbt)
+        .expect("Failed to decode signed PSBT");
+
+    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).unwrap();
+    // The signed PSBT is enough, but we combine them nonetheless to make sure they are compatible and that
+    // walletconnect didn't trick us with random shit.
+    psbt.combine(signed_psbt).unwrap();
+
+    let mut signed_transaction: UtxoTx = tx_input_signer.clone().into();
+    for (input, input_to_sign) in psbt.inputs.into_iter().zip(signed_transaction.inputs.iter_mut()) {
+        // If the wallet already finalized the script, use it at face value.
+        if let Some(final_script_witness) = input.final_script_witness {
+            input_to_sign.script_witness = final_script_witness.to_vec().into_iter().map(Bytes::from).collect();
+        } else {
+            let (pubkey, walletconnect_sig) = input.partial_sigs.iter().next().unwrap();
+            input_to_sign.script_sig = Bytes::from(Vec::new());
+            input_to_sign.script_witness =
+                vec![Bytes::from(walletconnect_sig.to_vec()), Bytes::from(pubkey.to_bytes())];
+        }
+    }
+
+    signed_transaction
+}
+
 /// Converts a `TransactionInputSigner` to a `Transaction` without signatures.
 fn unsigned_tx_from_input_signer(tx_input_signer: &TransactionInputSigner) -> Transaction {
     Transaction {
