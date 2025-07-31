@@ -64,6 +64,7 @@ pub enum CoinVariant {
     RICK,
     /// Same reason as RICK.
     MORTY,
+    RVN,
 }
 
 impl CoinVariant {
@@ -81,6 +82,9 @@ impl CoinVariant {
     }
     pub fn is_kmd_assetchain(&self) -> bool {
         matches!(self, CoinVariant::RICK | CoinVariant::MORTY)
+    }
+    pub fn is_rvn(&self) -> bool {
+        matches!(self, CoinVariant::RVN)
     }
 }
 
@@ -103,8 +107,10 @@ impl From<&str> for CoinVariant {
             t if ticker_matches(t, "PPC") => CoinVariant::PPC,
             // "RICK"
             t if ticker_matches(t, "RICK") => CoinVariant::RICK,
-            // "MORTY
+            // "MORTY"
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
+            // "RVN"
+            t if ticker_matches(t, "RVN") => CoinVariant::RVN,
             _ => CoinVariant::Standard,
         }
     }

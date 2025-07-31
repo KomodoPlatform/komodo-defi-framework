@@ -5632,3 +5632,95 @@ fn test_electrum_v14_block_hash() {
     // Verify V14 header produces the same hash as our verified BlockHeader implementation
     assert_eq!(hash, headers[0].hash().into());
 }
+
+/// A utility test for debugging block header deserialization issues for any UTXO-based coin.
+/// This test is ignored by default and must be run explicitly.
+///
+/// It scans a range of block heights, fetching headers in chunks. For each chunk, it reads
+/// headers one by one from the data stream.
+///
+/// If it encounters a header that fails to parse, it will panic and print detailed information,
+/// including the exact block height that failed and the raw hex of the entire chunk for context.
+///
+/// # How to Use:
+/// 1.  Modify the constants in the `CONFIGURATION` section below.
+/// 2.  Run the test with the `--ignored` flag: `cargo test -- --ignored test_scan_and_deserialize_block_headers`
+///
+/// # Debugging Note:
+/// If a header at height `N` fails, the error might be caused by the deserializer reading
+/// more data than expected from the header at height `N-1`. The full chunk hex provided
+/// in the panic message is essential for debugging this scenario.
+#[test]
+#[ignore = "This is a utility test for debugging header deserialization and must be run explicitly"]
+fn test_scan_and_deserialize_block_headers() {
+    // ========================== CONFIGURATION ==========================
+    /// The ticker of the coin to test (e.g., "NMC", "CHTA", "RVN").
+    const COIN_TICKER: &str = "NMC";
+    /// A list of active Electrum servers for the specified coin.
+    const ELECTRUM_URLS: &[&str] = &["nmc2.bitcoins.sk:57001", "nmc2.bitcoins.sk:57002"];
+    /// The block height to start scanning from.
+    const START_HEIGHT: u64 = 701614;
+    /// The block height to stop scanning at. Set to `None` to scan to the tip of the chain.
+    const END_HEIGHT: Option<u64> = Some(701616);
+    /// The number of headers to fetch in a single RPC call.
+    const CHUNK_SIZE: u64 = 100;
+    // ===================================================================
+
+    let client = electrum_client_for_test(ELECTRUM_URLS);
+    let mut current_height = START_HEIGHT;
+
+    loop {
+        let mut num_to_fetch = CHUNK_SIZE;
+        if let Some(end_h) = END_HEIGHT {
+            if current_height > end_h {
+                println!("Reached configured end height of {}. Scan complete.", end_h);
+                break;
+            }
+            let remaining = end_h.saturating_sub(current_height) + 1;
+            num_to_fetch = num_to_fetch.min(remaining);
+        }
+
+        if num_to_fetch == 0 {
+            break;
+        }
+
+        println!("Fetching {} headers from height {}", num_to_fetch, current_height);
+        let headers_res =
+            block_on_f01(client.blockchain_block_headers(current_height, NonZeroU64::new(num_to_fetch).unwrap()))
+                .expect("Failed to get block headers");
+
+        if headers_res.count == 0 {
+            println!("Reached the end of the chain. No bad header found.");
+            break;
+        }
+
+        // This is the correct approach, inspired by your original test.
+        // We create a single reader for the entire raw byte stream of concatenated headers.
+        let raw_chunk_bytes = &headers_res.hex.0;
+        let mut reader = Reader::new_with_coin_variant(raw_chunk_bytes, COIN_TICKER.into());
+
+        // We loop exactly `count` times, reading one header in each iteration.
+        // The `read` method will correctly consume a variable number of bytes depending on the header's content.
+        for i in 0..headers_res.count {
+            let block_height_of_header = current_height + i;
+
+            if let Err(e) = reader.read::<BlockHeader>() {
+                // If a read fails, we've found the problematic header.
+                // We panic with all the necessary context for debugging.
+                let chunk_hex_str = hex::encode(raw_chunk_bytes);
+                panic!(
+                    "\n\n!!! Deserialization failed on header index {} (block height: {}) within the chunk starting at {} !!!\n\
+                     Raw Chunk Hex: {}\n\
+                     Deserialization Error: {:?}\n\n",
+                    i, block_height_of_header, current_height, chunk_hex_str, e
+                );
+            }
+        }
+
+        // If the loop completes, the entire chunk was successfully parsed.
+        println!("Successfully deserialized chunk starting at height {}.", current_height);
+        current_height += headers_res.count;
+    }
+
+    println!("Scan finished successfully. No bad headers found in the specified range.");
+}
