@@ -75,12 +75,12 @@ impl UnifiedLoggerBuilder {
 
             if let Ok(mut log_file) = crate::LOG_FILE.lock() {
                 if let Some(ref mut log_file) = *log_file {
-                    writeln!(log_file, "{}", log)?;
+                    writeln!(log_file, "{log}")?;
                 }
             }
 
             if !self.silent_console {
-                writeln!(buf, "{}", log)?;
+                writeln!(buf, "{log}")?;
             }
 
             Ok(())

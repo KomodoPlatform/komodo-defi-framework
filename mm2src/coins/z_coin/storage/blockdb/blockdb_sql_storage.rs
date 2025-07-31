@@ -51,7 +51,7 @@ impl From<ChainError<NoteId>> for ZcoinStorageError {
 impl BlockDbImpl {
     #[cfg(not(test))]
     pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
-        let path = ctx.global_dir().join(format!("{}_cache.db", ticker));
+        let path = ctx.global_dir().join(format!("{ticker}_cache.db"));
         async_blocking(move || {
             mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;

@@ -50,7 +50,7 @@ type ID = u32;
 pub enum ConnectionManagerErr {
     #[display(fmt = "Unknown server address")]
     UnknownAddress,
-    #[display(fmt = "Failed to connect to the server due to {:?}", _0)]
+    #[display(fmt = "Failed to connect to the server due to {_0:?}")]
     ConnectingError(ElectrumConnectionErr),
     #[display(fmt = "No client found, connection manager isn't initialized properly")]
     NoClient,

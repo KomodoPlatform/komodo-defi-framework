@@ -31,22 +31,20 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::InvalidSegwitAddressFormat => write!(f, "Invalid segwit address format"),
-            Error::Bech32(ref e) => write!(f, "bech32: {}", e),
+            Error::Bech32(ref e) => write!(f, "bech32: {e}"),
             Error::EmptyBech32Payload => write!(f, "the bech32 payload was empty"),
-            Error::InvalidWitnessVersion(v) => write!(f, "invalid witness script version: {}", v),
+            Error::InvalidWitnessVersion(v) => write!(f, "invalid witness script version: {v}"),
             Error::InvalidWitnessProgramLength(l) => write!(
                 f,
-                "the witness program must be between 2 and 40 bytes in length: length={}",
-                l,
+                "the witness program must be between 2 and 40 bytes in length: length={l}",
             ),
             Error::InvalidSegwitV0ProgramLength(l) => write!(
                 f,
-                "a v0 witness program must be either of length 20 or 32 bytes: length={}",
-                l,
+                "a v0 witness program must be either of length 20 or 32 bytes: length={l}",
             ),
             Error::UncompressedPubkey => write!(f, "an uncompressed pubkey was used where it is not allowed",),
-            Error::UnsupportedAddressVariant(ref v) => write!(f, "address variant/format {} is not supported yet!", v),
-            Error::UnsupportedWitnessVersion(v) => write!(f, "witness script version: {} is not supported yet!", v),
+            Error::UnsupportedAddressVariant(ref v) => write!(f, "address variant/format {v} is not supported yet!"),
+            Error::UnsupportedWitnessVersion(v) => write!(f, "witness script version: {v} is not supported yet!"),
         }
     }
 }

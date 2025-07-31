@@ -16,23 +16,23 @@ use std::collections::BTreeSet;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum AccountRpcError {
-    #[display(fmt = "Account name is too long, expected shorter or equal to {}", max_len)]
+    #[display(fmt = "Account name is too long, expected shorter or equal to {max_len}")]
     NameTooLong { max_len: usize },
-    #[display(fmt = "Account description is too long, expected shorter or equal to {}", max_len)]
+    #[display(fmt = "Account description is too long, expected shorter or equal to {max_len}")]
     DescriptionTooLong { max_len: usize },
-    #[display(fmt = "Coin ticker is too long, expected shorter or equal to {}", max_len)]
+    #[display(fmt = "Coin ticker is too long, expected shorter or equal to {max_len}")]
     TickerTooLong { max_len: usize },
-    #[display(fmt = "No such account {:?}", _0)]
+    #[display(fmt = "No such account {_0:?}")]
     NoSuchAccount(AccountId),
     #[display(fmt = "No enabled account yet. Consider using 'enable_account' RPC")]
     NoEnabledAccount,
-    #[display(fmt = "Account {:?} exists already", _0)]
+    #[display(fmt = "Account {_0:?} exists already")]
     AccountExistsAlready(AccountId),
-    #[display(fmt = "Error loading account: {}", _0)]
+    #[display(fmt = "Error loading account: {_0}")]
     ErrorLoadingAccount(String),
-    #[display(fmt = "Error saving changes in accounts storage: {}", _0)]
+    #[display(fmt = "Error saving changes in accounts storage: {_0}")]
     ErrorSavingAccount(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

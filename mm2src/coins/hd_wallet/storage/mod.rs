@@ -37,17 +37,17 @@ type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 pub enum HDWalletStorageError {
     #[display(fmt = "HD wallet not allowed")]
     HDWalletUnavailable,
-    #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_id)]
+    #[display(fmt = "HD account '{wallet_id:?}':{account_id} not found")]
     HDAccountNotFound { wallet_id: HDWalletId, account_id: u32 },
-    #[display(fmt = "Error saving changes in HD wallet storage: {}", _0)]
+    #[display(fmt = "Error saving changes in HD wallet storage: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading from HD wallet storage: {}", _0)]
+    #[display(fmt = "Error loading from HD wallet storage: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

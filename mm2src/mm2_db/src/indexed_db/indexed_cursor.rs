@@ -85,7 +85,7 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     where
         Value: Serialize + fmt::Debug,
     {
-        let field_value_str = format!("{:?}", field_value);
+        let field_value_str = format!("{field_value:?}");
         let field_value = json::to_value(field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
             field: field_name.to_owned(),
             value: field_value_str,
@@ -302,7 +302,7 @@ mod tests {
             table
                 .add_item(item)
                 .await
-                .unwrap_or_else(|_| panic!("Error adding {:?} item", item));
+                .unwrap_or_else(|_| panic!("Error adding {item:?} item"));
         }
     }
 

@@ -413,7 +413,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
     };
     let mut name_buf = trace_name_buf();
     let name = gstring!(name_buf, {
-        let _ = write!(name_buf, "{}", name); // NB: `fmt` is different from `SymbolName::as_str`.
+        let _ = write!(name_buf, "{name}"); // NB: `fmt` is different from `SymbolName::as_str`.
     });
 
     // Skip common and less than informative frames.
@@ -453,7 +453,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
         return;
     }
 
-    let _ = writeln!(buf, "  {}:{}] {} {:?}", filename, lineno, name, instr_ptr);
+    let _ = writeln!(buf, "  {filename}:{lineno}] {name} {instr_ptr:?}");
 }
 
 /// Generates a string with the current stack trace.
@@ -465,7 +465,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
 ///
 /// * `format` - Generates the string representation of a frame.
 /// * `output` - Function used to print the stack trace.
-///              Printing immediately, without buffering, should make the tracing somewhat more reliable.
+///   Printing immediately, without buffering, should make the tracing somewhat more reliable.
 pub fn stack_trace(
     format: &mut dyn FnMut(*mut c_void, &mut dyn Write, &backtrace::Symbol),
     output: &mut dyn FnMut(&str),
@@ -606,7 +606,7 @@ impl std::fmt::Display for SerializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SerializationError::InternalError(internal) => {
-                write!(f, "Internal error: Couldn't serialize an RPC response: {}", internal)
+                write!(f, "Internal error: Couldn't serialize an RPC response: {internal}")
             },
         }
     }
@@ -791,7 +791,7 @@ pub(crate) fn open_log_file() -> Option<std::fs::File> {
     match std::fs::OpenOptions::new().append(true).create(true).open(&mm_log) {
         Ok(f) => Some(f),
         Err(err) => {
-            println!("open_log_file] Can't open {}: {}", mm_log, err);
+            println!("open_log_file] Can't open {mm_log}: {err}");
             None
         },
     }
@@ -809,11 +809,11 @@ pub fn writeln(line: &str) {
     let _ = catch_unwind(|| {
         if let Ok(mut log_file) = LOG_FILE.lock() {
             if let Some(ref mut log_file) = *log_file {
-                writeln!(log_file, "{}", line).ok();
+                writeln!(log_file, "{line}").ok();
                 return;
             }
         }
-        println!("{}", line);
+        println!("{line}");
     });
 }
 
@@ -1232,12 +1232,9 @@ pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum ParseRfc3339Err {
-    #[display(
-        fmt = "Error parsing datetime to timestamp. Expected format 'YYYY-MM-DDTHH:MM:SS.sssZ', got: {}",
-        _0
-    )]
+    #[display(fmt = "Error parsing datetime to timestamp. Expected format 'YYYY-MM-DDTHH:MM:SS.sssZ', got: {_0}")]
     ParseTimestampError(String),
-    #[display(fmt = "Error while converting types: {}", _0)]
+    #[display(fmt = "Error while converting types: {_0}")]
     TryFromIntError(String),
 }
 
@@ -1276,15 +1273,15 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 
     let host_address = uri.host().expect("Host can't be empty.");
     let path = if uri.path() == "/" { "" } else { uri.path() };
-    let port = uri.port_u16().map(|p| format!(":{}", p)).unwrap_or_default();
+    let port = uri.port_u16().map(|p| format!(":{p}")).unwrap_or_default();
 
-    format!("{}{}{}{}", address_prefix, host_address, port, path)
+    format!("{address_prefix}{host_address}{port}{path}")
 }
 
 /// Converts a U256 value to a lowercase hexadecimal string with "0x" prefix
 #[inline]
 pub fn u256_to_hex(value: U256) -> String {
-    format!("0x{:x}", value)
+    format!("0x{value:x}")
 }
 
 /// If 0x prefix exists in an str strip it or return the str as-is

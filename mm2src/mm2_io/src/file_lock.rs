@@ -10,11 +10,11 @@ pub type FileLockResult<T> = std::result::Result<T, MmError<FileLockError>>;
 
 #[derive(Debug, Display)]
 pub enum FileLockError {
-    #[display(fmt = "Error reading timestamp from {:?}: {}", path, error)]
+    #[display(fmt = "Error reading timestamp from {path:?}: {error}")]
     ErrorReadingTimestamp { path: PathBuf, error: String },
-    #[display(fmt = "Error writing timestamp to {:?}: {}", path, error)]
+    #[display(fmt = "Error writing timestamp to {path:?}: {error}")]
     ErrorWritingTimestamp { path: PathBuf, error: String },
-    #[display(fmt = "Error creating {:?}: {}", path, error)]
+    #[display(fmt = "Error creating {path:?}: {error}")]
     ErrorCreatingLockFile { path: PathBuf, error: String },
 }
 

@@ -192,7 +192,7 @@ async fn open_channel(
     let res: Json = json::from_str(&request.1).unwrap();
     let uuid = res["result"]["uuid"].as_str().unwrap();
     if wait_for_ready_signal {
-        mm.wait_for_log(3600., |log| log.contains(&format!("{}: {}", CHANNEL_READY_LOG, uuid)))
+        mm.wait_for_log(3600., |log| log.contains(&format!("{CHANNEL_READY_LOG}: {uuid}")))
             .await
             .unwrap();
     }
@@ -443,7 +443,7 @@ fn test_connect_to_node() {
         connect.1
     );
     let connect_res: Json = json::from_str(&connect.1).unwrap();
-    let expected = format!("Connected successfully to node : {}", node_1_address);
+    let expected = format!("Connected successfully to node : {node_1_address}");
     assert_eq!(connect_res["result"], expected);
 
     block_on(mm_node_1.stop()).unwrap();
@@ -594,7 +594,7 @@ fn test_send_payment() {
 
     block_on(mm_node_1.wait_for_log(60., |log| log.contains(SUCCESSFUL_CLAIM_LOG))).unwrap();
     block_on(mm_node_2.wait_for_log(60., |log| {
-        log.contains(&format!("{} with payment hash {}", SUCCESSFUL_SEND_LOG, payment_hash))
+        log.contains(&format!("{SUCCESSFUL_SEND_LOG} with payment hash {payment_hash}"))
     }))
     .unwrap();
 
@@ -656,7 +656,7 @@ fn test_mpp() {
 
     block_on(mm_node_1.wait_for_log(60., |log| log.contains(SUCCESSFUL_CLAIM_LOG))).unwrap();
     block_on(mm_node_2.wait_for_log(60., |log| {
-        log.contains(&format!("{} with payment hash {}", SUCCESSFUL_SEND_LOG, payment_hash))
+        log.contains(&format!("{SUCCESSFUL_SEND_LOG} with payment hash {payment_hash}"))
     }))
     .unwrap();
 

@@ -1983,7 +1983,7 @@ fn test_request_and_fill_orderbook() {
 
     let other_pubkeys: Vec<(String, [u8; 32])> = (0..PUBKEYS_NUMBER)
         .map(|idx| {
-            let passphrase = format!("passphrase-{}", idx);
+            let passphrase = format!("passphrase-{idx}");
             pubkey_and_secret_for_test(&passphrase)
         })
         .collect();

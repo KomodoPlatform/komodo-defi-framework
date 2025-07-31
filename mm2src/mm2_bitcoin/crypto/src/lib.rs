@@ -118,6 +118,20 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
     result
 }
 
+/// Hash message for signature using Bitcoin's message signing format.
+/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
+pub fn sign_message_hash(sign_message_prefix: &str, message: &str) -> [u8; 32] {
+    use serialization::{CompactInteger, Serializable, Stream};
+    let mut stream = Stream::new();
+    let prefix_len = CompactInteger::from(sign_message_prefix.len());
+    prefix_len.serialize(&mut stream);
+    stream.append_slice(sign_message_prefix.as_bytes());
+    let msg_len = CompactInteger::from(message.len());
+    msg_len.serialize(&mut stream);
+    stream.append_slice(message.as_bytes());
+    dhash256(&stream.out()).take()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{checksum, dhash160, dhash256, ripemd160, sha1, sha256, siphash24};

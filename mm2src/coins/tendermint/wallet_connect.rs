@@ -5,7 +5,7 @@ use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use kdf_walletconnect::chain::WcChainId;
 use kdf_walletconnect::error::WalletConnectError;
 use kdf_walletconnect::WalletConnectOps;
-use kdf_walletconnect::{chain::WcRequestMethods, WalletConnectCtx};
+use kdf_walletconnect::{chain::WcRequestMethods, WalletConnectCtx, WcTopic};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -121,7 +121,7 @@ impl WalletConnectOps for TendermintCoin {
         todo!()
     }
 
-    fn session_topic(&self) -> Result<&str, Self::Error> {
+    fn session_topic(&self) -> Result<&WcTopic, Self::Error> {
         match self.wallet_type {
             TendermintWalletConnectionType::WcLedger(ref session_topic)
             | TendermintWalletConnectionType::Wc(ref session_topic) => Ok(session_topic),
@@ -135,7 +135,7 @@ impl WalletConnectOps for TendermintCoin {
 
 pub async fn cosmos_get_accounts_impl(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: &str,
 ) -> MmResult<CosmosAccount, WalletConnectError> {
     let chain_id = WcChainId::new_cosmos(chain_id.to_string());

@@ -538,8 +538,7 @@ pub mod common_impl {
                     .await
                     .map_err(|e| {
                         EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                            "Coin rejected the enabled address derived from the hardware wallet: {}",
-                            e
+                            "Coin rejected the enabled address derived from the hardware wallet: {e}"
                         )))
                     })?;
             }
@@ -591,8 +590,7 @@ pub mod common_impl {
                 .await
                 .map_err(|e| {
                     EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                        "Coin rejected the enabled address derived from the hardware wallet: {}",
-                        e
+                        "Coin rejected the enabled address derived from the hardware wallet: {e}"
                     )))
                 })?;
         }

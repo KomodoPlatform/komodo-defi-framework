@@ -20,7 +20,7 @@ use relay_rpc::{
 };
 
 /// Creates a new session proposal from topic and metadata.
-pub(crate) async fn send_proposal_request(
+pub(crate) async fn send_session_proposal_request(
     ctx: &WalletConnectCtxImpl,
     topic: &Topic,
     required_namespaces: ProposeNamespaces,
@@ -72,6 +72,9 @@ pub async fn reply_session_proposal_request(
             SessionType::Controller,
         )
     };
+    // TODO: Note that this will always error since we never populate `propose_namespaces`.
+    //       But this doesn't matter for now as this method (replying to session proposal) is only relevant when KDF is acting as a wallet.
+    // TODO: If the required namespaces aren't supported, we should ideally return SessionReject response.
     session
         .propose_namespaces
         .supported(&proposal.required_namespaces)

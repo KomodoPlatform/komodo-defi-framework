@@ -129,7 +129,7 @@ impl SqliteAccountStorage {
     fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<Connection>> {
         self.conn
             .lock()
-            .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
+            .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
 
     fn init_account_table(conn: &Connection) -> AccountStorageResult<()> {
@@ -472,7 +472,7 @@ impl AccountStorage for SqliteAccountStorage {
         })?;
         // The number of inserted accounts is expected to be '1'.
         if inserted != 1 {
-            let error = format!("Expected exactly '1' inserted account, found '{}'", inserted);
+            let error = format!("Expected exactly '1' inserted account, found '{inserted}'");
             return MmError::err(AccountStorageError::Internal(error));
         }
 

@@ -24,10 +24,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{
 };
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::utxo_builder::{
-    MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
-    UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder,
-};
+use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{
     UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
@@ -44,6 +41,7 @@ use crate::{
     WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
     WatcherValidateTakerFeeInput, WithdrawFut,
 };
+use bitcrypto::sign_message_hash;
 use common::executor::{AbortableSystem, AbortedError};
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -230,12 +228,6 @@ impl UtxoCoinBuilderCommonOps for QtumCoinBuilder<'_> {
         self.activation_params().check_utxo_maturity.unwrap_or(true)
     }
 }
-
-impl UtxoFieldsWithIguanaSecretBuilder for QtumCoinBuilder<'_> {}
-
-impl UtxoFieldsWithGlobalHDBuilder for QtumCoinBuilder<'_> {}
-
-impl UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'_> {}
 
 #[async_trait]
 impl UtxoCoinBuilder for QtumCoinBuilder<'_> {
@@ -602,8 +594,7 @@ impl SwapOps for QtumCoin {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -823,7 +814,8 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        utxo_common::sign_message_hash(self.as_ref(), message)
+        let prefix = self.as_ref().conf.sign_message_prefix.as_ref()?;
+        Some(sign_message_hash(prefix, message))
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
@@ -966,7 +958,6 @@ impl MmCoin for QtumCoin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        _include_refund_fee: bool, // refund fee is taken from swap output
     ) -> TradePreimageResult<TradeFee> {
         utxo_common::get_sender_trade_fee(self, value, stage).await
     }
@@ -1377,5 +1368,5 @@ pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHa
 
 pub fn display_as_contract_address(address: Address) -> MmResult<String, ScriptHashTypeNotSupported> {
     let address = qtum::contract_addr_from_utxo_addr(address)?;
-    Ok(format!("{:#02x}", address))
+    Ok(format!("{address:#02x}"))
 }

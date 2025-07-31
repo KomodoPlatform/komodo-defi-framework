@@ -55,7 +55,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         let (task_id, task_abort_handler) = {
             let mut task_manager = this
                 .lock()
-                .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {}", e)))?;
+                .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {e}")))?;
             task_manager.register_task(&task, client_id)?
         };
         let task_handle = Arc::new(RpcTaskHandle {

@@ -14,7 +14,7 @@ pub fn impl_deserializable(ast: &syn::DeriveInput) -> quote::Tokens {
 
     let name = &ast.ident;
 
-    let dummy_const = syn::Ident::new(format!("_IMPL_DESERIALIZABLE_FOR_{}", name));
+    let dummy_const = syn::Ident::new(format!("_IMPL_DESERIALIZABLE_FOR_{name}"));
     let impl_block = quote! {
         impl serialization::Deserializable for #name {
             fn deserialize<T>(reader: &mut serialization::Reader<T>) -> Result<Self, serialization::Error> where T: io::Read {

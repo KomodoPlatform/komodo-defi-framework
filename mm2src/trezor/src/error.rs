@@ -16,7 +16,7 @@ use hw_common::transport::WebUsbError;
 
 #[derive(Debug, Display)]
 pub enum TrezorError {
-    #[display(fmt = "'{}' transport is not available on this platform", transport)]
+    #[display(fmt = "'{transport}' transport is not available on this platform")]
     TransportNotSupported {
         transport: String,
     },
@@ -28,10 +28,10 @@ pub enum TrezorError {
     /// The error depends on transport implementation.
     UnderlyingError(String),
     ProtocolError(String),
-    #[display(fmt = "Received unexpected message type: {:?}", _0)]
+    #[display(fmt = "Received unexpected message type: {_0:?}")]
     UnexpectedMessageType(MessageType),
     Failure(OperationFailure),
-    #[display(fmt = "Unexpected interaction request: {:?}", _0)]
+    #[display(fmt = "Unexpected interaction request: {_0:?}")]
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
     PongMessageMismatch,

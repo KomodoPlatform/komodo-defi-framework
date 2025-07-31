@@ -27,14 +27,15 @@ pub enum UtxoConfError {
     DerivationPathIsNotSet,
     #[display(fmt = "'trezor_coin' field is not found in config")]
     TrezorCoinIsNotSet,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[display(fmt = "Error deserializing 'derivation_path': {_0}")]
     ErrorDeserializingDerivationPath(String),
-    #[display(fmt = "Error deserializing 'spv_conf': {}", _0)]
+    #[display(fmt = "Error deserializing 'spv_conf': {_0}")]
     ErrorDeserializingSPVConf(String),
     InvalidConsensusBranchId(String),
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
     InvalidDecimals(String),
+    InvalidProtocolData(String),
 }
 
 impl From<Bip32Error> for UtxoConfError {
@@ -338,5 +339,26 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn avg_blocktime(&self) -> Option<u64> {
         self.conf["avg_blocktime"].as_u64()
+    }
+}
+
+/// 'txfee' coins param config values
+pub(crate) enum UtxoFeeConfig {
+    NotSet,
+    Dynamic,
+    FixedPerKb(u64),
+    FixedPerKbDingo(u64),
+}
+
+impl UtxoFeeConfig {
+    /// Parse the txfee-related coins param, like:
+    /// "txfee"=0 and/or "dingo_fee"=true
+    pub(crate) fn parse_val(conf: &Json) -> Self {
+        match (conf["txfee"].as_u64(), conf["dingo_fee"].as_bool()) {
+            (Some(0), _) => Self::Dynamic,
+            (Some(val), Some(true)) => Self::FixedPerKbDingo(val),
+            (Some(val), _) => Self::FixedPerKb(val),
+            (_, _) => Self::NotSet,
+        }
     }
 }

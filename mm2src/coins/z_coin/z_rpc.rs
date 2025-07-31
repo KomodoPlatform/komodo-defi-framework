@@ -894,16 +894,16 @@ impl SaplingSyncLoopHandle {
 ///
 /// So the following was implemented:
 /// 1. On the coin initialization, `init_light_client` creates `SaplingSyncLoopHandle`, spawns sync loop
-///     and returns mutex-wrapped `SaplingSyncConnector` to interact with it.
+///   and returns mutex-wrapped `SaplingSyncConnector` to interact with it.
 /// 2. During sync process, the `SaplingSyncLoopHandle` notifies external code about status using `sync_status_notifier`.
 /// 3. Once the sync completes, the coin becomes usable.
 /// 4. When transaction is about to be generated, the external code locks the `SaplingSyncConnector` mutex,
-///     and calls `SaplingSyncConnector::wait_for_gen_tx_blockchain_sync`.
-///     This actually stops the loop and returns `SaplingSyncGuard`, which contains MutexGuard<SaplingSyncConnector> and `SaplingSyncRespawnGuard`.
+///   and calls `SaplingSyncConnector::wait_for_gen_tx_blockchain_sync`.
+///   This actually stops the loop and returns `SaplingSyncGuard`, which contains MutexGuard<SaplingSyncConnector> and `SaplingSyncRespawnGuard`.
 /// 5. `SaplingSyncRespawnGuard` in its turn contains `SaplingSyncLoopHandle` that is used to respawn the sync when the guard is dropped.
 /// 6. Once the transaction is generated and sent, `SaplingSyncRespawnGuard::watch_for_tx` is called to update `SaplingSyncLoopHandle` state.
 /// 7. Once the loop is respawned, it will check that broadcast tx is imported (or not available anymore) before stopping in favor of
-///     next wait_for_gen_tx_blockchain_sync call.
+///   next wait_for_gen_tx_blockchain_sync call.
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut client: Box<dyn ZRpcOps>) {
     info!(
         "(Re)starting light_wallet_db_sync_loop for {}, blocks per iteration {}, interval in ms {}",

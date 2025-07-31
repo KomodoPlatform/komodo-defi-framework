@@ -315,7 +315,7 @@ impl IdbObjectStoreImpl {
 
     fn error_from_failed_request(request: &IdbRequest) -> String {
         match request.error() {
-            Ok(Some(exception)) => format!("{:?}", exception),
+            Ok(Some(exception)) => format!("{exception:?}"),
             _ => "Unknown".to_owned(),
         }
     }

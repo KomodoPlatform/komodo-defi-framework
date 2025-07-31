@@ -12,8 +12,8 @@ use crate::utxo::rpc_clients::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{
-    UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
-    UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder,
+    build_utxo_fields_with_global_hd, build_utxo_fields_with_iguana_priv_key, UtxoCoinBuildError, UtxoCoinBuildResult,
+    UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
 };
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{
@@ -35,7 +35,7 @@ use crate::{
     WithdrawResult,
 };
 use async_trait::async_trait;
-use bitcrypto::{dhash160, sha256};
+use bitcrypto::{dhash160, sha256, sign_message_hash};
 use chain::TransactionOutput;
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
@@ -261,7 +261,7 @@ impl UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'_> {
                 let platform = self.platform.to_lowercase();
                 let data_dir = coin_daemon_data_dir(&platform, is_asset_chain);
 
-                let confname = format!("{}.conf", platform);
+                let confname = format!("{platform}.conf");
                 return Ok(data_dir.join(&confname[..]));
             },
         };
@@ -299,14 +299,6 @@ impl UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'_> {
     }
 }
 
-impl UtxoFieldsWithIguanaSecretBuilder for Qrc20CoinBuilder<'_> {}
-
-impl UtxoFieldsWithGlobalHDBuilder for Qrc20CoinBuilder<'_> {}
-
-/// Although, `Qrc20Coin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
-/// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
-impl UtxoFieldsWithHardwareWalletBuilder for Qrc20CoinBuilder<'_> {}
-
 #[async_trait]
 impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
     type ResultCoin = Qrc20Coin;
@@ -316,17 +308,27 @@ impl UtxoCoinBuilder for Qrc20CoinBuilder<'_> {
         self.priv_key_policy.clone()
     }
 
-    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
-        let utxo = match self.priv_key_policy() {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_secret(priv_key).await?,
+    async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
+        match self.priv_key_policy() {
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_priv_key(self, priv_key).await,
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
-                self.build_utxo_fields_with_global_hd(global_hd_ctx).await?
+                build_utxo_fields_with_global_hd(self, global_hd_ctx).await
             },
             PrivKeyBuildPolicy::Trezor => {
                 let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
-                return MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err));
+                MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err))
             },
-        };
+            PrivKeyBuildPolicy::WalletConnect { .. } => {
+                let priv_key_err = PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                    "WalletConnect is not available for QRC20 coin".to_string(),
+                );
+                MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err))
+            },
+        }
+    }
+
+    async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        let utxo = self.build_utxo_fields().await?;
 
         let inner = Qrc20CoinFields {
             utxo,
@@ -489,9 +491,9 @@ pub struct GenerateQrc20TxResult {
 
 #[derive(Debug, Display)]
 pub enum Qrc20AbiError {
-    #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
+    #[display(fmt = "Invalid QRC20 ABI params: {_0}")]
     InvalidParams(String),
-    #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[display(fmt = "QRC20 ABI error: {_0}")]
     ABIError(String),
 }
 
@@ -539,7 +541,9 @@ impl Qrc20Coin {
     /// or should be sum of gas fee of all contract calls.
     pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, String> {
         match try_s!(self.get_fee_rate().await) {
-            ActualFeeRate::Dynamic(amount) | ActualFeeRate::FixedPerKb(amount) => Ok(amount + gas_fee),
+            ActualFeeRate::Dynamic(amount)
+            | ActualFeeRate::FixedPerKb(amount)
+            | ActualFeeRate::FixedPerKbDingo(amount) => Ok(amount + gas_fee),
         }
     }
 
@@ -897,8 +901,7 @@ impl SwapOps for Qrc20Coin {
             TransactionEnum::UtxoTx(tx) => tx,
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -1103,7 +1106,8 @@ impl MarketCoinOps for Qrc20Coin {
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        utxo_common::sign_message_hash(self.as_ref(), message)
+        let prefix = self.as_ref().conf.sign_message_prefix.as_ref()?;
+        Some(sign_message_hash(prefix, message))
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
@@ -1135,7 +1139,7 @@ impl MarketCoinOps for Qrc20Coin {
             let spendable = match tokens.first() {
                 Some(Token::Uint(bal)) => u256_to_big_decimal(*bal, decimals).map_mm_err()?,
                 _ => {
-                    let error = format!("Expected U256 as balanceOf result but got {:?}", tokens);
+                    let error = format!("Expected U256 as balanceOf result but got {tokens:?}");
                     return MmError::err(BalanceError::InvalidResponse(error));
                 },
             };
@@ -1290,7 +1294,6 @@ impl MmCoin for Qrc20Coin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         let decimals = self.utxo.decimals;
         // pass the dummy params
@@ -1324,7 +1327,7 @@ impl MmCoin for Qrc20Coin {
         };
 
         // Optionally calculate refund fee.
-        let sender_refund_fee = if include_refund_fee {
+        let sender_refund_fee = if matches!(stage, FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax) {
             let sender_refund_output = self
                 .sender_refund_output(&self.swap_contract_address, swap_id, value, secret_hash, receiver_addr)
                 .map_mm_err()?;
@@ -1505,7 +1508,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let (gas_limit, gas_price) = match req.fee {
         Some(WithdrawFee::Qrc20Gas { gas_limit, gas_price }) => (gas_limit, gas_price),
         Some(fee_policy) => {
-            let error = format!("Expected 'Qrc20Gas' fee type, found {:?}", fee_policy);
+            let error = format!("Expected 'Qrc20Gas' fee type, found {fee_policy:?}");
             return MmError::err(WithdrawError::InvalidFeePolicy(error));
         },
         None => (QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT),
@@ -1586,7 +1589,7 @@ fn address_from_log_topic(topic: &str) -> Result<H160, String> {
 
 fn address_to_log_topic(address: &H160) -> String {
     let zeros = std::str::from_utf8(&[b'0'; 24]).expect("Expected a valid str from slice of '0' chars");
-    let mut topic = format!("{:02x}", address);
+    let mut topic = format!("{address:02x}");
     topic.insert_str(0, zeros);
     topic
 }

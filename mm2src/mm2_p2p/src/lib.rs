@@ -155,10 +155,10 @@ struct SignedMessageSerdeHelper<'a> {
 
 pub fn encode_and_sign<T: Serialize>(message: &T, secret: &[u8; 32]) -> Result<Vec<u8>, rmp_serde::encode::Error> {
     let secret = SecretKey::from_slice(secret)
-        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing secret", e)))?;
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {e} parsing secret")))?;
     let encoded = encode_message(message)?;
     let sig_hash = SecpMessage::from_slice(&sha256(&encoded))
-        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {} parsing message", e)))?;
+        .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {e} parsing message")))?;
     let sig = SECP_SIGN.sign(&sig_hash, &secret);
     let serialized_sig = sig.serialize_compact();
     let pubkey = PublicKey::from(Secp256k1Pubkey::from_secret_key(&*SECP_SIGN, &secret));
@@ -175,7 +175,7 @@ pub fn decode_signed<'de, T: de::Deserialize<'de>>(
 ) -> Result<(T, Signature, PublicKey), rmp_serde::decode::Error> {
     let helper: SignedMessageSerdeHelper = decode_message(encoded)?;
     let signature = Signature::from_compact(helper.signature)
-        .map_err(|e| rmp_serde::decode::Error::Syntax(format!("Failed to parse signature {}", e)))?;
+        .map_err(|e| rmp_serde::decode::Error::Syntax(format!("Failed to parse signature {e}")))?;
     let sig_hash = SecpMessage::from_slice(&sha256(helper.payload)).expect("Message::from_slice should never fail");
     match &helper.pubkey {
         PublicKey::Secp256k1(serialized_pub) => {
@@ -227,7 +227,7 @@ impl<'de> de::Deserialize<'de> for Secp256k1PubkeySerialize {
     {
         let bytes: serde_bytes::ByteBuf = de::Deserialize::deserialize(deserializer)?;
         let pubkey = Secp256k1Pubkey::from_slice(bytes.as_ref())
-            .map_err(|e| de::Error::custom(format!("Error {} parsing pubkey", e)))?;
+            .map_err(|e| de::Error::custom(format!("Error {e} parsing pubkey")))?;
 
         Ok(Secp256k1PubkeySerialize(pubkey))
     }

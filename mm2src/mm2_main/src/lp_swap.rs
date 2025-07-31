@@ -22,18 +22,24 @@
 //! 1. AFee: OP_DUP OP_HASH160 FEE_RMD160 OP_EQUALVERIFY OP_CHECKSIG
 //!
 //! 2. BPayment:
-//!     OP_IF
-//!         <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
-//!     OP_ELSE
-//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
-//!     OP_ENDIF
+//!
+//! ```
+//! OP_IF
+//!   <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
+//! OP_ELSE
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
+//! OP_ENDIF
+//! ```
 //!
 //! 3. APayment:
-//!     OP_IF
-//!         <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
-//!     OP_ELSE
-//!         OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
-//!     OP_ENDIF
+//!
+//! ```
+//! OP_IF
+//!   <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
+//! OP_ELSE
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
+//! OP_ENDIF
+//! ```
 
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
@@ -167,12 +173,6 @@ const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
-
-/// Add refund fee to calculate maximum available balance for a swap (including possible refund)
-pub(crate) const INCLUDE_REFUND_FEE: bool = true;
-
-/// Do not add refund fee to calculate fee needed only to make a successful swap
-pub(crate) const NO_REFUND_FEE: bool = false;
 
 const MAX_STARTED_AT_DIFF: u64 = MAX_TIME_GAP_FOR_CONNECTED_PEER * 3;
 
@@ -371,8 +371,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
                 },
                 Err(swap_status_err) => {
                     let error = format!(
-                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
-                        swap_msg_err, swap_status_err
+                        "Couldn't deserialize swap msg to either 'SwapMsg': {swap_msg_err} or to 'SwapStatus': {swap_status_err}"
                     );
                     MmError::err(P2PRequestError::DecodeError(error))
                 },
@@ -380,20 +379,19 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
 
             #[cfg(target_arch = "wasm32")]
             return MmError::err(P2PRequestError::DecodeError(format!(
-                "Couldn't deserialize 'SwapMsg': {}",
-                swap_msg_err
+                "Couldn't deserialize 'SwapMsg': {swap_msg_err}"
             )));
         },
     };
 
-    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
+    debug!("Processing swap msg {msg:?} for uuid {uuid}");
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
             msg.0.swap_msg_to_store(msg_store);
         } else {
-            warn!("Received message from unexpected sender for swap {}", uuid);
+            warn!("Received message from unexpected sender for swap {uuid}");
         }
     };
 
@@ -614,7 +612,7 @@ pub struct GetLockedAmountResp {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetLockedAmountRpcError {
-    #[display(fmt = "No such coin: {}", coin)]
+    #[display(fmt = "No such coin: {coin}")]
     NoSuchCoin { coin: String },
 }
 
@@ -995,7 +993,7 @@ pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
-    my_swaps_dir(ctx, address).join(format!("{}.json", uuid))
+    my_swaps_dir(ctx, address).join(format!("{uuid}.json"))
 }
 
 pub async fn insert_new_swap_to_db(
@@ -1249,7 +1247,7 @@ pub struct MyRecentSwapsUuids {
 #[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LatestSwapsErr {
-    #[display(fmt = "No such swap with the uuid '{}'", _0)]
+    #[display(fmt = "No such swap with the uuid '{_0}'")]
     UUIDNotPresentInDb(Uuid),
     UnableToLoadSavedSwaps(SavedSwapError),
     #[display(fmt = "Unable to query swaps storage")]
@@ -1744,8 +1742,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
 
         if uuid_from_message != uuid {
             return MmError::err(P2PProcessError::ValidationFailed(format!(
-                "uuid from message {} doesn't match uuid from topic {}",
-                uuid_from_message, uuid,
+                "uuid from message {uuid_from_message} doesn't match uuid from topic {uuid}",
             )));
         }
 

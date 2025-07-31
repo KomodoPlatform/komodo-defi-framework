@@ -34,26 +34,26 @@ type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
 #[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize)]
 pub enum WalletInitError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig {
         field: String,
     },
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
     #[display(
         fmt = "Passphrase doesn't match the one from file, please create a new wallet if you want to use a new passphrase"
     )]
     PassphraseMismatch,
-    #[display(fmt = "Error generating or decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error generating or decrypting mnemonic: {_0}")]
     MnemonicError(String),
-    #[display(fmt = "Error initializing crypto context: {}", _0)]
+    #[display(fmt = "Error initializing crypto context: {_0}")]
     CryptoInitError(String),
-    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[display(fmt = "Password does not meet policy requirements: {_0}")]
     #[from_stringify("PasswordPolicyError")]
     PasswordPolicyViolation(String),
     InternalError(String),
@@ -73,11 +73,11 @@ impl From<CryptoInitError> for WalletInitError {
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum ReadPassphraseError {
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
-    #[display(fmt = "Error decrypting passphrase: {}", _0)]
+    #[display(fmt = "Error decrypting passphrase: {_0}")]
     DecryptionError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -483,16 +483,16 @@ pub struct GetMnemonicResponse {
 #[derive(Debug, Display, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MnemonicRpcError {
-    #[display(fmt = "Invalid request error: {}", _0)]
+    #[display(fmt = "Invalid request error: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid password error: {}", _0)]
+    #[display(fmt = "Invalid password error: {_0}")]
     #[from_stringify("MnemonicError")]
     InvalidPassword(String),
-    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[display(fmt = "Password does not meet policy requirements: {_0}")]
     #[from_stringify("PasswordPolicyError")]
     PasswordPolicyViolation(String),
 }

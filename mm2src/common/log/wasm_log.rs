@@ -72,12 +72,6 @@ impl Default for LogLevel {
     }
 }
 
-impl From<LogLevel> for JsValue {
-    fn from(lvl: LogLevel) -> Self {
-        JsValue::from(lvl as u32)
-    }
-}
-
 pub struct WasmCallback {
     tx: mpsc::Sender<CallbackMsg>,
 }

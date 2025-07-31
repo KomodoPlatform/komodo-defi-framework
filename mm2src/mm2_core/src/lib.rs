@@ -13,7 +13,7 @@ pub enum DbNamespaceId {
     #[display(fmt = "MAIN")]
     #[default]
     Main,
-    #[display(fmt = "TEST_{}", _0)]
+    #[display(fmt = "TEST_{_0}")]
     Test(u64),
 }
 

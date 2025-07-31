@@ -10,11 +10,11 @@ use rpc_task::RpcTaskError;
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum AddressDerivingError {
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain {
         chain: Bip44Chain,
     },
-    #[display(fmt = "BIP32 address deriving error: {}", _0)]
+    #[display(fmt = "BIP32 address deriving error: {_0}")]
     Bip32Error(String),
     Internal(String),
 }
@@ -33,15 +33,15 @@ impl From<Bip32Error> for AddressDerivingError {
 
 #[derive(Display)]
 pub enum NewAddressDerivingError {
-    #[display(fmt = "Addresses limit reached. Max number of addresses: {}", max_addresses_number)]
+    #[display(fmt = "Addresses limit reached. Max number of addresses: {max_addresses_number}")]
     AddressLimitReached { max_addresses_number: u32 },
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "BIP32 address deriving error: {}", _0)]
+    #[display(fmt = "BIP32 address deriving error: {_0}")]
     Bip32Error(String),
-    #[display(fmt = "Wallet storage error: {}", _0)]
+    #[display(fmt = "Wallet storage error: {_0}")]
     WalletStorageError(HDWalletStorageError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -120,13 +120,13 @@ pub enum NewAccountCreationError {
     CoinDoesntSupportTrezor,
     RpcTaskError(RpcTaskError),
     HardwareWalletError(HwError),
-    #[display(fmt = "Accounts limit reached. Max number of accounts: {}", max_accounts_number)]
+    #[display(fmt = "Accounts limit reached. Max number of accounts: {max_accounts_number}")]
     AccountLimitReached {
         max_accounts_number: u32,
     },
-    #[display(fmt = "Error saving HD account to storage: {}", _0)]
+    #[display(fmt = "Error saving HD account to storage: {_0}")]
     ErrorSavingAccountToStorage(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -151,7 +151,7 @@ impl From<HDWalletStorageError> for NewAccountCreationError {
 
 /// Currently, we suppose that ETH/ERC20/QRC20 don't have [`Bip44Chain::Internal`] addresses.
 #[derive(Display)]
-#[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+#[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
 pub struct InvalidBip44ChainError {
     pub chain: Bip44Chain,
 }

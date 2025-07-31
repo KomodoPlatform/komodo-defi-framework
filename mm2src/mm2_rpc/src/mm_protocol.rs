@@ -183,7 +183,7 @@ mod tests {
     #[derive(Display, Serialize, SerializeErrorType)]
     #[serde(tag = "error_type", content = "error_data")]
     enum AnError {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance { missing: u64 },
     }
 

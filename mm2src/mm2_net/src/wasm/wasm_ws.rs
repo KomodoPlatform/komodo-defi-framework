@@ -656,7 +656,7 @@ fn decode_incoming(incoming: MessageEvent) -> Result<Vec<u8>, String> {
             let txt = String::from(txt);
             Ok(txt.into_bytes())
         },
-        Err(e) => Err(format!("Unknown MessageEvent {:?}", e)),
+        Err(e) => Err(format!("Unknown MessageEvent {e:?}")),
     }
 }
 
@@ -718,7 +718,7 @@ mod tests {
 
         match incoming_rx.next().timeout_secs(5.).await.unwrap_w() {
             Some((_conn_idx, WebSocketEvent::Establish)) => (),
-            other => panic!("Expected 'Establish' event, found: {:?}", other),
+            other => panic!("Expected 'Establish' event, found: {other:?}"),
         }
 
         let get_version = json!({
@@ -736,7 +736,7 @@ mod tests {
                 debug!("Response: {:?}", response);
                 assert!(response.get("result").is_some());
             },
-            other => panic!("Expected 'Incoming' event, found: {:?}", other),
+            other => panic!("Expected 'Incoming' event, found: {other:?}"),
         }
 
         drop(outgoing_tx);
@@ -762,7 +762,7 @@ mod tests {
                     reason: ClosureReason::NormalClosure,
                 },
             )) => (),
-            other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {:?}", other),
+            other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {other:?}"),
         }
     }
 
@@ -788,10 +788,7 @@ mod tests {
                     reason: _reason @ ClosureReason::ClientClosedOnUnderlyingError,
                 },
             )) => (),
-            other => panic!(
-                "Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {:?}",
-                other
-            ),
+            other => panic!("Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {other:?}"),
         }
     }
 }

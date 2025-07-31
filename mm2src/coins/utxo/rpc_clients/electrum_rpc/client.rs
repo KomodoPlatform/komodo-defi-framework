@@ -204,7 +204,7 @@ impl ElectrumClientImpl {
         ) {
             // Don't error if the streamer isn't found/enabled.
             Err(StreamingManagerError::StreamerNotFound) | Ok(()) => Ok(()),
-            Err(e) => Err(format!("Failed sending scripthash message. {:?}", e)),
+            Err(e) => Err(format!("Failed sending scripthash message. {e:?}")),
         }
     }
 
@@ -218,7 +218,7 @@ impl ElectrumClientImpl {
         ) {
             // Don't error if the streamer isn't found/enabled.
             Err(StreamingManagerError::StreamerNotFound) | Ok(()) => Ok(()),
-            Err(e) => Err(format!("Failed sending scripthash message. {:?}", e)),
+            Err(e) => Err(format!("Failed sending scripthash message. {e:?}")),
         }
     }
 
@@ -490,7 +490,7 @@ impl ElectrumClient {
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-version
     pub fn server_version(&self, server_address: &str, version: &OrdRange<f32>) -> RpcRes<ElectrumProtocolVersion> {
-        let protocol_version: Vec<String> = version.flatten().into_iter().map(|v| format!("{}", v)).collect();
+        let protocol_version: Vec<String> = version.flatten().into_iter().map(|v| format!("{v}")).collect();
         rpc_func_from!(
             self,
             server_address,
@@ -779,7 +779,7 @@ impl ElectrumClient {
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {
                             Ok(headers) => headers,
-                            Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{:?}", e))),
+                            Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{e:?}"))),
                         };
                         let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
                         let mut starting_height = from_height;
