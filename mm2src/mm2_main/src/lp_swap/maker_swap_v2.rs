@@ -6,11 +6,11 @@ use super::{
 };
 use crate::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::lp_swap::swap_lock::SwapLock;
+use crate::lp_swap::swap_v2_pb::*;
 use crate::lp_swap::{
     broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SwapConfirmationsSettings,
     TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF,
 };
-use crate::lp_swap::{swap_v2_pb::*, NO_REFUND_FEE};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
@@ -920,7 +920,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let stage = FeeApproxStage::StartSwap;
         let maker_payment_trade_fee = match state_machine
             .maker_coin
-            .get_sender_trade_fee(preimage_value, stage, NO_REFUND_FEE)
+            .get_sender_trade_fee(preimage_value, stage)
             .await
         {
             Ok(fee) => fee,

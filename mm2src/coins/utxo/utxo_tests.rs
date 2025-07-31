@@ -225,7 +225,7 @@ fn test_generate_transaction() {
 
     let outputs = vec![TransactionOutput {
         script_pubkey: vec![].into(),
-        value: 98001,
+        value: 98781,
     }];
 
     let builder = block_on(UtxoTxBuilder::new(&coin))
@@ -236,7 +236,7 @@ fn test_generate_transaction() {
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000 + 999);
+    assert_eq!(generated.1.fee_amount, 220 + 999);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 100000);
 
@@ -262,10 +262,10 @@ fn test_generate_transaction() {
     let generated = block_on(builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000);
-    assert_eq!(generated.1.received_by_me, 99000);
+    assert_eq!(generated.1.fee_amount, 211);
+    assert_eq!(generated.1.received_by_me, 99789);
     assert_eq!(generated.1.spent_by_me, 100000);
-    assert_eq!(generated.0.outputs[0].value, 99000);
+    assert_eq!(generated.0.outputs[0].value, 99789);
 
     let unspents = vec![UnspentInfo {
         value: 100000,
@@ -627,7 +627,7 @@ fn test_withdraw_impl_set_fixed_fee() {
     let expected = Some(
         UtxoFeeDetails {
             coin: Some(TEST_COIN_NAME.into()),
-            amount: "0.1".parse().unwrap(),
+            amount: "0.0245".parse().unwrap(),
         }
         .into(),
     );
@@ -925,7 +925,7 @@ fn test_withdraw_kmd_rewards_impl(
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: "0.00000245".parse().unwrap(),
     });
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
@@ -1003,7 +1003,7 @@ fn test_withdraw_rick_rewards_none() {
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: "0.00000245".parse().unwrap(),
     });
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
@@ -1346,9 +1346,6 @@ fn test_generate_transaction_random_values() {
 
         let tx_size = est_tx_size(generated.0.inputs.len(), generated.0.outputs.len());
         let estimated_txfee = fee_rate * tx_size / 1000;
-        //println!("generated.1.fee_amount={} estimated_txfee={} received_by_me={} output_vals.len={} generated.0.outputs.len={} dust={}, fee_rate={}",
-        //    generated.1.fee_amount, estimated_txfee, generated.1.received_by_me, output_vals.len(), generated.0.outputs.len(), dust, fee_rate);
-
         const CHANGE_OUTPUT_SIZE: u64 = 1 + 25 + 8;
         let max_overpay = dust + fee_rate * CHANGE_OUTPUT_SIZE / 1000; // could be slight overpay due to dust change removed from tx
         if generated.1.fee_amount > estimated_txfee {
@@ -2798,7 +2795,6 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let fee1 = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(my_balance.clone()),
         FeeApproxStage::WithoutApprox,
-        false,
     ))
     .expect("!get_sender_trade_fee");
 
@@ -2807,19 +2803,15 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let fee2 = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::Exact(value_without_fee),
         FeeApproxStage::WithoutApprox,
-        false,
     ))
     .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee2);
 
     // `2.21934443` value was obtained as a result of executing the `max_taker_vol` RPC call for this wallet
     let max_taker_vol = BigDecimal::from_str("2.21934443").expect("!BigDecimal::from_str");
-    let fee3 = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::Exact(max_taker_vol),
-        FeeApproxStage::WithoutApprox,
-        false,
-    ))
-    .expect("!get_sender_trade_fee");
+    let fee3 =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(max_taker_vol), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee3);
 }
 
@@ -3050,7 +3042,9 @@ fn firo_spark_tx_details() {
 
 #[test]
 fn test_generate_tx_doge_fee() {
-    // A tx below 1kb is always 0,01 doge fee per kb.
+    // Doge coin does not use fee rounding anymore, so this is not true now: 'a tx below 1kb is always 0,01 doge fee per kb'
+    // That is, this test was fixed for lesser txfee.
+    // See DINGO coin for the fee rounding.
     let config = json!({
         "coin": "DOGE",
         "name": "dogecoin",
@@ -3096,7 +3090,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 1000000;
+    let expected_fee = 227000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -3117,7 +3111,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 2000000;
+    let expected_fee = 1592000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -3138,7 +3132,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2292000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
@@ -3152,6 +3146,84 @@ fn doge_mtp() {
     let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
         .unwrap();
     assert_eq!(mtp, 1614849084);
+}
+
+#[test]
+fn test_parse_fixed_utxo_txfee_config() {
+    let config = json!({
+        "coin": "DOGE",
+        "name": "dogecoin",
+        "fname": "Dogecoin",
+        "rpcport": 22555,
+        "pubtype": 30,
+        "p2shtype": 22,
+        "wiftype": 158,
+        "txfee": 1000000,
+        "force_min_relay_fee": true,
+        "mm2": 1,
+        "required_confirmations": 2,
+        "avg_blocktime": 1,
+        "protocol": {
+            "type": "UTXO"
+        }
+    });
+    let request = json!({
+        "method": "electrum",
+        "coin": "DOGE",
+        "servers": [{"url": "electrum1.cipig.net:10060"},{"url": "electrum2.cipig.net:10060"},{"url": "electrum3.cipig.net:10060"}],
+    });
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
+
+    let priv_key = Secp256k1Secret::from([1; 32]);
+    let doge = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "DOGE", &config, &params, priv_key,
+    ))
+    .unwrap();
+    assert!(matches!(doge.as_ref().tx_fee, FeeRate::FixedPerKb(1000000_u64)));
+}
+
+#[test]
+fn test_parse_fixed_dingo_txfee_config() {
+    let config = json!({
+        "coin": "DINGO",
+        "name": "dingocoin",
+        "fname": "Dingocoin",
+        "sign_message_prefix": "Dingocoin Signed Message:\n",
+        "rpcport": 34646,
+        "pubtype": 30,
+        "p2shtype": 22,
+        "wiftype": 158,
+        "txfee": 100000000,
+        "dingo_fee": true,
+        "force_min_relay_fee": true,
+        "dust": 100000000,
+        "mm2": 1,
+        "required_confirmations": 5,
+        "avg_blocktime": 60,
+        "protocol": {
+          "type": "UTXO"
+        },
+        "derivation_path": "m/44'/3'",
+        "links": {
+          "github": "https://github.com/dingocoin/dingocoin",
+          "homepage": "https://dingocoin.com"
+        }
+    });
+    let request = json!({
+        "method": "electrum",
+        "coin": "DINGO",
+        "servers": [{"url": "elecx1.dingocoin.com:3342"},{"url": "elecx1.dingocoin.com:3339"},{"url": "elecx2.dingocoin.com:3342"},{"url": "elecx2.dingocoin.com:3339"},{"url": "delecx.twinkykms.com:3342"},{"url": "delecx.twinkykms.com:3339"}],
+    });
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
+
+    let priv_key = Secp256k1Secret::from([1; 32]);
+    let dingo = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "DINGO", &config, &params, priv_key,
+    ))
+    .unwrap();
+    assert!(matches!(dingo.as_ref().tx_fee, FeeRate::FixedPerKbDingo(100000000_u64)));
 }
 
 #[test]
@@ -3646,7 +3718,7 @@ fn test_withdraw_p2pk_balance() {
     assert_eq!(output_script, expected_script);
 
     // And it should have this value (p2pk balance - amount sent - fees).
-    assert_eq!(transaction.outputs[1].value, 899999000);
+    assert_eq!(transaction.outputs[1].value, 899999755);
 }
 
 /// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.
@@ -3829,6 +3901,8 @@ fn test_split_qtum() {
     log!("Res = {:?}", res);
 }
 
+/// Test to validate the fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313 produces valid txfee for tx with many inputs
+/// (as before the fix)
 #[test]
 fn test_raven_low_tx_fee_okay() {
     let config = json!({
@@ -4006,11 +4080,11 @@ fn test_raven_low_tx_fee_okay() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2065000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
-/// Test to validate fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313
+/// Test to validate the fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313 (code before the fix created tx with too low txfee )
 #[test]
 fn test_raven_low_tx_fee_error() {
     let config = json!({
@@ -4184,7 +4258,7 @@ fn test_raven_low_tx_fee_error() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2031000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 

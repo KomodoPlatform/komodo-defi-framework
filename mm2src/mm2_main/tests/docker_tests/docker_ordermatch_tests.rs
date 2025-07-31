@@ -1174,6 +1174,7 @@ fn test_best_orders_filter_response() {
 }
 
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/1148
+// here 'zombie' means 'unusable order'
 #[test]
 fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     let coins = json! ([
@@ -1246,7 +1247,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(send_raw.0.is_success(), "!send_raw: {}", send_raw.1);
 
-    let new_expected_vol: BigDecimal = "499.99998".parse().unwrap();
+    let new_expected_vol: BigDecimal = "499.99999481".parse().unwrap();
 
     thread::sleep(Duration::from_secs(32));
 

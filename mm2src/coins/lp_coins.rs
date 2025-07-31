@@ -2627,6 +2627,7 @@ impl TransactionDetails {
     }
 }
 
+/// Transaction fee to pay for swap transactions (could be total for two transactions: taker fee and payment fee txns)
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TradeFee {
     pub coin: String,
@@ -2712,6 +2713,8 @@ impl AddAssign for CoinBalance {
 }
 
 /// The approximation is needed to cover the dynamic miner fee changing during a swap.
+/// Also used to indicate refund fee is needed for eth
+/// Also used to indicate utxo fee correction is needed due to a possible change output
 #[derive(Clone, Copy, Debug)]
 pub enum FeeApproxStage {
     /// Do not increase the trade fee.
@@ -2722,8 +2725,12 @@ pub enum FeeApproxStage {
     WatcherPreimage,
     /// Increase the trade fee significantly.
     OrderIssue,
-    /// Increase the trade fee largely.
+    /// Increase the trade fee significantly (used to calculate max volume).
+    OrderIssueMax,
+    /// Increase the trade fee largely in the trade_preimage rpc.
     TradePreimage,
+    /// Increase the trade fee in the trade_preimage rpc (used to calculate max volume for trade preimage).
+    TradePreimageMax,
 }
 
 #[derive(Debug)]
@@ -3622,7 +3629,6 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee>;
 
     /// Get fee to be paid by receiver per whole swap and check if the wallet has sufficient balance to pay the fee.
@@ -4294,11 +4300,14 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]
     ContextPrivKey,
     Trezor,
+    WalletConnect {
+        session_topic: kdf_walletconnect::WcTopic,
+    },
 }
 
 impl PrivKeyActivationPolicy {
@@ -4356,10 +4365,16 @@ pub enum PrivKeyPolicy<T> {
     /// - `public_key`: Compressed public key, represented as [H264].
     /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
     /// - `session_topic`: WalletConnect session that was used to activate this coin.
+    // TODO: We want to have different variants of WalletConnect policy for different coin types:
+    //       - ETH uses the structure found here.
+    //       - Tendermint doesn't use this variant all together. Tendermint generalizes one level on top of PrivKeyPolicy by having a different activation policy
+    //         structure that is either Priv(PrivKeyPolicy) or Pubkey(PublicKey) and when activated via wallet connect it uses the Pubkey(PublicKey) variant.
+    //       - UTXO coins on the otherhand need to keep a list of all the addresses activated in the wallet and not just a single account.
+    //            - Note: We need to have a way to select which account and address are the active ones (WalletConnect just spams us with all the addresses in every account).
     WalletConnect {
         public_key: H264,
         public_key_uncompressed: H520,
-        session_topic: String,
+        session_topic: kdf_walletconnect::WcTopic,
     },
 }
 
@@ -4502,6 +4517,7 @@ pub enum PrivKeyBuildPolicy {
     IguanaPrivKey(IguanaPrivKey),
     GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
+    WalletConnect { session_topic: kdf_walletconnect::WcTopic },
 }
 
 impl PrivKeyBuildPolicy {
@@ -4677,11 +4693,21 @@ pub trait IguanaBalanceOps {
     async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject>;
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Information about the UTXO protocol used by a coin.
+pub struct UtxoProtocolInfo {
+    /// A CAIP-2 compliant chain ID. Starts with `b122:`
+    /// This is used to identify the blockchain when using WalletConnect.
+    /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
+    chain_id: String,
+}
+
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    UTXO,
+    // TODO: Nest this option deep into the innert struct fields when more fields are added to the UTXO protocol info.
+    UTXO(Option<UtxoProtocolInfo>),
     QTUM,
     QRC20 {
         platform: String,
@@ -4758,7 +4784,7 @@ impl CoinProtocol {
             CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
             #[cfg(not(target_arch = "wasm32"))]
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
-            CoinProtocol::UTXO
+            CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
             | CoinProtocol::ETH { .. }
             | CoinProtocol::TRX { .. }
@@ -4777,7 +4803,7 @@ impl CoinProtocol {
                 Some(contract_address)
             },
             CoinProtocol::SLPTOKEN { .. }
-            | CoinProtocol::UTXO
+            | CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
             | CoinProtocol::ETH { .. }
             | CoinProtocol::TRX { .. }
@@ -5069,7 +5095,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     let protocol: CoinProtocol = try_s!(json::from_value(coins_en["protocol"].clone()));
 
     let coin: MmCoinEnum = match &protocol {
-        CoinProtocol::UTXO => {
+        CoinProtocol::UTXO { .. } => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(utxo_standard_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
@@ -5742,7 +5768,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         },
         // Todo: implement TRX address generation
         CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
+        CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {

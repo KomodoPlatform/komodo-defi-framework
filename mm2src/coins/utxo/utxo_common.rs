@@ -35,7 +35,7 @@ use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use bitcrypto::{dhash256, ripemd160};
+use bitcrypto::{ripemd160, sign_message_hash};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionInput, TransactionOutput};
 use common::executor::Timer;
@@ -64,10 +64,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{
-    deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
-    SERIALIZE_TRANSACTION_WITNESS,
-};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -116,6 +113,7 @@ pub async fn get_fee_rate(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualFeeRate>
             Ok(ActualFeeRate::Dynamic(fee_rate))
         },
         FeeRate::FixedPerKb(satoshis) => Ok(ActualFeeRate::FixedPerKb(*satoshis)),
+        FeeRate::FixedPerKbDingo(satoshis) => Ok(ActualFeeRate::FixedPerKbDingo(*satoshis)),
     }
 }
 
@@ -319,7 +317,7 @@ pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
             // increase dynamic fee for a chance if it grows in the swap
             ActualFeeRate::Dynamic(increase_dynamic_fee_by_stage(coin, dynamic_fee_rate, stage))
         },
-        ActualFeeRate::FixedPerKb(_) => fee_rate,
+        ActualFeeRate::FixedPerKb(_) | ActualFeeRate::FixedPerKbDingo(_) => fee_rate,
     };
 
     let min_relay_fee_rate = get_min_relay_rate(coin).await.map_mm_err()?;
@@ -2924,26 +2922,17 @@ pub fn burn_address<T: UtxoCommonOps + SwapOps>(coin: &T) -> Result<Address, Str
     )
 }
 
-/// Hash message for signature using Bitcoin's message signing format.
-/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32]> {
-    let message_prefix = coin.conf.sign_message_prefix.clone()?;
-    let mut stream = Stream::new();
-    let prefix_len = CompactInteger::from(message_prefix.len());
-    prefix_len.serialize(&mut stream);
-    stream.append_slice(message_prefix.as_bytes());
-    let msg_len = CompactInteger::from(message.len());
-    msg_len.serialize(&mut stream);
-    stream.append_slice(message.as_bytes());
-    Some(dhash256(&stream.out()).take())
-}
-
 pub fn sign_message(
     coin: &UtxoCoinFields,
     message: &str,
     account: Option<HDAddressSelector>,
 ) -> SignatureResult<String> {
-    let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
+    let sign_message_prefix = coin
+        .conf
+        .sign_message_prefix
+        .as_ref()
+        .ok_or(SignatureError::PrefixNotFound)?;
+    let message_hash = sign_message_hash(sign_message_prefix, message);
 
     let private = if let Some(account) = account {
         let path_to_coin = coin.priv_key_policy.path_to_coin_or_err().map_mm_err()?;
@@ -2976,7 +2965,13 @@ pub fn verify_message<T: UtxoCommonOps>(
     message: &str,
     address: &str,
 ) -> VerificationResult<bool> {
-    let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
+    let sign_message_prefix = coin
+        .as_ref()
+        .conf
+        .sign_message_prefix
+        .as_ref()
+        .ok_or(VerificationError::PrefixNotFound)?;
+    let message_hash = sign_message_hash(sign_message_prefix, message);
     let signature = CompactSignature::try_from(STANDARD.decode(signature_base64)?)
         .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
@@ -4149,6 +4144,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
         let amount = match fee {
             ActualFeeRate::Dynamic(f) => f,
             ActualFeeRate::FixedPerKb(f) => f,
+            ActualFeeRate::FixedPerKbDingo(f) => f,
         };
         Ok(TradeFee {
             coin: ticker,
@@ -4218,7 +4214,9 @@ where
 
             // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
                 // take into account the change output
                 data.fee_amount + actual_fee_rate.get_tx_fee_for_change(0)
             } else {
@@ -4227,7 +4225,7 @@ where
             };
             Ok(big_decimal_from_sat(total_fee as i64, decimals))
         },
-        ActualFeeRate::FixedPerKb(_fee) => {
+        ActualFeeRate::FixedPerKb(_fee) | ActualFeeRate::FixedPerKbDingo(_fee) => {
             let outputs_count = outputs.len();
             let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
             let mut tx_builder = UtxoTxBuilder::new(coin)
@@ -4243,9 +4241,13 @@ where
                 TradePreimageError::from_generate_tx_error(e, ticker.to_string(), decimals, is_amount_upper_bound)
             })?;
 
-            // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
+            // We need to add extra tx fee for the absent change output for e.g. to ensure max_maker_vol or max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
+                // Do this for TradePreimageMax stage only to ensure max vol is not too low.
+                // Don't do this for TradePreimage stage (or others) as an insufficient amount error may be collected
                 let tx = UtxoTx::from(tx);
                 let tx_bytes = serialize(&tx);
                 // take into account the change output
@@ -4975,12 +4977,12 @@ where
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::OrderIssue => base_percent * 2.,
+        FeeApproxStage::OrderIssue | FeeApproxStage::OrderIssueMax => base_percent * 2.,
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until an order is issued;
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::TradePreimage => base_percent * 2.5,
+        FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax => base_percent * 2.5,
     };
     increase_by_percent(dynamic_fee, percent)
 }

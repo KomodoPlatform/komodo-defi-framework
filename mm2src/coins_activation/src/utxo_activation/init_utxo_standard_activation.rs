@@ -38,7 +38,7 @@ impl TryFromCoinProtocol for UtxoStandardProtocolInfo {
         Self: Sized,
     {
         match proto {
-            CoinProtocol::UTXO => Ok(UtxoStandardProtocolInfo),
+            CoinProtocol::UTXO { .. } => Ok(UtxoStandardProtocolInfo),
             protocol => MmError::err(protocol),
         }
     }
@@ -66,7 +66,7 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         _protocol_info: Self::StandaloneProtocol,
         task_handle: UtxoStandardRpcTaskHandleShared,
     ) -> MmResult<Self, InitUtxoStandardError> {
-        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy).map_mm_err()?;
+        let priv_key_policy = priv_key_build_policy(&ctx, &activation_request.priv_key_policy).map_mm_err()?;
 
         let coin = UtxoArcBuilder::new(
             &ctx,

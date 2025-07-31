@@ -279,7 +279,7 @@ impl SessionManager {
         self.read().get(topic).cloned()
     }
 
-    /// Retrieves a cloned session associated with a given sessionn or pairing topic.
+    /// Retrieves a cloned session associated with a given session or pairing topic.
     pub fn get_session_with_any_topic(&self, topic: &Topic, with_pairing_topic: bool) -> Option<Session> {
         if with_pairing_topic {
             return self.read().values().find(|s| &s.pairing_topic == topic).cloned();

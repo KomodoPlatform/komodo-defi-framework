@@ -41,6 +41,7 @@ pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
+pub mod wallet_connect;
 
 use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
@@ -290,6 +291,8 @@ pub enum FeeRate {
     Dynamic(EstimateFeeMethod),
     /// Tell the coin that it has fixed tx fee per kb.
     FixedPerKb(u64),
+    /// Use fixed tx fee per kb for DINGO-like coins.
+    FixedPerKbDingo(u64),
 }
 
 /// The actual "runtime" tx fee rate (per kb) that is received from RPC in case of dynamic calculation
@@ -298,17 +301,20 @@ pub enum FeeRate {
 pub enum ActualFeeRate {
     /// fee amount per Kbyte received from coin RPC
     Dynamic(u64),
-    /// Use specified fee amount per each 1 kb of transaction and also per each output less than the fee amount.
-    /// Used by DOGE, but more coins might support it too.
+    /// Use specified fee amount per each 1 kb of transaction.
     FixedPerKb(u64),
+    /// Use specified fee amount per each 1 kb of transaction and also per each output less than the fee amount.
+    /// Used in DINGO coin, but more coins might support it too.
+    FixedPerKbDingo(u64),
 }
 
 impl ActualFeeRate {
     fn get_tx_fee(&self, tx_size: u64) -> u64 {
         match self {
             ActualFeeRate::Dynamic(fee_rate) => (fee_rate * tx_size) / KILO_BYTE,
-            // return fee_rate here as swap spend transaction size is always less than 1 kb
-            ActualFeeRate::FixedPerKb(fee_rate) => {
+            ActualFeeRate::FixedPerKb(fee_rate) => (fee_rate * tx_size) / KILO_BYTE,
+            ActualFeeRate::FixedPerKbDingo(fee_rate) => {
+                // Implement rounding mechanism (earlier used in DOGE, now in DINGO coin)
                 let tx_size_kb = if tx_size % KILO_BYTE == 0 {
                     tx_size / KILO_BYTE
                 } else {
@@ -323,7 +329,8 @@ impl ActualFeeRate {
     fn get_tx_fee_for_change(&self, tx_size: u64) -> u64 {
         match self {
             ActualFeeRate::Dynamic(fee_rate) => (*fee_rate * P2PKH_OUTPUT_LEN) / KILO_BYTE,
-            ActualFeeRate::FixedPerKb(fee_rate) => {
+            ActualFeeRate::FixedPerKb(fee_rate) => (*fee_rate * P2PKH_OUTPUT_LEN) / KILO_BYTE,
+            ActualFeeRate::FixedPerKbDingo(fee_rate) => {
                 // take into account the change output if tx_size_kb(tx with change) > tx_size_kb(tx without change)
                 if tx_size % KILO_BYTE + P2PKH_OUTPUT_LEN > KILO_BYTE {
                     *fee_rate

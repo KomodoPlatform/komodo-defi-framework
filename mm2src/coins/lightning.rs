@@ -1303,7 +1303,6 @@ impl MmCoin for LightningCoin {
         &self,
         _value: TradePreimageValue,
         _stage: FeeApproxStage,
-        _include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.ticker().to_owned(),

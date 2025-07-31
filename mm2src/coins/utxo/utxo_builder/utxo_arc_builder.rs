@@ -1,10 +1,7 @@
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
 
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::{
-    UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
-    UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder,
-};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::{
     generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle, UtxoWeak,
 };
@@ -88,18 +85,6 @@ where
     fn ticker(&self) -> &str {
         self.ticker
     }
-}
-
-impl<F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'_, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
-}
-
-impl<F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'_, F, T> where F: Fn(UtxoArc) -> T + Send + Sync + 'static {}
-
-impl<F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'_, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
 }
 
 #[async_trait]
