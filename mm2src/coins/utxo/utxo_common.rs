@@ -3300,17 +3300,20 @@ pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
 pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
     let min_from_dust = coin.dust_amount * 10;
 
-    let min_from_fee = match coin.tx_fee {
-        FeeRate::FixedPerKb(sats_per_kb) => {
-            let fee_rate = ActualFeeRate::FixedPerKb(sats_per_kb);
-            fee_rate.get_tx_fee(DEFAULT_SWAP_TX_SPEND_SIZE) * 10
-        },
-        // For coins with dynamic fees, an async network call would be needed to get the current fee rate.
+    let fixed_fee_rate = match coin.tx_fee {
+        FeeRate::FixedPerKb(sats) => Some(ActualFeeRate::FixedPerKb(sats)),
+        FeeRate::FixedPerKbDingo(sats) => Some(ActualFeeRate::FixedPerKbDingo(sats)),
+        // For coins with dynamic fees, an async call would be needed to get the current fee rate.
         // Since this function is synchronous and its output must be deterministic for the lifetime of
-        // an order / swap, we use the dust-based calculation.
-        FeeRate::Dynamic(_) => min_from_dust,
+        // an order / swap, we will use the dust-based calculation.
+        FeeRate::Dynamic(_) => None,
     };
 
+    let min_from_fee = fixed_fee_rate.map_or(min_from_dust, |fee_rate| {
+        fee_rate.get_tx_fee(DEFAULT_SWAP_TX_SPEND_SIZE) * 10
+    });
+
+    // The final minimum volume must be large enough to satisfy both the dust and the fee constraints.
     let min_vol_sats = std::cmp::max(min_from_dust, min_from_fee);
 
     big_decimal_from_sat_unsigned(min_vol_sats, coin.decimals).into()
