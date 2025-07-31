@@ -86,7 +86,6 @@ pub async fn check_my_coin_balance_for_swap(
             locked_by_swaps: Some(locked.to_decimal()),
         });
     }
-
     Ok(balance.into())
 }
 
@@ -192,11 +191,7 @@ pub struct TakerFeeAdditionalInfo {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum CheckBalanceError {
     #[display(
-        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBalance {
         coin: String,
@@ -205,11 +200,7 @@ pub enum CheckBalanceError {
         locked_by_swaps: Option<BigDecimal>,
     },
     #[display(
-        fmt = "Not enough platform coin {} balance for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough platform coin {coin} balance for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBaseCoinBalance {
         coin: String,
@@ -217,20 +208,15 @@ pub enum CheckBalanceError {
         required: BigDecimal,
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(
-        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
-        volume,
-        coin,
-        threshold
-    )]
+    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
         threshold: BigDecimal,
     },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 

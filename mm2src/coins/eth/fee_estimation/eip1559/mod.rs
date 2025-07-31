@@ -31,7 +31,9 @@ impl std::fmt::Display for EstimationSource {
 }
 
 impl Default for EstimationSource {
-    fn default() -> Self { Self::Empty }
+    fn default() -> Self {
+        Self::Empty
+    }
 }
 
 enum PriorityLevelId {

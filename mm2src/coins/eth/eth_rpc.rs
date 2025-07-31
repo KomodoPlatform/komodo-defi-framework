@@ -6,9 +6,10 @@ use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin, ETH_RPC_REQUEST_TIMEOUT_S};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use serde_json::Value;
-use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState,
-                  Trace, TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256,
-                  H520, H64, U256, U64};
+use web3::types::{
+    Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState, Trace,
+    TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256, H520, H64, U256, U64,
+};
 use web3::{helpers, Transport};
 
 impl EthCoin {
