@@ -192,7 +192,7 @@ pub enum SelectRecentOrdersUuidsErr {
 
 impl std::fmt::Display for SelectRecentOrdersUuidsErr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

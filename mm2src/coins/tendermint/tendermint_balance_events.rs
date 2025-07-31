@@ -82,14 +82,14 @@ impl EventStreamer for TendermintBalanceEventStreamer {
             };
 
             let receiver_q = generate_subscription_query(
-                format!("coin_received.receiver = '{}'", account_id),
+                format!("coin_received.receiver = '{account_id}'"),
                 client.proxy_sign_keypair(),
                 &client.uri(),
             );
             let receiver_q = tokio_tungstenite_wasm::Message::Text(receiver_q);
 
             let spender_q = generate_subscription_query(
-                format!("coin_spent.spender = '{}'", account_id),
+                format!("coin_spent.spender = '{account_id}'"),
                 client.proxy_sign_keypair(),
                 &client.uri(),
             );

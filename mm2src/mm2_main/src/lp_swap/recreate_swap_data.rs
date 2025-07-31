@@ -24,13 +24,13 @@ pub enum RecreateSwapError {
     SwapIsNotStarted,
     #[display(fmt = "Swap hasn't been negotiated. Swap not recoverable")]
     SwapIsNotNegotiated,
-    #[display(fmt = "Expected '{}' event, found '{}'", expected, found)]
+    #[display(fmt = "Expected '{expected}' event, found '{found}'")]
     UnexpectedEvent { expected: String, found: String },
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
     #[display(fmt = "'secret_hash' not found in swap data")]
     NoSecretHash,
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -227,7 +227,7 @@ fn convert_taker_to_maker_events(
 
         // This is used only if an error occurs.
         let swap_error = SwapError {
-            error: format!("Origin Taker error event: {:?}", event),
+            error: format!("Origin Taker error event: {event:?}"),
         };
         match event {
             // Even if we considered Taker fee as invalid, then we shouldn't have sent Maker payment.
@@ -452,7 +452,7 @@ async fn convert_maker_to_taker_events(
 
         // This is used only if an error occurs.
         let swap_error = SwapError {
-            error: format!("Origin Maker error event: {:?}", event),
+            error: format!("Origin Maker error event: {event:?}"),
         };
         match event {
             MakerSwapEvent::TakerFeeValidated(tx_ident) => push_event!(TakerSwapEvent::TakerFeeSent(tx_ident)),

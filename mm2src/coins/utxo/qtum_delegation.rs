@@ -47,13 +47,13 @@ type StakingInfosResult = Result<StakingInfos, MmError<StakingInfoError>>;
 
 #[derive(Debug, Display)]
 pub enum QtumStakingAbiError {
-    #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
+    #[display(fmt = "Invalid QRC20 ABI params: {_0}")]
     InvalidParams(String),
-    #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[display(fmt = "QRC20 ABI error: {_0}")]
     ABIError(String),
-    #[display(fmt = "Qtum POD error: {}", _0)]
+    #[display(fmt = "Qtum POD error: {_0}")]
     PodSigningError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

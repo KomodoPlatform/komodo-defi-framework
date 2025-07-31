@@ -51,6 +51,7 @@ use coins::rpc_command::{
         cancel_scan_for_new_addresses, init_scan_for_new_addresses, init_scan_for_new_addresses_status,
     },
     init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action},
+    offline_keys::get_private_keys,
 };
 #[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoin;
@@ -239,6 +240,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
+        "get_private_keys" => handle_mmrpc(ctx, request, get_private_keys).await,
         "get_nft_list" => handle_mmrpc(ctx, request, get_nft_list).await,
         "get_nft_metadata" => handle_mmrpc(ctx, request, get_nft_metadata).await,
         "get_nft_transfers" => handle_mmrpc(ctx, request, get_nft_transfers).await,

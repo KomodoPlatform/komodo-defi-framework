@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_delete_all_sql() {
         let conn = Connection::open_in_memory().unwrap();
-        println!("{}", CREATE_TX_HISTORY_TABLE);
+        println!("{CREATE_TX_HISTORY_TABLE}");
         init_table_for_test(&conn);
 
         let sql_delete = SqlDelete::new(&conn, "tx_history").unwrap();

@@ -131,8 +131,7 @@ impl Qrc20Coin {
             .map_mm_err()?;
         if status != U256::from(PaymentState::Sent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "Payment state is not PAYMENT_STATE_SENT, got {}",
-                status
+                "Payment state is not PAYMENT_STATE_SENT, got {status}"
             )));
         }
 
@@ -505,7 +504,7 @@ impl Qrc20Coin {
         match tokens.first() {
             Some(Token::Uint(number)) => Ok(*number),
             Some(_) => {
-                let error = format!(r#"Expected U256 as "allowance" result but got {:?}"#, tokens);
+                let error = format!(r#"Expected U256 as "allowance" result but got {tokens:?}"#);
                 MmError::err(UtxoRpcError::InvalidResponse(error))
             },
             None => {
@@ -1083,7 +1082,7 @@ fn check_if_contract_call_completed(receipt: &TxReceipt) -> Result<(), String> {
     match receipt.excepted {
         Some(ref ex) if ex != "None" && ex != "none" => {
             let msg = match receipt.excepted_message {
-                Some(ref m) if !m.is_empty() => format!(": {}", m),
+                Some(ref m) if !m.is_empty() => format!(": {m}"),
                 _ => String::default(),
             };
             ERR!("Contract call failed with an error: {}{}", ex, msg)

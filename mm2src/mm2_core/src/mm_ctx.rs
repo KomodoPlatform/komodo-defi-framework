@@ -258,10 +258,7 @@ impl MmCtx {
                     .as_u64()
                     .or_else(|| rpcport.as_str().and_then(|s| s.parse::<u64>().ok()))
                     .ok_or_else(|| {
-                        format!(
-                            "Invalid `rpcport` value. Expected a positive integer, but received: {}",
-                            rpcport
-                        )
+                        format!("Invalid `rpcport` value. Expected a positive integer, but received: {rpcport}")
                     })?
             },
             None => 7783, // Default port if `rpcport` does not exist in the config
@@ -319,7 +316,7 @@ impl MmCtx {
         }
 
         json::from_value(self.conf["alt_names"].clone())
-            .map_err(|e| format!("`alt_names` is not a valid JSON array of strings: {}", e))
+            .map_err(|e| format!("`alt_names` is not a valid JSON array of strings: {e}"))
             .and_then(|names: Vec<String>| {
                 if names.is_empty() {
                     return ERR!("alt_names is empty");
@@ -446,7 +443,7 @@ impl MmCtx {
     pub fn netid(&self) -> u16 {
         let netid = self.conf["netid"].as_u64().unwrap_or(0);
         if netid > u16::MAX.into() {
-            panic!("netid {} is too big", netid)
+            panic!("netid {netid} is too big")
         }
         netid as u16
     }
@@ -697,8 +694,8 @@ impl fmt::Debug for MmWeak {
     fn fmt(&self, ft: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match MmArc::from_weak(self) {
             Some(ctx) => match ctx.ffi_handle() {
-                Ok(ffi_handle) => write!(ft, "MmWeak({})", ffi_handle),
-                Err(err) => write!(ft, "MmWeak(ERROR({}))", err),
+                Ok(ffi_handle) => write!(ft, "MmWeak({ffi_handle})"),
+                Err(err) => write!(ft, "MmWeak(ERROR({err}))"),
             },
             None => write!(ft, "MmWeak(-)"),
         }
@@ -853,7 +850,7 @@ impl MmArc {
             _ => return Ok(()),
         };
 
-        let address: SocketAddr = format!("127.0.0.1:{}", prometheusport)
+        let address: SocketAddr = format!("127.0.0.1:{prometheusport}")
             .parse()
             .map_err(|e: AddrParseError| MmMetricsError::PrometheusServerError(e.to_string()))?;
 

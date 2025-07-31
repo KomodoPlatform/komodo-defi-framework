@@ -52,6 +52,15 @@ use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymK
 const PUBLISH_TIMEOUT_SECS: f64 = 6.;
 const CONNECTION_TIMEOUT_S: f64 = 30.;
 
+/// The necessary data to establish a new WalletConnect connection to a newly
+/// established pairing by KDF (via [`WalletConnectCtxImpl::new_connection`]).
+pub struct NewConnection {
+    pub url: String,
+    // TODO: Convert this to a `Topic` instead (after the merger of
+    // https://github.com/KomodoPlatform/komodo-defi-framework/pull/2499, which pub-uses/exposes `Topic` to other dependent crates)
+    pub pairing_topic: String,
+}
+
 /// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
@@ -237,8 +246,7 @@ impl WalletConnectCtxImpl {
                 if rx.changed().await.is_err() {
                     let last_state = *rx.borrow();
                     return MmError::err(WalletConnectError::InternalError(format!(
-                        "Connection task dropped, last state was: {:?}",
-                        last_state
+                        "Connection task dropped, last state was: {last_state:?}"
                     )));
                 }
             }
@@ -287,7 +295,7 @@ impl WalletConnectCtxImpl {
         &self,
         required_namespaces: serde_json::Value,
         optional_namespaces: Option<serde_json::Value>,
-    ) -> MmResult<String, WalletConnectError> {
+    ) -> MmResult<NewConnection, WalletConnectError> {
         self.await_connection().await?;
 
         let required_namespaces = serde_json::from_value(required_namespaces)?;
@@ -310,7 +318,10 @@ impl WalletConnectCtxImpl {
 
         send_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
 
-        Ok(url)
+        Ok(NewConnection {
+            url,
+            pairing_topic: topic.to_string(),
+        })
     }
 
     /// Get symmetric key associated with a for `topic`.

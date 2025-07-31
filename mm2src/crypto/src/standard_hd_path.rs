@@ -101,23 +101,23 @@ pub struct UnknownChainError {
 
 #[derive(Debug, Display, Eq, PartialEq)]
 pub enum StandardHDPathError {
-    #[display(fmt = "Invalid derivation path length '{}', expected '{}'", found, expected)]
+    #[display(fmt = "Invalid derivation path length '{found}', expected '{expected}'")]
     InvalidDerivationPathLength { expected: usize, found: usize },
-    #[display(fmt = "Child '{}' is expected to be hardened", child)]
+    #[display(fmt = "Child '{child}' is expected to be hardened")]
     ChildIsNotHardened { child: String },
-    #[display(fmt = "Child '{}' is expected not to be hardened", child)]
+    #[display(fmt = "Child '{child}' is expected not to be hardened")]
     ChildIsHardened { child: String },
-    #[display(fmt = "Unexpected '{}' child value '{}', expected: {}", child, value, expected)]
+    #[display(fmt = "Unexpected '{child}' child value '{value}', expected: {expected}")]
     UnexpectedChildValue {
         child: String,
         value: u32,
         expected: String,
     },
-    #[display(fmt = "Unknown BIP32 error: {}", _0)]
+    #[display(fmt = "Unknown BIP32 error: {_0}")]
     Bip32Error(Bip32Error),
-    #[display(fmt = "Invalid coin type '{}', expected '{}'", found, expected)]
+    #[display(fmt = "Invalid coin type '{found}', expected '{expected}'")]
     InvalidCoinType { expected: u32, found: u32 },
-    #[display(fmt = "Invalid path to coin '{}', expected '{}'", found, expected)]
+    #[display(fmt = "Invalid path to coin '{found}', expected '{expected}'")]
     InvalidPathToCoin { expected: String, found: String },
 }
 
@@ -125,7 +125,7 @@ impl From<Bip32DerPathError> for StandardHDPathError {
     fn from(e: Bip32DerPathError) -> Self {
         fn display_child_at(child_at: usize) -> String {
             StandardHDIndex::from_usize(child_at)
-                .map(|index| format!("{:?}", index))
+                .map(|index| format!("{index:?}"))
                 .unwrap_or_else(|| "UNKNOWN".to_owned())
         }
 
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn test_display() {
         let der_path = HDPathToAccount::from_str("m/44'/141'/1'").unwrap();
-        let actual = format!("{}", der_path);
+        let actual = format!("{der_path}");
         assert_eq!(actual, "m/44'/141'/1'");
     }
 

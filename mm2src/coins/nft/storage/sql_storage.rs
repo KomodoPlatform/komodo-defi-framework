@@ -226,10 +226,10 @@ fn nft_history_table_builder_preimage(
             sql_builder.and_where_eq("status", "'Receive'");
         }
         if let Some(date) = filters.from_date {
-            sql_builder.and_where(format!("block_timestamp >= {}", date));
+            sql_builder.and_where(format!("block_timestamp >= {date}"));
         }
         if let Some(date) = filters.to_date {
-            sql_builder.and_where(format!("block_timestamp <= {}", date));
+            sql_builder.and_where(format!("block_timestamp <= {date}"));
         }
         if filters.exclude_spam {
             sql_builder.and_where("possible_spam == 0");
@@ -949,8 +949,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         self.call(move |conn| {
             let table_name = safe_table_name.inner();
             let sql_query = format!(
-                "SELECT DISTINCT animation_domain FROM {} UNION SELECT DISTINCT external_domain FROM {}",
-                table_name, table_name
+                "SELECT DISTINCT animation_domain FROM {table_name} UNION SELECT DISTINCT external_domain FROM {table_name}"
             );
             let mut stmt = conn.prepare(&sql_query)?;
             let domains = stmt
@@ -1316,8 +1315,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         self.call(move |conn| {
             let table_name = safe_table_name.inner();
             let sql_query = format!(
-                "SELECT DISTINCT token_domain FROM {} UNION SELECT DISTINCT image_domain FROM {}",
-                table_name, table_name
+                "SELECT DISTINCT token_domain FROM {table_name} UNION SELECT DISTINCT image_domain FROM {table_name}"
             );
             let mut stmt = conn.prepare(&sql_query)?;
             let domains = stmt
@@ -1485,8 +1483,7 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
                     },
                     unsupported_version => {
                         return Err(AsyncConnError::Internal(InternalError(format!(
-                            "Unsupported schema version {}",
-                            unsupported_version
+                            "Unsupported schema version {unsupported_version}"
                         ))));
                     },
                 }

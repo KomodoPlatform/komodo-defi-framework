@@ -98,7 +98,7 @@ mod tests {
                 }
                 attempts += 1;
                 if attempts >= 10 {
-                    panic!("wait_peers {} attempts exceeded", attempts);
+                    panic!("wait_peers {attempts} attempts exceeded");
                 }
             }
         }

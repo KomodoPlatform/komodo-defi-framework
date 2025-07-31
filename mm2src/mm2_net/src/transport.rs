@@ -17,15 +17,15 @@ pub type SlurpResultJson = Result<(StatusCode, HeaderMap, Json), MmError<SlurpEr
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum SlurpError {
-    #[display(fmt = "Error deserializing '{}' response: {}", uri, error)]
+    #[display(fmt = "Error deserializing '{uri}' response: {error}")]
     ErrorDeserializing { uri: String, error: String },
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Request '{}' timeout: {}", uri, error)]
+    #[display(fmt = "Request '{uri}' timeout: {error}")]
     Timeout { uri: String, error: String },
-    #[display(fmt = "Transport '{}' error: {}", uri, error)]
+    #[display(fmt = "Transport '{uri}' error: {error}")]
     Transport { uri: String, error: String },
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -73,13 +73,13 @@ where
 /// Errors encountered when making HTTP requests to fetch information from a URI.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetInfoFromUriError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
 }
 
@@ -124,8 +124,7 @@ pub async fn send_post_request_to_uri(uri: &str, body: String) -> MmResult<Vec<u
     let (status, _header, body) = slurp_post_json(uri, body).await.map_mm_err()?;
     if !status.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(format!(
-            "Status code not in 2xx range from {}: {}",
-            uri, status,
+            "Status code not in 2xx range from {uri}: {status}",
         ))));
     }
     Ok(body)

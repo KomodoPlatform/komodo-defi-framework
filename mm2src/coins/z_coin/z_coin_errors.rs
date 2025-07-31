@@ -87,7 +87,7 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 pub enum ZcoinClientInitError {
     ZcoinStorageError(String),
     EmptyLightwalletdUris,
-    #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
+    #[display(fmt = "Fail to init clients while iterating lightwalletd urls {_0:?}")]
     UrlIterFailure(Vec<UrlIterError>),
     UpdateBlocksCacheErr(UpdateBlocksCacheErr),
     UtxoCoinBuildError(UtxoCoinBuildError),
@@ -126,12 +126,7 @@ pub enum GenTxError {
     DecryptedOutputNotFound,
     GetWitnessErr(GetUnspentWitnessErr),
     FailedToGetMerklePath,
-    #[display(
-        fmt = "Not enough {} to generate a tx: available {}, required at least {}",
-        coin,
-        available,
-        required
-    )]
+    #[display(fmt = "Not enough {coin} to generate a tx: available {available}, required at least {required}")]
     InsufficientBalance {
         coin: String,
         available: BigDecimal,
@@ -141,7 +136,7 @@ pub enum GenTxError {
     Rpc(UtxoRpcError),
     PrevTxNotConfirmed,
     TxBuilderError(ZTxBuilderError),
-    #[display(fmt = "Failed to read ZCash tx from bytes {:?} with error {}", hex, err)]
+    #[display(fmt = "Failed to read ZCash tx from bytes {hex:?} with error {err}")]
     TxReadError {
         hex: BytesJson,
         err: std::io::Error,
@@ -284,7 +279,7 @@ pub enum ZCoinBuildError {
     #[from_stringify("LockedNotesStorageError")]
     ZcashDBError(String),
     Rpc(String),
-    #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]
+    #[display(fmt = "Sapling cache DB does not exist at {path}. Please download it.")]
     SaplingCacheDbDoesNotExist {
         path: String,
     },
@@ -477,11 +472,11 @@ pub enum ZcoinStorageError {
     CorruptedData(String),
     InvalidMemo(String),
     BackendError(String),
-    #[display(fmt = "Add to storage err: {}", _0)]
+    #[display(fmt = "Add to storage err: {_0}")]
     AddToStorageErr(String),
-    #[display(fmt = "Remove from storage err: {}", _0)]
+    #[display(fmt = "Remove from storage err: {_0}")]
     RemoveFromStorageErr(String),
-    #[display(fmt = "Get from storage err: {}", _0)]
+    #[display(fmt = "Get from storage err: {_0}")]
     GetFromStorageError(String),
     #[display(fmt = "Error getting {ticker} block height from storage: {err}")]
     BlockHeightNotFound {

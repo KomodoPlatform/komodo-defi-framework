@@ -205,22 +205,21 @@ struct CompileError(String);
 
 impl CompileError {
     fn expected_enum(macro_ident: &str, found: &str) -> CompileError {
-        CompileError(format!("'{}' cannot be implement for a {}", macro_ident, found))
+        CompileError(format!("'{macro_ident}' cannot be implement for a {found}"))
     }
 
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
         CompileError(format!(
-            "'{}' attribute must be used for a variant with one unnamed inner type",
-            attr
+            "'{attr}' attribute must be used for a variant with one unnamed inner type"
         ))
     }
 
     fn expected_one_attr_on_variant(attr: MacroAttr) -> CompileError {
-        CompileError(format!("An enum variant can have only one '{}' attribute", attr))
+        CompileError(format!("An enum variant can have only one '{attr}' attribute"))
     }
 
     fn attr_must_be_used(attr: MacroAttr) -> CompileError {
-        CompileError(format!("'{}' must be used at least once", attr))
+        CompileError(format!("'{attr}' must be used at least once"))
     }
 
     fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {

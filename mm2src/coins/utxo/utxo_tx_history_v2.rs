@@ -57,19 +57,19 @@ impl From<UnexpectedDerivationMethod> for UtxoMyAddressesHistoryError {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum UtxoTxDetailsError {
-    #[display(fmt = "Storage error: {}", _0)]
+    #[display(fmt = "Storage error: {_0}")]
     StorageError(String),
-    #[display(fmt = "Transaction deserialization error: {}", _0)]
+    #[display(fmt = "Transaction deserialization error: {_0}")]
     TxDeserializationError(serialization::Error),
-    #[display(fmt = "Invalid transaction: {}", _0)]
+    #[display(fmt = "Invalid transaction: {_0}")]
     InvalidTransaction(String),
-    #[display(fmt = "TX Address deserialization error: {}", _0)]
+    #[display(fmt = "TX Address deserialization error: {_0}")]
     TxAddressDeserializationError(String),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     NumConversionErr(NumConversError),
-    #[display(fmt = "RPC error: {}", _0)]
+    #[display(fmt = "RPC error: {_0}")]
     RpcError(UtxoRpcError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -108,7 +108,7 @@ where
     StorageErr: TxHistoryStorageError,
 {
     fn from(e: StorageErr) -> Self {
-        UtxoTxDetailsError::StorageError(format!("{:?}", e))
+        UtxoTxDetailsError::StorageError(format!("{e:?}"))
     }
 }
 
@@ -608,7 +608,7 @@ where
         let my_addresses = try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses");
 
         for (tx_hash, height) in self.all_tx_ids_with_height {
-            let tx_hash_string = format!("{:02x}", tx_hash);
+            let tx_hash_string = format!("{tx_hash:02x}");
             match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string).await {
                 Ok(true) => continue,
                 Ok(false) => (),
@@ -684,7 +684,7 @@ impl<Coin, Storage> Stopped<Coin, Storage> {
     {
         Stopped {
             phantom: Default::default(),
-            stop_reason: StopReason::StorageError(format!("{:?}", e)),
+            stop_reason: StopReason::StorageError(format!("{e:?}")),
         }
     }
 

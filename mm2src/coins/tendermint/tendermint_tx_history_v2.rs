@@ -209,7 +209,7 @@ impl<Coin, Storage> Stopped<Coin, Storage> {
     {
         Stopped {
             phantom: Default::default(),
-            stop_reason: StopReason::StorageError(format!("{:?}", e)),
+            stop_reason: StopReason::StorageError(format!("{e:?}")),
         }
     }
 }
@@ -407,7 +407,7 @@ where
                 .amount
                 .first()
                 .ok_or_else(|| "fee coin can't be empty".to_string())?;
-            let fee_uamount: u64 = fee_coin.amount.to_string().parse().map_err(|e| format!("{:?}", e))?;
+            let fee_uamount: u64 = fee_coin.amount.to_string().parse().map_err(|e| format!("{e:?}"))?;
 
             Ok(TendermintFeeDetails {
                 coin: coin.platform_ticker().to_string(),
@@ -1010,7 +1010,7 @@ where
                     storage
                         .add_transactions_to_history(&coin.history_wallet_id(), tx_details)
                         .await
-                        .map_err(|e| format!("{:?}", e)),
+                        .map_err(|e| format!("{e:?}")),
                     StopReason::StorageError,
                     "add_transactions_to_history failed"
                 );

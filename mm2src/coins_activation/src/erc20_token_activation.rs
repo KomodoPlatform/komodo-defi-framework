@@ -184,7 +184,7 @@ impl TokenActivationOps for EthCoin {
                         balances,
                         platform_coin: token.platform_ticker().to_owned(),
                         required_confirmations: token.required_confirmations(),
-                        token_contract_address: format!("{:#02x}", token_contract_address),
+                        token_contract_address: format!("{token_contract_address:#02x}"),
                     });
 
                     Ok((token, init_result))

@@ -36,21 +36,16 @@ type UserActionSender<UserAction> = oneshot::Sender<UserAction>;
 
 #[derive(Clone, Display)]
 pub enum RpcTaskError {
-    #[display(fmt = "RPC task timeout '{:?}'", _0)]
+    #[display(fmt = "RPC task timeout '{_0:?}'")]
     Timeout(Duration),
     NoSuchTask(TaskId),
-    #[display(
-        fmt = "RPC '{}' task is in unexpected status. Actual: '{}', expected: '{}'",
-        task_id,
-        actual,
-        expected
-    )]
+    #[display(fmt = "RPC '{task_id}' task is in unexpected status. Actual: '{actual}', expected: '{expected}'")]
     UnexpectedTaskStatus {
         task_id: TaskId,
         actual: TaskStatusError,
         expected: TaskStatusError,
     },
-    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    #[display(fmt = "RPC 'task' is awaiting '{expected}' user action")]
     UnexpectedUserAction {
         expected: String,
     },

@@ -26,13 +26,13 @@ where
     Error: InternalError + NotMmError,
 {
     if let Err(e) = event_tx.unbounded_send(event) {
-        let error = format!("Error sending event: {}", e);
+        let error = format!("Error sending event: {e}");
         return MmError::err(Error::internal(error));
     }
     match result_rx.await {
         Ok(result) => result,
         Err(e) => {
-            let error = format!("Error receiving result: {}", e);
+            let error = format!("Error receiving result: {e}");
             MmError::err(Error::internal(error))
         },
     }

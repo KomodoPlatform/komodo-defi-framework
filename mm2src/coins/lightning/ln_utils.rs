@@ -229,8 +229,7 @@ pub async fn init_channel_manager(
             {
                 let channel_id = hex::encode(funding_outpoint.to_channel_id());
                 return MmError::err(EnableLightningError::IOError(format!(
-                    "Failure to persist channel: {}!",
-                    channel_id
+                    "Failure to persist channel: {channel_id}!"
                 )));
             }
         }
@@ -349,13 +348,13 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
 
 #[derive(Debug, Display)]
 pub enum PaymentError {
-    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
+    #[display(fmt = "Final cltv expiry delta {_0} is below the required minimum of {_1}")]
     CLTVExpiry(u32, u32),
-    #[display(fmt = "Error paying invoice: {}", _0)]
+    #[display(fmt = "Error paying invoice: {_0}")]
     Invoice(String),
-    #[display(fmt = "Keysend error: {}", _0)]
+    #[display(fmt = "Keysend error: {_0}")]
     Keysend(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -367,7 +366,7 @@ impl From<SqlError> for PaymentError {
 
 impl From<InvoicePaymentError> for PaymentError {
     fn from(err: InvoicePaymentError) -> PaymentError {
-        PaymentError::Invoice(format!("{:?}", err))
+        PaymentError::Invoice(format!("{err:?}"))
     }
 }
 

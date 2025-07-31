@@ -303,7 +303,7 @@ impl NetworkBehaviour for RequestResponseBehaviour {
                     request_id, peer_id, error
                 );
                 let err_response = PeerResponse::Err {
-                    err: format!("{:?}", error),
+                    err: format!("{error:?}"),
                 };
                 self.process_response(request_id, err_response);
                 return;
@@ -315,7 +315,7 @@ impl NetworkBehaviour for RequestResponseBehaviour {
                     request_id, peer_id, error
                 );
                 let err_response = PeerResponse::Err {
-                    err: format!("{:?}", error),
+                    err: format!("{error:?}"),
                 };
                 self.process_response(request_id, err_response);
                 return;

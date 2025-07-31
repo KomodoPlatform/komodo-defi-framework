@@ -269,8 +269,7 @@ async fn send_request_once(
 
     let response: Response = serde_json::from_str(&response_str).map_err(|e| {
         Error::InvalidResponse(format!(
-            "Error deserializing response: {}, raw response: {:?}",
-            e, response_str
+            "Error deserializing response: {e}, raw response: {response_str:?}"
         ))
     })?;
     match response {
@@ -280,6 +279,6 @@ async fn send_request_once(
 }
 
 fn request_failed_error(request: &Call, error: Web3RpcError) -> Error {
-    let error = format!("request {:?} failed: {}", request, error);
+    let error = format!("request {request:?} failed: {error}");
     Error::Transport(TransportError::Message(error))
 }

@@ -291,7 +291,7 @@ pub trait FormattedTrace {
 /// location_file:379]
 /// ```
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[display(fmt = "{}:{}]", file, line)]
+#[display(fmt = "{file}:{line}]")]
 pub struct TraceLocation {
     file: &'static str,
     line: u32,
@@ -352,7 +352,7 @@ mod tests {
     #[derive(Display, Serialize, SerializeErrorType)]
     #[serde(tag = "error_type", content = "error_data")]
     enum ForwardedError {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance { missing: u64 },
     }
 
@@ -385,8 +385,7 @@ mod tests {
         let error = forward_error(actual, required).expect_err("'forward_error' must return an error");
 
         let expected_display = format!(
-            "mm_error:{}] mm_error:{}] Not sufficient balance. Top up your balance by {}",
-            FORWARDED_LINE, GENERATED_LINE, missing
+            "mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}] Not sufficient balance. Top up your balance by {missing}"
         );
         assert_eq!(error.to_string(), expected_display);
 
@@ -394,7 +393,7 @@ mod tests {
         let expected_path = "mm_error";
         assert_eq!(error.path(), expected_path);
 
-        let expected_stack_trace = format!("mm_error:{}] mm_error:{}]", FORWARDED_LINE, GENERATED_LINE);
+        let expected_stack_trace = format!("mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}]");
         assert_eq!(error.stack_trace(), expected_stack_trace);
 
         let actual_json = json::to_value(error).expect("!json::to_value");
@@ -443,7 +442,7 @@ mod tests {
     #[derive(Display)]
     #[allow(dead_code)]
     enum ForwardedErrorWithBox {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance {
             missing: u64,
         },
@@ -480,8 +479,7 @@ mod tests {
         let error = forward_error_for_box(actual, required).expect_err("'forward_error' must return an error");
 
         let expected_display = format!(
-            "mm_error:{}] mm_error:{}] Not sufficient balance. Top up your balance by {}",
-            FORWARDED_LINE, GENERATED_LINE, missing
+            "mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}] Not sufficient balance. Top up your balance by {missing}"
         );
         assert_eq!(error.to_string(), expected_display);
 
@@ -489,7 +487,7 @@ mod tests {
         let expected_path = "mm_error";
         assert_eq!(error.path(), expected_path);
 
-        let expected_stack_trace = format!("mm_error:{}] mm_error:{}]", FORWARDED_LINE, GENERATED_LINE);
+        let expected_stack_trace = format!("mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}]");
         assert_eq!(error.stack_trace(), expected_stack_trace);
     }
 }

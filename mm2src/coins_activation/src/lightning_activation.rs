@@ -140,13 +140,13 @@ pub struct LightningValidatedParams {
 #[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LightningValidationErr {
-    #[display(fmt = "Platform coin {} activated in {} mode", _0, _1)]
+    #[display(fmt = "Platform coin {_0} activated in {_1} mode")]
     UnexpectedMethod(String, String),
-    #[display(fmt = "{} is only supported in {} mode", _0, _1)]
+    #[display(fmt = "{_0} is only supported in {_1} mode")]
     UnsupportedMode(String, String),
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Invalid address: {}", _0)]
+    #[display(fmt = "Invalid address: {_0}")]
     InvalidAddress(String),
 }
 
@@ -164,7 +164,7 @@ pub enum LightningInitError {
         ticker: String,
     },
     InvalidConfiguration(String),
-    #[display(fmt = "Error while validating {} configuration: {}", platform_coin_ticker, err)]
+    #[display(fmt = "Error while validating {platform_coin_ticker} configuration: {err}")]
     InvalidPlatformConfiguration {
         platform_coin_ticker: String,
         err: String,
@@ -373,7 +373,7 @@ async fn start_lightning(
     let keys_manager = init_keys_manager(&platform)?;
     let node_id = keys_manager
         .get_node_secret(Recipient::Node)
-        .map_err(|e| EnableLightningError::Internal(format!("Error while getting node id: {:?}", e)))?
+        .map_err(|e| EnableLightningError::Internal(format!("Error while getting node id: {e:?}")))?
         .public_key(&Secp256k1::new());
     let node_id = node_id.to_string();
 

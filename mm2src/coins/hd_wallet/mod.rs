@@ -465,10 +465,8 @@ where
 
     let accounts = hd_wallet.get_accounts_mut().await;
     if accounts.contains_key(&new_account_id) {
-        let error = format!(
-            "Account '{}' has been activated while we proceed the 'create_new_account' function",
-            new_account_id
-        );
+        let error =
+            format!("Account '{new_account_id}' has been activated while we proceed the 'create_new_account' function");
         return MmError::err(NewAccountCreationError::Internal(error));
     }
 

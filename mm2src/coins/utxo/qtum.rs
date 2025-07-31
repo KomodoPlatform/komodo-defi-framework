@@ -602,8 +602,7 @@ impl SwapOps for QtumCoin {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -966,7 +965,6 @@ impl MmCoin for QtumCoin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        _include_refund_fee: bool, // refund fee is taken from swap output
     ) -> TradePreimageResult<TradeFee> {
         utxo_common::get_sender_trade_fee(self, value, stage).await
     }
@@ -1377,5 +1375,5 @@ pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHa
 
 pub fn display_as_contract_address(address: Address) -> MmResult<String, ScriptHashTypeNotSupported> {
     let address = qtum::contract_addr_from_utxo_addr(address)?;
-    Ok(format!("{:#02x}", address))
+    Ok(format!("{address:#02x}"))
 }

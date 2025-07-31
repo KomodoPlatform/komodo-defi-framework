@@ -28,26 +28,26 @@ type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OpenChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "Balance Error {}", _0)]
+    #[display(fmt = "Balance Error {_0}")]
     BalanceError(String),
-    #[display(fmt = "Invalid path: {}", _0)]
+    #[display(fmt = "Invalid path: {_0}")]
     InvalidPath(String),
-    #[display(fmt = "Failure to open channel with node {}: {}", _0, _1)]
+    #[display(fmt = "Failure to open channel with node {_0}: {_1}")]
     FailureToOpenChannel(String, String),
-    #[display(fmt = "RPC error {}", _0)]
+    #[display(fmt = "RPC error {_0}")]
     RpcError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
-    #[display(fmt = "I/O error {}", _0)]
+    #[display(fmt = "I/O error {_0}")]
     IOError(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     ConnectToNodeError(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "Generate Tx Error {}", _0)]
+    #[display(fmt = "Generate Tx Error {_0}")]
     GenerateTxErr(String),
 }
 
@@ -229,7 +229,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     let temp_channel_id = async_blocking(move || {
         channel_manager
             .create_channel(node_pubkey, amount_in_sat, push_msat, uuid.as_u128(), Some(user_config))
-            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
+            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{e:?}")))
     })
     .await?;
 

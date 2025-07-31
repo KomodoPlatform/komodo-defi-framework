@@ -384,7 +384,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();
@@ -795,7 +795,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();

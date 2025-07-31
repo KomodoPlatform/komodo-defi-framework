@@ -124,7 +124,7 @@ pub struct Bip32Child<Value, Child> {
 
 impl<Value: Bip32ChildValue, Child: Bip32InternalOps> fmt::Debug for Bip32Child<Value, Child> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -158,7 +158,7 @@ where
         D: Deserializer<'de>,
     {
         let derivation_path: RpcDerivationPath = Deserialize::deserialize(deserializer)?;
-        Self::try_from(derivation_path.0).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))
+        Self::try_from(derivation_path.0).map_err(|e| serde::de::Error::custom(format!("{e:?}")))
     }
 }
 

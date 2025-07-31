@@ -1161,12 +1161,12 @@ mod swap {
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
 
         // ensure the swaps are started
-        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Entering the taker_swap_loop {base}/{rel}");
         mm_alice
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
             .unwrap();
-        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Entering the maker_swap_loop {base}/{rel}");
         mm_bob
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
@@ -1174,7 +1174,7 @@ mod swap {
 
         for uuid in uuids.iter() {
             // ensure the swaps are indexed to the SQLite database
-            let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+            let expected_log = format!("Inserting new swap {uuid} to the SQLite database");
             mm_alice
                 .wait_for_log(5., |log| log.contains(&expected_log))
                 .await
@@ -1187,7 +1187,7 @@ mod swap {
 
         for uuid in uuids.iter() {
             match mm_bob
-                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))
                 .await
             {
                 Ok(_) => (),
@@ -1197,7 +1197,7 @@ mod swap {
             }
 
             match mm_alice
-                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))
                 .await
             {
                 Ok(_) => (),
@@ -1260,8 +1260,8 @@ mod swap {
         let bob_orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
         log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
 
-        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
-        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.bids.len(), "{base} {rel} bids must be empty");
+        assert_eq!(0, bob_orderbook.asks.len(), "{base} {rel} asks must be empty");
 
         mm_bob.stop().await.unwrap();
         mm_alice.stop().await.unwrap();

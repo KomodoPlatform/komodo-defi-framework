@@ -18,7 +18,7 @@ pub enum SPVError {
     BadCompactInt,
     #[display(fmt = "`extract_hash` could not identify the output type")]
     MalformattedOutput,
-    #[display(fmt = "Unable to get block header from network or storage: {}", _0)]
+    #[display(fmt = "Unable to get block header from network or storage: {_0}")]
     UnableToGetHeader(String),
     #[display(fmt = "Header not exactly 80 bytes")]
     WrongLengthHeader,
@@ -26,7 +26,7 @@ pub enum SPVError {
     UnexpectedDifficultyChange,
     #[display(fmt = "Header does not meet its own difficulty target")]
     InsufficientWork,
-    #[display(fmt = "Couldn't calculate the required difficulty for the block: {}", _0)]
+    #[display(fmt = "Couldn't calculate the required difficulty for the block: {_0}")]
     DifficultyCalculationError(NextBlockBitsError),
     #[display(fmt = "When validating a `BitcoinHeader`, the `hash` field is not the digest of the raw header")]
     WrongDigest,
@@ -46,24 +46,20 @@ pub enum SPVError {
     BadMerkleProof,
     #[display(fmt = "Unable to get merkle tree from network or storage for {coin}: {err}")]
     UnableToGetMerkle { coin: String, err: String },
-    #[display(fmt = "Unable to retrieve block height / block height is zero: {}", _0)]
+    #[display(fmt = "Unable to retrieve block height / block height is zero: {_0}")]
     InvalidHeight(String),
     #[display(fmt = "Raises during validation loop")]
     Timeout,
-    #[display(fmt = "Block headers storage error: {}", _0)]
+    #[display(fmt = "Block headers storage error: {_0}")]
     HeaderStorageError(BlockHeaderStorageError),
     #[display(
         fmt = "Wrong retarget block header height in config for: {coin} expected block header height :
         {expected_height}."
     )]
     WrongRetargetHeight { coin: String, expected_height: u64 },
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(
-        fmt = "Parent Hash Mismatch - coin:{} - mismatched_block_height:{}",
-        coin,
-        mismatched_block_height
-    )]
+    #[display(fmt = "Parent Hash Mismatch - coin:{coin} - mismatched_block_height:{mismatched_block_height}")]
     ParentHashMismatch { coin: String, mismatched_block_height: u64 },
 }
 
@@ -334,9 +330,9 @@ fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool {
 ///
 /// * `headers` - Raw byte array of header chain
 /// * `difficulty_check`: Rather the difficulty need to check or not, usefull for chain like Qtum (Pos)
-///     or KMD/SmartChain (Difficulty change NN)
+///   or KMD/SmartChain (Difficulty change NN)
 /// * `constant_difficulty`: If we do not expect difficulty change (BTC difficulty change every 2016 blocks)
-///     use this variable to false when you do not have a chance to use a checkpoint
+///   use this variable to false when you do not have a chance to use a checkpoint
 ///
 /// # Errors
 ///
@@ -357,7 +353,7 @@ pub async fn validate_headers(
         let header = storage.get_block_header(last_validated_height).await?.ok_or(
             BlockHeaderStorageError::GetFromStorageError {
                 coin: coin.to_string(),
-                reason: format!("Header with height {} is not found in storage", last_validated_height),
+                reason: format!("Header with height {last_validated_height} is not found in storage"),
             },
         )?;
         SPVBlockHeader::from_block_header_and_height(&header, last_validated_height)
@@ -520,7 +516,7 @@ mod tests {
                 // extract root and txid
                 let mut root = H256::default();
                 let mut txid = H256::default();
-                println!("{:?}", extended_proof);
+                println!("{extended_proof:?}");
                 root.as_mut().copy_from_slice(&extended_proof[proof_len - 32..]);
                 txid.as_mut().copy_from_slice(&extended_proof[..32]);
 

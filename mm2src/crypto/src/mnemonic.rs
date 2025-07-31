@@ -12,15 +12,15 @@ const DEFAULT_WORD_COUNT: u64 = 12;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum MnemonicError {
-    #[display(fmt = "BIP39 mnemonic error: {}", _0)]
+    #[display(fmt = "BIP39 mnemonic error: {_0}")]
     BIP39Error(String),
-    #[display(fmt = "Error deriving key: {}", _0)]
+    #[display(fmt = "Error deriving key: {_0}")]
     KeyDerivationError(String),
-    #[display(fmt = "Error decoding string: {}", _0)]
+    #[display(fmt = "Error decoding string: {_0}")]
     DecodeError(String),
-    #[display(fmt = "Error encrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error encrypting mnemonic: {_0}")]
     EncryptionError(String),
-    #[display(fmt = "Error decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error decrypting mnemonic: {_0}")]
     DecryptionError(String),
     Internal(String),
 }

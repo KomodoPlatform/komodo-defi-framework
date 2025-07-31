@@ -109,8 +109,7 @@ impl From<BchWithTokensActivationError> for EnablePlatformCoinWithTokensError {
             },
             BchWithTokensActivationError::InvalidSlpPrefix { ticker, prefix, error } => {
                 EnablePlatformCoinWithTokensError::Internal(format!(
-                    "Invalid slp prefix {} configured for {}. Error: {}",
-                    prefix, ticker, error
+                    "Invalid slp prefix {prefix} configured for {ticker}. Error: {error}"
                 ))
             },
             BchWithTokensActivationError::PrivKeyPolicyNotAllowed(e) => {

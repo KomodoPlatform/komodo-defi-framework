@@ -320,10 +320,7 @@ pub(crate) async fn block_header_utxo_loop(
             (electrum_addresses, block_count) = match client.get_servers_with_latest_block_count().compat().await {
                 Ok((electrum_addresses, block_count)) => (electrum_addresses, block_count),
                 Err(e) => {
-                    let msg = format!(
-                        "Error {} on getting the height of the latest {} block from rpc!",
-                        e, ticker
-                    );
+                    let msg = format!("Error {e} on getting the height of the latest {ticker} block from rpc!");
                     error!("{}", msg);
                     sync_status_loop_handle.notify_on_temp_error(msg);
                     Timer::sleep(args.error_sleep).await;
@@ -452,17 +449,9 @@ pub(crate) async fn block_header_utxo_loop(
 
 #[derive(Debug, Display)]
 enum TryToRetrieveHeadersUntilSuccessError {
-    #[display(
-        fmt = "Network error: {}, on retrieving headers from server {}",
-        error,
-        server_address
-    )]
+    #[display(fmt = "Network error: {error}, on retrieving headers from server {server_address}")]
     NetworkError { error: String, server_address: String },
-    #[display(
-        fmt = "Permanent Error: {}, on retrieving headers from server {}",
-        error,
-        server_address
-    )]
+    #[display(fmt = "Permanent Error: {error}, on retrieving headers from server {server_address}")]
     PermanentError { error: String, server_address: String },
 }
 
@@ -488,8 +477,7 @@ async fn try_to_retrieve_headers_until_success(
                     if attempts == 0 {
                         break Err(MmError::new(TryToRetrieveHeadersUntilSuccessError::NetworkError {
                             error: format!(
-                                "Max attempts of {} reached, will try to retrieve headers from a random server again!",
-                                TRY_TO_RETRIEVE_HEADERS_ATTEMPTS
+                                "Max attempts of {TRY_TO_RETRIEVE_HEADERS_ATTEMPTS} reached, will try to retrieve headers from a random server again!"
                             ),
                             server_address: server_address.to_string(),
                         }));
@@ -523,9 +511,9 @@ async fn try_to_retrieve_headers_until_success(
 enum PossibleChainReorgError {
     #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
     BadStartingHeaderChain,
-    #[display(fmt = "Validation Error: {}", _0)]
+    #[display(fmt = "Validation Error: {_0}")]
     ValidationError(String),
-    #[display(fmt = "Error retrieving headers: {}", _0)]
+    #[display(fmt = "Error retrieving headers: {_0}")]
     HeadersRetrievalError(TryToRetrieveHeadersUntilSuccessError),
 }
 
@@ -611,14 +599,14 @@ async fn resolve_possible_chain_reorg(
 
 #[derive(Display)]
 enum StartingHeaderValidationError {
-    #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't decode/deserialize from storage for {coin} - reason: {reason}")]
     DecodeErr {
         coin: String,
         reason: String,
     },
     RpcError(String),
     StorageError(String),
-    #[display(fmt = "Error validating starting header for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Error validating starting header for {coin} - reason: {reason}")]
     ValidationError {
         coin: String,
         reason: String,

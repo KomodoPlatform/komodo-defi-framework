@@ -32,7 +32,7 @@ pub fn token_id_from_tx_type(tx_type: &TransactionType) -> String {
             token_id: Some(token_id),
             ..
         } => {
-            format!("{:02x}", token_id)
+            format!("{token_id:02x}")
         },
         _ => String::new(),
     }
@@ -101,8 +101,7 @@ impl<'de> Deserialize<'de> for ConfirmationStatus {
             0 => Ok(ConfirmationStatus::Unconfirmed),
             1 => Ok(ConfirmationStatus::Confirmed),
             unknown => Err(D::Error::custom(format!(
-                "Expected either '0' or '1' confirmation status, found '{}'",
-                unknown
+                "Expected either '0' or '1' confirmation status, found '{unknown}'"
             ))),
         }
     }

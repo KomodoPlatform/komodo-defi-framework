@@ -30,7 +30,7 @@ pub fn invalid_data_err<Error>(msg: &str, err: Error) -> io::Error
 where
     Error: std::fmt::Display,
 {
-    io::Error::new(std::io::ErrorKind::InvalidData, format!("{}: {}", msg, err))
+    io::Error::new(std::io::ErrorKind::InvalidData, format!("{msg}: {err}"))
 }
 
 pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
@@ -45,13 +45,13 @@ pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
     if check.len() != r.len() {
         return Err(io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
-            format!("Expected same data length when reading file: {:?}", fname),
+            format!("Expected same data length when reading file: {fname:?}"),
         ));
     }
     if check != r {
         return Err(io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Expected the same {:?} data: {:?} != {:?}", fname, r, check),
+            format!("Expected the same {fname:?} data: {r:?} != {check:?}"),
         ));
     }
     Ok(())

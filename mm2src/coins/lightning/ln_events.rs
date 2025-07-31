@@ -180,9 +180,9 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
 
 #[derive(Display)]
 pub enum SignFundingTransactionError {
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Error signing transaction: {}", _0)]
+    #[display(fmt = "Error signing transaction: {_0}")]
     TxSignFailed(String),
 }
 
@@ -199,8 +199,7 @@ async fn sign_funding_transaction(
             .get(&uuid)
             .ok_or_else(|| {
                 SignFundingTransactionError::Internal(format!(
-                    "Unsigned funding tx not found for channel with uuid: {}",
-                    uuid
+                    "Unsigned funding tx not found for channel with uuid: {uuid}"
                 ))
             })?
             .clone()

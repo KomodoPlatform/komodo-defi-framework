@@ -334,7 +334,7 @@ pub async fn best_orders_rpc_v2(
 
     let best_orders_res = request_any_relay::<BestOrdersP2PRes>(ctx.clone(), P2PRequest::Ordermatch(p2p_request))
         .await
-        .mm_err(|e| BestOrdersRpcError::P2PError(format!("{:?}", e)))?;
+        .mm_err(|e| BestOrdersRpcError::P2PError(format!("{e:?}")))?;
     let mut orders = HashMap::new();
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);

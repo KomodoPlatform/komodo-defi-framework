@@ -14,17 +14,17 @@ use std::time::Duration;
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitUtxoStandardError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut { duration: Duration },
-    #[display(fmt = "Coin {} is activated already", ticker)]
+    #[display(fmt = "Coin {ticker} is activated already")]
     CoinIsAlreadyActivated { ticker: String },
-    #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
+    #[display(fmt = "Error on platform coin {ticker} creation: {error}")]
     CoinCreationError { ticker: String, error: String },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
