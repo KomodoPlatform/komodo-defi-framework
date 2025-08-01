@@ -1,5 +1,5 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
-use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryFrom};
 
 use crate::UtxoTx;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
@@ -289,12 +289,14 @@ pub async fn sign_p2sh_with_walletconnect(
 /// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
 ///
 /// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
+/// `prev_txs` is a map of previous transactions that contain the P2PKH inputs being spent. P2WPKH inputs don't need their previous transactions.
 pub async fn sign_p2pkh_with_walletconect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
     signing_address: &Address,
     tx_input_signer: &TransactionInputSigner,
+    prev_txs: HashMap<H256, UtxoTx>,
 ) -> MmResult<UtxoTx, WalletConnectError> {
     let signing_address = signing_address.display_address().map_to_mm(|e| {
         WalletConnectError::InternalError(format!("Failed to convert the signing address to a string: {e}"))
@@ -314,8 +316,13 @@ pub async fn sign_p2pkh_with_walletconect(
             });
         } else if input.prev_script.is_pay_to_public_key_hash() {
             // Set the previous Transaction for P2PKH inputs.
-            // fixme: set the previous transaction
-            //psbt_input.non_witness_utxo = Some();
+            let prev_tx = prev_txs.get(&input.previous_output.hash).ok_or_else(|| {
+                WalletConnectError::InternalError(format!(
+                    "Previous transaction not found for P2PKH input: {:?}",
+                    input.previous_output
+                ))
+            })?;
+            psbt_input.non_witness_utxo = Some(prev_tx.clone().into());
         } else {
             return MmError::err(WalletConnectError::InternalError(format!(
                 "Expected a P2WPKH or P2PKH input for WalletConnect signing, got: {}",
