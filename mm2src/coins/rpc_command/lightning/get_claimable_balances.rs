@@ -1,6 +1,7 @@
 use crate::lightning::ln_serialization::ClaimableBalance;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -10,9 +11,9 @@ type ClaimableBalancesResult<T> = Result<T, MmError<ClaimableBalancesError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ClaimableBalancesError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
 }
 

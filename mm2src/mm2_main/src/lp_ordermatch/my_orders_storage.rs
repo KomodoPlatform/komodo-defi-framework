@@ -1,5 +1,7 @@
-use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
-            TakerOrderCancellationReason};
+use super::{
+    MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
+    TakerOrderCancellationReason,
+};
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::{BoxFut, PagingOptions};
@@ -7,7 +9,8 @@ use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use uuid::Uuid;
 
 pub type MyOrdersResult<T> = Result<T, MmError<MyOrdersError>>;
@@ -20,18 +23,18 @@ pub use native_impl::MyOrdersStorage;
 
 #[derive(Debug, Display, Eq, PartialEq)]
 pub enum MyOrdersError {
-    #[display(fmt = "Order with uuid {} is not found", uuid)]
+    #[display(fmt = "Order with uuid {uuid} is not found")]
     NoSuchOrder { uuid: Uuid },
-    #[display(fmt = "Error saving an order: {}", _0)]
+    #[display(fmt = "Error saving an order: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading an order: {}", _0)]
+    #[display(fmt = "Error loading an order: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing an order: {}", _0)]
+    #[display(fmt = "Error deserializing an order: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing an order: {}", _0)]
+    #[display(fmt = "Error serializing an order: {_0}")]
     ErrorSerializing(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -147,6 +150,7 @@ pub trait MyActiveOrders {
 
     async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>>;
 
+    #[expect(dead_code)]
     async fn save_new_active_order(&self, order: &Order) -> MyOrdersResult<()> {
         match order {
             Order::Maker(maker) => self.save_new_active_maker_order(maker).await,
@@ -184,6 +188,7 @@ pub trait MyOrdersFilteringHistory {
 
     async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String>;
 
+    #[expect(dead_code)]
     async fn save_order_in_filtering_history(&self, order: &Order) -> MyOrdersResult<()> {
         match order {
             Order::Maker(maker) => self.save_maker_order_in_filtering_history(maker).await,
@@ -205,10 +210,14 @@ pub trait MyOrdersFilteringHistory {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::database::my_orders::{insert_maker_order, insert_taker_order, select_orders_by_filter,
-                                     select_status_by_uuid, update_maker_order, update_order_status, update_was_taker};
-    use crate::lp_ordermatch::{my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path,
-                               my_taker_order_file_path, my_taker_orders_dir};
+    use crate::database::my_orders::{
+        insert_maker_order, insert_taker_order, select_orders_by_filter, select_status_by_uuid, update_maker_order,
+        update_order_status, update_was_taker,
+    };
+    use crate::lp_ordermatch::{
+        my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path, my_taker_order_file_path,
+        my_taker_orders_dir,
+    };
     use mm2_io::fs::{read_dir_json, read_json, remove_file_async, write_json, FsJsonError};
 
     const USE_TMP_FILE: bool = true;
@@ -232,7 +241,9 @@ mod native_impl {
     }
 
     impl MyOrdersStorage {
-        pub fn new(ctx: MmArc) -> MyOrdersStorage { MyOrdersStorage { ctx } }
+        pub fn new(ctx: MmArc) -> MyOrdersStorage {
+            MyOrdersStorage { ctx }
+        }
     }
 
     #[async_trait]
@@ -351,9 +362,10 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::lp_ordermatch::ordermatch_wasm_db::{DbTransactionError, InitDbError, MyActiveMakerOrdersTable,
-                                                   MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
-                                                   MyHistoryOrdersTable};
+    use crate::lp_ordermatch::ordermatch_wasm_db::{
+        DbTransactionError, InitDbError, MyActiveMakerOrdersTable, MyActiveTakerOrdersTable,
+        MyFilteringHistoryOrdersTable, MyHistoryOrdersTable,
+    };
     use crate::lp_ordermatch::OrdermatchContext;
     use common::log::warn;
     use mm2_rpc::data::legacy::TakerAction;
@@ -361,7 +373,9 @@ mod wasm_impl {
     use std::sync::Arc;
 
     impl From<InitDbError> for MyOrdersError {
-        fn from(e: InitDbError) -> Self { MyOrdersError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            MyOrdersError::InternalError(e.to_string())
+        }
     }
 
     impl From<DbTransactionError> for MyOrdersError {
@@ -662,13 +676,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.price.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.max_base_vol.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
@@ -693,13 +707,13 @@ mod wasm_impl {
     ) -> MyOrdersResult<MyFilteringHistoryOrdersTable> {
         let price_dec = order.request.rel_amount.to_decimal() / order.request.base_amount.to_decimal();
         let price = price_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order price '{}' to f64", price_dec);
+            let error = format!("Couldn't convert the order price '{price_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
         let volume_dec = order.request.base_amount.to_decimal();
         let volume = volume_dec.to_f64().or_mm_err(|| {
-            let error = format!("Couldn't convert the order volume '{}' to f64", volume_dec);
+            let error = format!("Couldn't convert the order volume '{volume_dec}' to f64");
             MyOrdersError::ErrorSerializing(error)
         })?;
 
@@ -758,6 +772,7 @@ mod tests {
             swap_version: SwapVersion::default(),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
+            timeout_in_minutes: None,
         }
     }
 
@@ -895,9 +910,12 @@ mod tests {
         let error = storage.load_order_from_history(taker2.request.uuid).await.expect_err(
             "!MyOrdersStorage::load_order_from_history should have failed with the 'MyOrdersError::NoSuchOrder' error",
         );
-        assert_eq!(error.into_inner(), MyOrdersError::NoSuchOrder {
-            uuid: taker2.request.uuid
-        });
+        assert_eq!(
+            error.into_inner(),
+            MyOrdersError::NoSuchOrder {
+                uuid: taker2.request.uuid
+            }
+        );
     }
 
     #[wasm_bindgen_test]

@@ -1,5 +1,8 @@
 //! Types for LR swaps rpc
 
+// Most of the code in this module fails on clippy.
+#![allow(dead_code)]
+
 use crate::lp_ordermatch::RpcOrderbookEntryV2;
 use crate::rpc::lp_commands::one_inch::types::ClassicSwapDetails;
 use coins::Ticker;

@@ -4,8 +4,10 @@ use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
-            PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod};
+use coins::{
+    lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+    PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod,
+};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -38,28 +40,28 @@ pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::Toke
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableTokenError {
-    #[display(fmt = "Token {} is already activated", _0)]
+    #[display(fmt = "Token {_0} is already activated")]
     TokenIsAlreadyActivated(String),
-    #[display(fmt = "Token {} config is not found", _0)]
+    #[display(fmt = "Token {_0} config is not found")]
     TokenConfigIsNotFound(String),
-    #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
+    #[display(fmt = "Token {ticker} protocol parsing failed: {error}")]
     TokenProtocolParseError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {protocol} for {ticker}")]
     UnexpectedTokenProtocol {
         ticker: String,
         protocol: Json,
     },
-    #[display(fmt = "Platform coin {} is not activated", _0)]
+    #[display(fmt = "Platform coin {_0} is not activated")]
     PlatformCoinIsNotActivated(String),
-    #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
+    #[display(fmt = "{platform_coin_ticker} is not a platform coin for token {token_ticker}")]
     UnsupportedPlatformCoin {
         platform_coin_ticker: String,
         token_ticker: String,
     },
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CouldNotFetchBalance(String),
     InvalidConfig(String),
@@ -67,7 +69,7 @@ pub enum EnableTokenError {
     Internal(String),
     InvalidPayload(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
-    #[display(fmt = "Custom token error: {}", _0)]
+    #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
 }
 
@@ -128,7 +130,7 @@ where
     }
 
     let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
-        coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone()).map_mm_err::<EnableTokenError>()?;
+        coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone()).map_mm_err()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -150,13 +152,10 @@ where
         req.protocol.is_some(),
     )
     .await
-    .map_mm_err::<EnableTokenError>()?;
+    .map_mm_err()?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-    coins_ctx
-        .add_token(token.clone().into())
-        .await
-        .map_mm_err::<EnableTokenError>()?;
+    coins_ctx.add_token(token.clone().into()).await.map_mm_err()?;
 
     platform_coin.register_token_info(&token);
 

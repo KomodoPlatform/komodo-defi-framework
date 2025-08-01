@@ -157,11 +157,8 @@ impl Serializable for BlockHeader {
         if let Some(claim) = &self.claim_trie_root {
             s.append(claim);
         }
-        match &self.hash_final_sapling_root {
-            Some(h) => {
-                s.append(h);
-            },
-            None => (),
+        if let Some(h) = &self.hash_final_sapling_root {
+            s.append(h);
         };
         s.append(&self.time);
         s.append(&self.bits);
@@ -340,10 +337,16 @@ impl BlockHeader {
         reader.read::<BlockHeader>()
     }
 
-    pub fn hash(&self) -> H256 { dhash256(&serialize(self)) }
+    pub fn hash(&self) -> H256 {
+        dhash256(&serialize(self))
+    }
 
-    pub fn is_prog_pow(&self) -> bool { self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME }
-    pub fn raw(&self) -> Bytes { serialize(self) }
+    pub fn is_prog_pow(&self) -> bool {
+        self.version == MTP_POW_VERSION && self.time >= PROG_POW_SWITCH_TIME
+    }
+    pub fn raw(&self) -> Bytes {
+        serialize(self)
+    }
     pub fn target(&self) -> Result<U256, U256> {
         match self.bits {
             BlockHeaderBits::Compact(compact) => compact.to_u256(),
@@ -353,7 +356,9 @@ impl BlockHeader {
 }
 
 impl From<&'static str> for BlockHeader {
-    fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
+    fn from(s: &'static str) -> Self {
+        deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -379,10 +384,12 @@ impl From<BlockHeader> for ExtBlockHeader {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_arch = "wasm32"))]
     use super::ExtBlockHeader;
-    use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC,
-                       AUX_POW_VERSION_SYS, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION,
-                       PROG_POW_SWITCH_TIME};
+    use block_header::{
+        BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC, AUX_POW_VERSION_SYS,
+        BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME,
+    };
     use hex::FromHex;
     use primitives::bytes::Bytes;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
@@ -2510,6 +2517,7 @@ mod tests {
         assert_eq!(serialized.take(), header_bytes);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_blockheader_to_ext_blockheader() {
         // https://live.blockcypher.com/btc/block/00000000000000000020cf2bdc6563fb25c424af588d5fb7223461e72715e4a9/

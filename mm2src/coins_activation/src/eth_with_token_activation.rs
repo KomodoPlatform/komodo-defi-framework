@@ -1,25 +1,26 @@
 use crate::context::CoinsActivationContext;
-use crate::platform_coin_with_tokens::{platform_coin_xpub_extractor_rpc_statuses, EnablePlatformCoinWithTokensError,
-                                       GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
-                                       InitPlatformCoinWithTokensInProgressStatus,
-                                       InitPlatformCoinWithTokensTaskManagerShared,
-                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
-                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
-                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
+use crate::platform_coin_with_tokens::{
+    platform_coin_xpub_extractor_rpc_statuses, EnablePlatformCoinWithTokensError, GetPlatformBalance,
+    InitPlatformCoinWithTokensAwaitingStatus, InitPlatformCoinWithTokensInProgressStatus,
+    InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+    PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams, TokenActivationRequest,
+    TokenAsMmCoinInitializer, TokenInitializer, TokenOf,
+};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
-use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
-                                EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy,
-                                EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::wallet_connect::eth_request_wc_personal_sign;
+use coins::eth::v2_activation::{
+    eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest, EthActivationV2Error,
+    EthActivationV2Request, EthPrivKeyActivationPolicy, EthTokenActivationError, NftActivationRequest, NftProviderEnum,
+};
 use coins::eth::{ChainSpec, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
-            MmCoin, MmCoinEnum};
-use kdf_walletconnect::WalletConnectCtx;
+use coins::{
+    CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps, MmCoin,
+    MmCoinEnum,
+};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -165,7 +166,9 @@ impl TokenInitializer for Erc20Initializer {
         Ok(tokens)
     }
 
-    fn platform_coin(&self) -> &EthCoin { &self.platform_coin }
+    fn platform_coin(&self) -> &EthCoin {
+        &self.platform_coin
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -179,11 +182,15 @@ pub struct EthWithTokensActivationRequest {
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool {
+        false
+    }
 }
 
 impl ActivationRequestInfo for EthWithTokensActivationRequest {
-    fn is_hw_policy(&self) -> bool { self.platform_request.priv_key_policy.is_hw_policy() }
+    fn is_hw_policy(&self) -> bool {
+        self.platform_request.priv_key_policy.is_hw_policy()
+    }
 }
 
 impl TokenOf for EthCoin {
@@ -197,10 +204,13 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
             return;
         }
 
-        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenDetails {
-            token_address: token.erc20_token_address().unwrap(),
-            decimals: token.decimals(),
-        });
+        self.add_erc_token_info(
+            token.ticker().to_string(),
+            Erc20TokenDetails {
+                token_address: token.erc20_token_address().unwrap(),
+                decimals: token.decimals(),
+            },
+        );
     }
 }
 
@@ -240,8 +250,8 @@ impl GetPlatformBalance for EthWithTokensActivationResult {
             EthWithTokensActivationResult::Iguana(result) => result
                 .eth_addresses_infos
                 .iter()
-                .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
-                    total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
+                .try_fold(BigDecimal::from(0), |total, (_, addr_info)| {
+                    addr_info.balances.as_ref().map(|b| total + b.get_total())
                 }),
             EthWithTokensActivationResult::HD(result) => result
                 .wallet_balance
@@ -286,7 +296,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let priv_key_policy =
-            eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy, &protocol).await?;
+            eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy).await?;
 
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
@@ -311,10 +321,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self
-            .initialize_global_nft(url, proxy_auth)
-            .await
-            .map_mm_err::<Self::ActivationError>()?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await.map_mm_err()?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -460,7 +467,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     fn start_history_background_fetching(
         &self,
         _ctx: MmArc,
-        _storage: impl TxHistoryStorage + Send + 'static,
+        _storage: impl TxHistoryStorage + 'static,
         _initial_balance: Option<BigDecimal>,
     ) {
     }
@@ -475,11 +482,10 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 async fn eth_priv_key_build_policy(
     ctx: &MmArc,
     activation_policy: &EthPrivKeyActivationPolicy,
-    protocol: &ChainSpec,
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
         EthPrivKeyActivationPolicy::ContextPrivKey => {
-            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err::<EthActivationV2Error>()?)
+            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err()?)
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {
@@ -490,20 +496,8 @@ async fn eth_priv_key_build_policy(
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
         EthPrivKeyActivationPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => {
-            let wc = WalletConnectCtx::from_ctx(ctx)
-                .expect("TODO: handle error when enable kdf initialization without key.");
-            let chain_id = protocol.chain_id().ok_or(EthActivationV2Error::ChainIdNotSet)?;
-            let (public_key_uncompressed, address) =
-                eth_request_wc_personal_sign(&wc, session_topic, chain_id)
-                    .await
-                    .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
-
-            Ok(EthPrivKeyBuildPolicy::WalletConnect {
-                address,
-                public_key_uncompressed,
-                session_topic: session_topic.clone(),
-            })
-        },
+        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => Ok(EthPrivKeyBuildPolicy::WalletConnect {
+            session_topic: session_topic.clone(),
+        }),
     }
 }

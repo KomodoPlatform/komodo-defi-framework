@@ -26,6 +26,10 @@ sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
+# Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
+# once we consider it as stable.
+ibc-routing-for-swaps = []
+for-tests = []
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
@@ -33,9 +37,10 @@ async-trait.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
+cfg-if.workspace = true
 chain = { path = "../mm2_bitcoin/chain" }
 chrono.workspace = true
-cfg-if.workspace = true
+clap.workspace = true
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
@@ -77,7 +82,7 @@ mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
 parity-util-mem.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types.workspace = true
 prost.workspace = true

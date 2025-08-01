@@ -21,8 +21,9 @@ use num_traits::CheckedDiv;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use trading_api::one_inch_api::classic_swap_types::{ClassicSwapData, ClassicSwapQuoteParams};
-use trading_api::one_inch_api::client::{ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods,
-                                        SwapUrlBuilder};
+use trading_api::one_inch_api::client::{
+    ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods, SwapUrlBuilder,
+};
 use trading_api::one_inch_api::portfolio_types::{CrossPriceParams, CrossPricesSeries, DataGranularity};
 
 /// To estimate src/dst price query price history for last 5 min
@@ -353,7 +354,6 @@ impl LrSwapCandidates {
                     .map(|total_price| (lr_swap_data, order, total_price))
             })
             .min_by(|(_, _, price_0), (_, _, price_1)| price_0.cmp(price_1))
-            .map(|(lr_swap_data, order, price)| (lr_swap_data, order, price))
             .ok_or(MmError::new(ApiIntegrationRpcError::BestLrSwapNotFound))
     }
 }
@@ -391,12 +391,12 @@ pub async fn find_best_swap_path_with_lr(
 
 /// Helper to process 1inch token cross prices data and return average price
 fn cross_prices_average(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
-    let Some(series) = series else {
-        return None;
-    };
+    let series = series?;
+
     if series.is_empty() {
         return None;
     }
+
     let total: MmNumber = series.iter().fold(MmNumber::from(0), |acc, price_data| {
         acc + MmNumber::from(price_data.avg.clone())
     });

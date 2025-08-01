@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitError, CryptoInitResult};
 use bip32::{DerivationPath, ExtendedPrivateKey};
@@ -16,7 +18,9 @@ pub struct GlobalHDAccountArc(Arc<GlobalHDAccountCtx>);
 impl Deref for GlobalHDAccountArc {
     type Target = GlobalHDAccountCtx;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
@@ -54,16 +58,24 @@ impl GlobalHDAccountCtx {
     }
 
     #[inline]
-    pub fn into_arc(self) -> GlobalHDAccountArc { GlobalHDAccountArc(Arc::new(self)) }
+    pub fn into_arc(self) -> GlobalHDAccountArc {
+        GlobalHDAccountArc(Arc::new(self))
+    }
 
     /// Returns the root BIP39 seed.
-    pub fn root_seed(&self) -> &Bip39Seed { &self.bip39_seed }
+    pub fn root_seed(&self) -> &Bip39Seed {
+        &self.bip39_seed
+    }
 
     /// Returns the root BIP39 seed as bytes.
-    pub fn root_seed_bytes(&self) -> &[u8] { &self.bip39_seed.0 }
+    pub fn root_seed_bytes(&self) -> &[u8] {
+        &self.bip39_seed.0
+    }
 
     /// Returns the root BIP39 private key.
-    pub fn root_priv_key(&self) -> &ExtendedPrivateKey<secp256k1::SecretKey> { &self.bip39_secp_priv_key }
+    pub fn root_priv_key(&self) -> &ExtendedPrivateKey<secp256k1::SecretKey> {
+        &self.bip39_secp_priv_key
+    }
 
     /// Derives a `secp256k1::SecretKey` from [`HDAccountCtx::bip39_secp_priv_key`]
     /// at the given `m/purpose'/coin_type'/account_id'/chain/address_id` derivation path,

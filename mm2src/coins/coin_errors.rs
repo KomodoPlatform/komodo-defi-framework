@@ -2,6 +2,7 @@ use crate::eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
@@ -56,7 +57,9 @@ pub enum ValidatePaymentError {
 }
 
 impl From<SPVError> for ValidatePaymentError {
-    fn from(err: SPVError) -> Self { Self::SPVError(err) }
+    fn from(err: SPVError) -> Self {
+        Self::SPVError(err)
+    }
 }
 
 impl From<UtxoRpcError> for ValidatePaymentError {

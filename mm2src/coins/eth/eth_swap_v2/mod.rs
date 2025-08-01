@@ -3,6 +3,7 @@ use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
 use common::now_sec;
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
 use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -51,11 +52,11 @@ pub(crate) enum ValidatePaymentV2Err {
 #[derive(Debug, Display, EnumFromStringify)]
 pub(crate) enum PrepareTxDataError {
     #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
+    #[display(fmt = "ABI error: {_0}")]
     ABIError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
+    #[display(fmt = "Invalid data error: {_0}")]
     InvalidData(String),
 }
 
@@ -180,15 +181,13 @@ pub(crate) fn validate_from_to_addresses(
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
     if tx_from_rpc.from != Some(expected_from) {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {:?} was sent from wrong address, expected {:?}",
-            tx_from_rpc, expected_from
+            "Payment tx {tx_from_rpc:?} was sent from wrong address, expected {expected_from:?}"
         )));
     }
     // (in NFT case) as NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
     if tx_from_rpc.to != Some(expected_to) {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {:?} was sent to wrong address, expected {:?}",
-            tx_from_rpc, expected_to,
+            "Payment tx {tx_from_rpc:?} was sent to wrong address, expected {expected_to:?}",
         )));
     }
     Ok(())
@@ -202,7 +201,7 @@ fn validate_amount(trading_amount: &BigDecimal) -> Result<(), String> {
     Ok(())
 }
 
-fn check_decoded_length(decoded: &Vec<Token>, expected_len: usize) -> Result<(), PrepareTxDataError> {
+fn check_decoded_length(decoded: &[Token], expected_len: usize) -> Result<(), PrepareTxDataError> {
     if decoded.len() != expected_len {
         return Err(PrepareTxDataError::Internal(format!(
             "Invalid number of tokens in decoded. Expected {}, found {}",
@@ -253,8 +252,7 @@ pub(crate) async fn extract_id_from_tx_data(
     match decoded.first() {
         Some(Token::FixedBytes(bytes)) => Ok(bytes.clone()),
         invalid_token => Err(FindPaymentSpendError::InvalidData(format!(
-            "Expected Token::FixedBytes, got {:?}",
-            invalid_token
+            "Expected Token::FixedBytes, got {invalid_token:?}"
         ))),
     }
 }

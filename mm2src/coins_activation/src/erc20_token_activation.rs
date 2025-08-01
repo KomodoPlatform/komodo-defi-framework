@@ -1,12 +1,18 @@
-use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use crate::{
+    prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
+    token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
+};
 use async_trait::async_trait;
 use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
 use coins::hd_wallet::DisplayAddress;
 use coins::nft::nft_structs::NftInfo;
-use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
-                  valid_addr_from_str, EthCoin},
-            CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{
+    eth::{
+        v2_activation::{Erc20Protocol, EthTokenActivationError},
+        valid_addr_from_str, EthCoin,
+    },
+    CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum,
+};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
@@ -113,7 +119,9 @@ impl TryFromCoinProtocol for EthTokenProtocol {
 }
 
 impl TokenProtocolParams for Erc20Protocol {
-    fn platform_coin_ticker(&self) -> &str { &self.platform }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform
+    }
 }
 
 impl TokenProtocolParams for EthTokenProtocol {
@@ -152,13 +160,13 @@ impl TokenActivationOps for EthCoin {
                             is_custom,
                         )
                         .await
-                        .map_mm_err::<Self::ActivationError>()?;
+                        .map_mm_err()?;
 
                     let address = token
                         .derivation_method()
                         .single_addr_or_err()
                         .await
-                        .map_mm_err::<Self::ActivationError>()?
+                        .map_mm_err()?
                         .display_address();
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
@@ -176,7 +184,7 @@ impl TokenActivationOps for EthCoin {
                         balances,
                         platform_coin: token.platform_ticker().to_owned(),
                         required_confirmations: token.required_confirmations(),
-                        token_contract_address: format!("{:#02x}", token_contract_address),
+                        token_contract_address: format!("{token_contract_address:#02x}"),
                     });
 
                     Ok((token, init_result))
@@ -196,7 +204,7 @@ impl TokenActivationOps for EthCoin {
                         NftProviderEnum::Moralis { url, komodo_proxy } => platform_coin
                             .initialize_global_nft(url, *komodo_proxy)
                             .await
-                            .map_mm_err::<Self::ActivationError>()?,
+                            .map_mm_err()?,
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {

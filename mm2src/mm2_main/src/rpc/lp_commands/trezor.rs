@@ -1,5 +1,6 @@
 use common::HttpStatusCode;
 use crypto::{CryptoCtx, CryptoCtxError, HwConnectionStatus, HwPubkey};
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MmResultExt;
@@ -17,7 +18,9 @@ pub enum TrezorConnectionError {
 }
 
 impl From<CryptoCtxError> for TrezorConnectionError {
-    fn from(e: CryptoCtxError) -> Self { TrezorConnectionError::Internal(format!("'CryptoCtx' is not available: {e}")) }
+    fn from(e: CryptoCtxError) -> Self {
+        TrezorConnectionError::Internal(format!("'CryptoCtx' is not available: {e}"))
+    }
 }
 
 impl HttpStatusCode for TrezorConnectionError {

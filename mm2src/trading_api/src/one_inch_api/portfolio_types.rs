@@ -6,6 +6,7 @@ use common::{def_with_opt_param, push_if_some};
 use mm2_err_handle::mm_error::MmResult;
 use mm2_number::BigDecimal;
 use serde::Deserialize;
+use std::fmt;
 
 #[derive(Default)]
 pub enum DataGranularity {
@@ -19,16 +20,16 @@ pub enum DataGranularity {
     FiveMin,
 }
 
-impl ToString for DataGranularity {
-    fn to_string(&self) -> String {
+impl fmt::Display for DataGranularity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DataGranularity::Month => "month".to_owned(),
-            DataGranularity::Week => "week".to_owned(),
-            DataGranularity::Day => "day".to_owned(),
-            DataGranularity::FourHour => "4hour".to_owned(),
-            DataGranularity::Hour => "hour".to_owned(),
-            DataGranularity::FifteenMin => "15min".to_owned(),
-            DataGranularity::FiveMin => "5min".to_owned(),
+            DataGranularity::Month => write!(f, "month"),
+            DataGranularity::Week => write!(f, "week"),
+            DataGranularity::Day => write!(f, "day"),
+            DataGranularity::FourHour => write!(f, "4hour"),
+            DataGranularity::Hour => write!(f, "hour"),
+            DataGranularity::FifteenMin => write!(f, "15min"),
+            DataGranularity::FiveMin => write!(f, "5min"),
         }
     }
 }

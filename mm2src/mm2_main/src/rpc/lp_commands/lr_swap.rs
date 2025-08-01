@@ -6,8 +6,10 @@ use crate::rpc::lp_commands::one_inch::rpcs::get_coin_for_one_inch;
 use lr_impl::find_best_swap_path_with_lr;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_mm_error::MapMmError, mm_error::MmResult};
-use types::{LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest,
-            LrFindBestQuoteResponse, LrGetQuotesForTokensRequest};
+use types::{
+    LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest, LrFindBestQuoteResponse,
+    LrGetQuotesForTokensRequest,
+};
 
 mod lr_impl;
 mod types;
@@ -21,19 +23,19 @@ mod types;
 /// by the maker orders. It uses external liquidity routing (e.g., via 1inch provider) to perform necessary conversions, currently for EVM networks
 ///
 /// A swap path may consist of:
-/// - A liquidity routing (LR) step before or after the atomic swap.
-/// - An atomic swap step to fill the selected maker order (ask or bid).
+///     - A liquidity routing (LR) step before or after the atomic swap.
+///     - An atomic swap step to fill the selected maker order (ask or bid).
 ///
 /// Use Case
-/// The user wants to buy a specific amount of a token `user_base`, but only holds a different token `user_rel`.  
+/// The user wants to buy a specific amount of a token `user_base`, but only holds a different token `user_rel`.
 /// This RPC evaluates possible swap paths by combining:
-/// - Converting `user_rel` (`user_base`) to the token required by a maker order via LR.
-/// - Filling the order through an atomic swap.
-/// - Converting the token required by a maker order to `user_base` (`user_rel`) via LR.
+///     - Converting `user_rel` (`user_base`) to the token required by a maker order via LR.
+///     - Filling the order through an atomic swap.
+///     - Converting the token required by a maker order to `user_base` (`user_rel`) via LR.
 /// It then selects and returns the most price-effective path, taking into account:
-/// - prices of orders (provided in the params)
-/// - 1inch LR quotes
-/// - (TODO) Total swap and routing fees
+///     - prices of orders (provided in the params)
+///     - 1inch LR quotes
+///     - (TODO) Total swap and routing fees
 /// Sell requests are processed in a similar way.
 ///
 /// Example

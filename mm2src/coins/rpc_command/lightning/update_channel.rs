@@ -1,6 +1,7 @@
 use crate::lightning::ln_conf::ChannelOptions;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{async_blocking, HttpStatusCode};
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -11,13 +12,13 @@ type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum UpdateChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "No such channel with uuid {}", _0)]
+    #[display(fmt = "No such channel with uuid {_0}")]
     NoSuchChannel(Uuid),
-    #[display(fmt = "Failure to channel {}: {}", _0, _1)]
+    #[display(fmt = "Failure to channel {_0}: {_1}")]
     FailureToUpdateChannel(Uuid, String),
 }
 
@@ -77,7 +78,7 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
         ln_coin
             .channel_manager
             .update_channel_config(&counterparty_node_id, channel_ids, &channel_options.clone().into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.uuid, format!("{:?}", e)))?;
+            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.uuid, format!("{e:?}")))?;
         Ok(UpdateChannelResponse { channel_options })
     })
     .await

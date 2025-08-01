@@ -3,6 +3,7 @@ use crate::lightning::ln_serialization::{PaymentInfoForRPC, PaymentsFilterForRPC
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use mm2_core::mm_ctx::MmArc;
@@ -13,11 +14,11 @@ type ListPaymentsResult<T> = Result<T, MmError<ListPaymentsError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ListPaymentsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -40,7 +41,9 @@ impl From<CoinFindError> for ListPaymentsError {
 }
 
 impl From<SqlError> for ListPaymentsError {
-    fn from(err: SqlError) -> ListPaymentsError { ListPaymentsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> ListPaymentsError {
+        ListPaymentsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]
