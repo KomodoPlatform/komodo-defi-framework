@@ -1,13 +1,10 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
-use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use crate::UtxoTx;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
-use bitcoin::{
-    consensus::Decodable, consensus::Encodable, psbt::Psbt, EcdsaSighashType, PackedLockTime, Sequence, Transaction,
-};
+use bitcoin::{consensus::Decodable, consensus::Encodable, psbt::Psbt, EcdsaSighashType};
 use bitcrypto::sign_message_hash;
 use chain::bytes::Bytes;
 use chain::hash::H256;
@@ -17,9 +14,8 @@ use kdf_walletconnect::{
     error::WalletConnectError,
     WalletConnectCtx, WcTopic,
 };
-use keys::Address;
-use keys::{CompactSignature, Public};
-use mm2_err_handle::prelude::{MmError, MmResult};
+use keys::{Address, CompactSignature, Public};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use script::{Builder, TransactionInputSigner};
 
 /// Represents a UTXO address returned by GetAccountAddresses request in WalletConnect.
@@ -149,46 +145,81 @@ pub async fn get_pubkey_via_wallatconnect_signature(
     Ok(pubkey.to_string())
 }
 
+/// The response from WalletConnect for `signPsbt` request.
 #[derive(Deserialize)]
 struct SignedPsbt {
     psbt: String,
+    #[expect(dead_code)]
     txid: Option<String>,
 }
 
+/// The parameters used to instruct WalletConnect how to sign a specific input in a PSBT.
+///
+/// An **array** of this struct it sent to WalletConnect in `SignPsbt` request.
+#[derive(Serialize)]
+struct InputSigningParams {
+    /// The index of the input to sign.
+    index: u32,
+    /// The address to sign the input with.
+    address: String,
+    /// The sighash types to use for signing.
+    sighash_types: Vec<u8>,
+}
+
+/// A utility function to sign a PSBT with WalletConnect.
 async fn sign_psbt(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
-    psbt: String,
-    inputs_to_sign: BTreeMap<u32, (String, Vec<u8>)>,
+    mut psbt: Psbt,
+    sign_inputs: Vec<InputSigningParams>,
     broadcast: bool,
-) -> MmResult<SignedPsbt, WalletConnectError> {
+) -> MmResult<Psbt, WalletConnectError> {
+    // Serialize the PSBT and encode it in base64 format.
+    let mut serialized_psbt = Vec::new();
+    psbt.consensus_encode(&mut serialized_psbt).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to serialize our PSBT for WalletConnect: {e}"))
+    })?;
+    let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
+
     wc.validate_update_active_chain_id(session_topic, chain_id).await?;
     let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
-    let sign_inputs = inputs_to_sign
-        .into_iter()
-        .map(|(idx, (addr, sig_hashes))| {
-            json!({
-                "address": addr,
-                "index": idx,
-                "sighashTypes": sig_hashes,
-            })
-        })
-        .collect::<Vec<_>>();
     let params = json!({
         "account": account_str,
-        "psbt": psbt,
+        "psbt": serialized_psbt,
         "signInputs": sign_inputs,
         "broadcast": broadcast,
     });
     let signed_psbt: SignedPsbt = wc
         .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoSignPsbt, params)
         .await?;
-    Ok(signed_psbt)
+
+    let signed_psbt = BASE64_ENGINE.decode(signed_psbt.psbt).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!(
+            "Bad base64 encoding of the signed PSBT from WalletConnect: {e}"
+        ))
+    })?;
+    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to parse signed PSBT from WalletConnect: {e}"))
+    })?;
+
+    // The signed PSBT has strictly more information than our own PSBT, thus it's enough to proceed with it.
+    // But we still combine it into our own PSBT to run compatibility validation and make sure WalletConnect didn't send us some nonsense.
+    psbt.combine(signed_psbt).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to merge the signed PSBT into the unsigned one: {e}"))
+    })?;
+
+    Ok(psbt)
 }
 
-// fixme: remove the panics
-async fn sign_p2sh_with_walletconnect(
+/// Signs a P2SH transaction that has a single input using WalletConnect.
+///
+/// This is to be used for payment spend transactions and refund transactions, where the payment output is being spent.
+/// `prev_tx` is the previous transaction that contains the P2SH output being spent.
+/// `redeem_script` is the redeem script that is used to spend the P2SH output.
+/// `unlocking_script` is the unlocking script that picks the appropriate spending path (normal spend (with secret hash) vs refund)
+#[expect(clippy::too_many_arguments)]
+pub async fn sign_p2sh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
@@ -197,143 +228,146 @@ async fn sign_p2sh_with_walletconnect(
     prev_tx: UtxoTx,
     redeem_script: Bytes,
     unlocking_script: Bytes,
-) -> UtxoTx {
-    let signing_address = signing_address.display_address().unwrap();
-    let unsigned_tx = unsigned_tx_from_input_signer(tx_input_signer);
-    assert!(
-        unsigned_tx.input.len() == 1,
-        "Expected exactly one input for P2SH signing"
-    );
-    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
+) -> MmResult<UtxoTx, WalletConnectError> {
+    let signing_address = signing_address.display_address().map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to convert the signing address to a string: {e}"))
+    })?;
+
+    let mut tx_to_sign: UtxoTx = tx_input_signer.clone().into();
+    // Make sure we have exactly one input. We can later safely index inputs (by `[0]`) in the transaction and PSBT.
+    if tx_to_sign.inputs.len() != 1 {
+        return MmError::err(WalletConnectError::InternalError(
+            "Expected exactly one input in the PSBT for P2SH signing".to_string(),
+        ));
+    }
+
+    let mut psbt = Psbt::from_unsigned_tx(tx_to_sign.clone().into()).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to create PSBT from unsigned transaction: {e}"))
+    })?;
+    // Since we are spending a P2SH input, we know for sure it's non-segwit.
     psbt.inputs[0].non_witness_utxo = Some(prev_tx.into());
+    // We need to provide the redeem script as it's used in the signing process.
     psbt.inputs[0].redeem_script = Some(redeem_script.take().into());
     psbt.inputs[0].sighash_type = Some(EcdsaSighashType::All.into());
 
-    let mut serialized_psbt = Vec::new();
-    psbt.consensus_encode(&mut serialized_psbt).unwrap();
-    let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
+    // Ask WalletConnect to sign the PSBT for us.
+    let inputs = vec![InputSigningParams {
+        index: 0,
+        address: signing_address.clone(),
+        sighash_types: vec![EcdsaSighashType::All as u8],
+    }];
+    let signed_psbt = sign_psbt(wc, session_topic, chain_id, psbt, inputs, false).await?;
 
-    let signed_psbt = sign_psbt(
-        wc,
-        session_topic,
-        chain_id,
-        serialized_psbt,
-        BTreeMap::from([(0, (signing_address, vec![EcdsaSighashType::All as u8]))]),
-        false,
-    )
-    .await
-    .unwrap();
-    let signed_psbt = BASE64_ENGINE
-        .decode(signed_psbt.psbt)
-        .expect("Failed to decode signed PSBT");
-
-    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).unwrap();
-    // The signed PSBT is enough, but we combine them nonetheless to make sure they are compatible and that
-    // walletconnect didn't trick us with random shit.
-    psbt.combine(signed_psbt).unwrap();
-
-    let walletconnect_sig = psbt.inputs[0].partial_sigs.values().next().unwrap();
-    let redeem_script = psbt.inputs[0].redeem_script.as_ref().unwrap();
+    // WalletConnect can't finalize the scriptSig for us since it doesn't have the unlocking script.
+    // Thus, the signature for this input must be in the `partial_sigs` field.
+    let walletconnect_sig = signed_psbt.inputs[0]
+        .partial_sigs
+        .values()
+        .next()
+        .ok_or_else(|| WalletConnectError::InternalError("No signature found in the signed PSBT".to_string()))?;
+    let redeem_script = signed_psbt.inputs[0]
+        .redeem_script
+        .as_ref()
+        .ok_or_else(|| WalletConnectError::InternalError("No redeem script found in the signed PSBT".to_string()))?;
 
     // The signature and the redeem script are inserted as data.
     let p2sh_signature = Builder::default().push_data(&walletconnect_sig.to_vec()).into_bytes();
-    let redeem_script = Builder::default().push_data(&redeem_script.as_bytes()).into_bytes();
+    let redeem_script = Builder::default().push_data(redeem_script.as_bytes()).into_bytes();
 
     let mut final_script_sig = Bytes::new();
     final_script_sig.extend_from_slice(&p2sh_signature);
     final_script_sig.extend_from_slice(&unlocking_script);
     final_script_sig.extend_from_slice(&redeem_script);
 
-    let mut signed_transaction: UtxoTx = tx_input_signer.clone().into();
-    signed_transaction.inputs[0].script_sig = final_script_sig;
-    signed_transaction.inputs[0].script_witness = vec![];
+    // Sign the transaction input with the final scriptSig.
+    tx_to_sign.inputs[0].script_sig = final_script_sig;
+    tx_to_sign.inputs[0].script_witness = vec![];
 
-    signed_transaction
+    Ok(tx_to_sign)
 }
 
-// fixme: remove the panics
-pub async fn sign_p2wpkh_with_walletconect(
+/// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
+///
+/// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
+pub async fn sign_p2pkh_with_walletconect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
     signing_address: &Address,
     tx_input_signer: &TransactionInputSigner,
-) -> UtxoTx {
-    let signing_address = signing_address.display_address().unwrap();
-    let unsigned_tx = unsigned_tx_from_input_signer(tx_input_signer);
+) -> MmResult<UtxoTx, WalletConnectError> {
+    let signing_address = signing_address.display_address().map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to convert the signing address to a string: {e}"))
+    })?;
 
-    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
+    let mut tx_to_sign: UtxoTx = tx_input_signer.clone().into();
+    let mut psbt = Psbt::from_unsigned_tx(tx_to_sign.clone().into()).map_to_mm(|e| {
+        WalletConnectError::InternalError(format!("Failed to create PSBT from unsigned transaction: {e}"))
+    })?;
+
     for (psbt_input, input) in psbt.inputs.iter_mut().zip(tx_input_signer.inputs.iter()) {
+        if input.prev_script.is_pay_to_witness_key_hash() {
+            // Set the witness output for P2WPKH inputs.
+            psbt_input.witness_utxo = Some(bitcoin::TxOut {
+                value: input.amount,
+                script_pubkey: input.prev_script.to_vec().into(),
+            });
+        } else if input.prev_script.is_pay_to_public_key_hash() {
+            // Set the previous Transaction for P2PKH inputs.
+            // fixme: set the previous transaction
+            //psbt_input.non_witness_utxo = Some();
+        } else {
+            return MmError::err(WalletConnectError::InternalError(format!(
+                "Expected a P2WPKH or P2PKH input for WalletConnect signing, got: {}",
+                input.prev_script
+            )));
+        }
         psbt_input.sighash_type = Some(EcdsaSighashType::All.into());
-        psbt_input.witness_utxo = Some(bitcoin::TxOut {
-            value: input.amount,
-            script_pubkey: input.prev_script.to_vec().into(),
-        });
     }
 
-    let mut serialized_psbt = Vec::new();
-    psbt.consensus_encode(&mut serialized_psbt).unwrap();
-    let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
+    // Ask WalletConnect to sign the PSBT for us.
+    let inputs = psbt
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(idx, _)| InputSigningParams {
+            index: idx as u32,
+            address: signing_address.clone(),
+            sighash_types: vec![EcdsaSighashType::All as u8],
+        })
+        .collect();
+    let signed_psbt = sign_psbt(wc, session_topic, chain_id, psbt, inputs, false).await?;
 
-    let signed_psbt = sign_psbt(
-        wc,
-        session_topic,
-        chain_id,
-        serialized_psbt,
-        BTreeMap::from(
-            psbt.inputs
-                .iter()
-                .enumerate()
-                .map(|(idx, _)| (idx as u32, (signing_address.clone(), vec![EcdsaSighashType::All as u8])))
-                .collect::<BTreeMap<_, _>>(),
-        ),
-        false,
-    )
-    .await
-    .unwrap();
-    let signed_psbt = BASE64_ENGINE
-        .decode(signed_psbt.psbt)
-        .expect("Failed to decode signed PSBT");
-
-    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).unwrap();
-    // The signed PSBT is enough, but we combine them nonetheless to make sure they are compatible and that
-    // walletconnect didn't trick us with random shit.
-    psbt.combine(signed_psbt).unwrap();
-
-    let mut signed_transaction: UtxoTx = tx_input_signer.clone().into();
-    for (input, input_to_sign) in psbt.inputs.into_iter().zip(signed_transaction.inputs.iter_mut()) {
-        // If the wallet already finalized the script, use it at face value.
-        if let Some(final_script_witness) = input.final_script_witness {
+    for ((psbt_input, input_to_sign), unsigned_input) in signed_psbt
+        .inputs
+        .into_iter()
+        .zip(tx_to_sign.inputs.iter_mut())
+        .zip(tx_input_signer.inputs.iter())
+    {
+        input_to_sign.script_sig = Default::default();
+        input_to_sign.script_witness = Default::default();
+        // If WalletConnect already finalized the script, use it at face value.
+        // P2(W)PKH inputs are simple enough that some wallets will finalize the script for us.
+        if let Some(final_script_witness) = psbt_input.final_script_witness {
             input_to_sign.script_witness = final_script_witness.to_vec().into_iter().map(Bytes::from).collect();
+        } else if let Some(final_script_sig) = psbt_input.final_script_sig {
+            input_to_sign.script_sig = Bytes::from(final_script_sig.to_bytes());
         } else {
-            let (pubkey, walletconnect_sig) = input.partial_sigs.iter().next().unwrap();
-            input_to_sign.script_sig = Bytes::from(Vec::new());
-            input_to_sign.script_witness =
-                vec![Bytes::from(walletconnect_sig.to_vec()), Bytes::from(pubkey.to_bytes())];
+            // If WalletConnect didn't finalize the script, we need to figure out whether it's a P2PKH or P2WPKH input and finalize it accordingly.
+            let (pubkey, walletconnect_sig) = psbt_input.partial_sigs.iter().next().ok_or_else(|| {
+                WalletConnectError::InternalError("No signature found in the signed PSBT".to_string())
+            })?;
+            if unsigned_input.prev_script.is_pay_to_witness_key_hash() {
+                input_to_sign.script_witness =
+                    vec![Bytes::from(walletconnect_sig.to_vec()), Bytes::from(pubkey.to_bytes())];
+            } else {
+                input_to_sign.script_sig = Builder::default()
+                    .push_data(&walletconnect_sig.to_vec())
+                    .push_data(&pubkey.to_bytes())
+                    .into_bytes();
+            }
         }
     }
 
-    signed_transaction
-}
-
-/// Converts a `TransactionInputSigner` to a `Transaction` without signatures.
-fn unsigned_tx_from_input_signer(tx_input_signer: &TransactionInputSigner) -> Transaction {
-    Transaction {
-        version: tx_input_signer.version,
-        lock_time: PackedLockTime(tx_input_signer.lock_time),
-        input: tx_input_signer
-            .inputs
-            .iter()
-            .map(|input| bitcoin::TxIn {
-                previous_output: input.previous_output.into(),
-                sequence: Sequence(input.sequence),
-                ..Default::default()
-            })
-            .collect(),
-        output: tx_input_signer
-            .outputs
-            .iter()
-            .map(|output| output.clone().into())
-            .collect(),
-    }
+    Ok(tx_to_sign)
 }
