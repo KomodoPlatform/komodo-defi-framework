@@ -1,7 +1,9 @@
 use super::errors::ApiIntegrationRpcError;
-use super::types::{AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapLiquiditySourcesRequest,
-                   ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse,
-                   ClassicSwapTokensRequest, ClassicSwapTokensResponse};
+use super::types::{
+    AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapLiquiditySourcesRequest,
+    ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
+    ClassicSwapTokensResponse,
+};
 use crate::lr_swap::lr_helpers::make_classic_swap_create_params;
 use coins::eth::{u256_from_big_decimal, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;

@@ -42,25 +42,21 @@ pub enum ApiIntegrationRpcError {
         allowance: U256,
         amount: U256,
     },
-    #[display(fmt = "1inch API error: {}", _0)]
+    #[display(fmt = "1inch API error: {_0}")]
     OneInchError(ApiClientError),
     ApiDataError(String),
     InternalError(String),
     ResponseParseError(String),
-    #[display(fmt = "Transaction error {}", _0)]
+    #[display(fmt = "Transaction error {_0}")]
     TransactionError(String),
-    #[display(fmt = "Sign transaction error {}", _0)]
+    #[display(fmt = "Sign transaction error {_0}")]
     SignTransactionError(String),
-    #[display(fmt = "best liquidity routing swap not found, candidates: {}", candidates)]
+    #[display(fmt = "best liquidity routing swap not found, candidates: {candidates}")]
     BestLrSwapNotFound {
         candidates: u32,
     },
     #[display(
-        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBalance {
         coin: String,
@@ -68,18 +64,13 @@ pub enum ApiIntegrationRpcError {
         required: BigDecimal,
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(
-        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
-        volume,
-        coin,
-        threshold
-    )]
+    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
         threshold: BigDecimal,
     },
-    #[display(fmt = "Transport error {}", _0)]
+    #[display(fmt = "Transport error {_0}")]
     TransportError(String),
 }
 
@@ -203,15 +194,21 @@ impl From<TradePreimageError> for ApiIntegrationRpcError {
 }
 
 impl From<UnexpectedDerivationMethod> for ApiIntegrationRpcError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::MyAddressError(err.to_string()) }
+    fn from(err: UnexpectedDerivationMethod) -> Self {
+        Self::MyAddressError(err.to_string())
+    }
 }
 
 impl From<NumConversError> for ApiIntegrationRpcError {
-    fn from(err: NumConversError) -> Self { Self::ConversionError(err.to_string()) }
+    fn from(err: NumConversError) -> Self {
+        Self::ConversionError(err.to_string())
+    }
 }
 
 impl From<ethereum_types::FromDecStrErr> for ApiIntegrationRpcError {
-    fn from(err: ethereum_types::FromDecStrErr) -> Self { Self::ConversionError(err.to_string()) }
+    fn from(err: ethereum_types::FromDecStrErr) -> Self {
+        Self::ConversionError(err.to_string())
+    }
 }
 
 /// Error aggregator for errors of conversion of api returned values
@@ -219,23 +216,33 @@ impl From<ethereum_types::FromDecStrErr> for ApiIntegrationRpcError {
 pub(crate) struct FromApiValueError(String);
 
 impl FromApiValueError {
-    pub(crate) fn new(msg: String) -> Self { Self(msg) }
+    pub(crate) fn new(msg: String) -> Self {
+        Self(msg)
+    }
 }
 
 impl From<NumConversError> for FromApiValueError {
-    fn from(err: NumConversError) -> Self { Self(err.to_string()) }
+    fn from(err: NumConversError) -> Self {
+        Self(err.to_string())
+    }
 }
 
 impl From<primitive_types::Error> for FromApiValueError {
-    fn from(err: primitive_types::Error) -> Self { Self(format!("{:?}", err)) }
+    fn from(err: primitive_types::Error) -> Self {
+        Self(format!("{err:?}"))
+    }
 }
 
 impl From<hex::FromHexError> for FromApiValueError {
-    fn from(err: hex::FromHexError) -> Self { Self(err.to_string()) }
+    fn from(err: hex::FromHexError) -> Self {
+        Self(err.to_string())
+    }
 }
 
 impl From<ethereum_types::FromDecStrErr> for FromApiValueError {
-    fn from(err: ethereum_types::FromDecStrErr) -> Self { Self(err.to_string()) }
+    fn from(err: ethereum_types::FromDecStrErr) -> Self {
+        Self(err.to_string())
+    }
 }
 
 impl From<LrSwapError> for ApiIntegrationRpcError {

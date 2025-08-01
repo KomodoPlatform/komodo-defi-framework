@@ -9,17 +9,18 @@ use mm2_number::bigdecimal::ToPrimitive;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::MatchBy;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{active_swaps, disable_coin, doc_conf, enable_electrum_json, mm_dump, my_balance,
-                                  my_swap_status, polygon_conf, wait_for_swap_finished, MarketMakerIt, Mm2TestConf,
-                                  SwapV2TestContracts, TestNode, ARBITRUM_MAINNET_NODES,
-                                  ARBITRUM_MAINNET_SWAP_CONTRACT, ARBITRUM_MAINNET_SWAP_V2_MAKER_CONTRACT,
-                                  ARBITRUM_MAINNET_SWAP_V2_NFT_CONTRACT, ARBITRUM_MAINNET_SWAP_V2_TAKER_CONTRACT, DOC,
-                                  POLYGON_MAINNET_NODES, POLYGON_MAINNET_SWAP_CONTRACT,
-                                  POLYGON_MAINNET_SWAP_V2_MAKER_CONTRACT, POLYGON_MAINNET_SWAP_V2_NFT_CONTRACT,
-                                  POLYGON_MAINNET_SWAP_V2_TAKER_CONTRACT};
+use mm2_test_helpers::for_tests::{
+    active_swaps, disable_coin, doc_conf, enable_electrum_json, mm_dump, my_balance, my_swap_status, polygon_conf,
+    wait_for_swap_finished, MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode, ARBITRUM_MAINNET_NODES,
+    ARBITRUM_MAINNET_SWAP_CONTRACT, ARBITRUM_MAINNET_SWAP_V2_MAKER_CONTRACT, ARBITRUM_MAINNET_SWAP_V2_NFT_CONTRACT,
+    ARBITRUM_MAINNET_SWAP_V2_TAKER_CONTRACT, DOC, POLYGON_MAINNET_NODES, POLYGON_MAINNET_SWAP_CONTRACT,
+    POLYGON_MAINNET_SWAP_V2_MAKER_CONTRACT, POLYGON_MAINNET_SWAP_V2_NFT_CONTRACT,
+    POLYGON_MAINNET_SWAP_V2_TAKER_CONTRACT,
+};
 use mm2_test_helpers::for_tests::{best_orders_v2_by_number, enable_eth_coin_v2, orderbook_v2};
-use mm2_test_helpers::structs::lr_test_structs::{ClassicSwapResponse, LrExecuteRoutedTradeResponse,
-                                                 LrFindBestQuoteResponse};
+use mm2_test_helpers::structs::lr_test_structs::{
+    ClassicSwapResponse, LrExecuteRoutedTradeResponse, LrFindBestQuoteResponse,
+};
 use mm2_test_helpers::structs::SetPriceResult;
 use mm2_test_helpers::structs::{OrderbookV2Response, RpcOrderbookEntryV2, RpcV2Response, SetPriceResponse};
 use serde_json::{json, Value};
@@ -78,30 +79,23 @@ fn test_aggregated_swap_mainnet_polygon_utxo() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let _bob_enable_pol_tokens = block_on(enable_pol_tokens(&mm_bob, &[
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]));
+    let _bob_enable_pol_tokens = block_on(enable_pol_tokens(
+        &mm_bob,
+        &[&dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    ));
     let _bob_enable_doc = block_on(enable_electrum_json(&mm_bob, DOC, false, doc_electrums()));
     print_balances(&mm_bob, "Bob balance before swap:", &[MATIC, DOC]);
 
-    let _alice_enable_pol_tokens = block_on(enable_pol_tokens(&mm_alice, &[
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]));
+    let _alice_enable_pol_tokens = block_on(enable_pol_tokens(
+        &mm_alice,
+        &[&dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    ));
     let _alice_enable_doc = block_on(enable_electrum_json(&mm_alice, DOC, false, doc_electrums()));
-    print_balances(&mm_alice, "Alice balance before swap:", &[
-        DOC,
-        MATIC,
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]);
+    print_balances(
+        &mm_alice,
+        "Alice balance before swap:",
+        &[DOC, MATIC, &dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    );
 
     let alice_balance_before = block_on(my_balance(&mm_alice, receive_token));
 
@@ -188,14 +182,11 @@ fn test_aggregated_swap_mainnet_polygon_utxo() {
     );
     check_my_agg_swap_final_status(&taker_swap_status);
     let alice_balance_after = block_on(my_balance(&mm_alice, receive_token));
-    print_balances(&mm_alice, "Alice balance after swap:", &[
-        DOC,
-        MATIC,
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]);
+    print_balances(
+        &mm_alice,
+        "Alice balance after swap:",
+        &[DOC, MATIC, &dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    );
 
     let status = block_on(my_swap_status(&mm_alice, &agg_uuid.to_string())).unwrap();
     if let Some(atomic_swap_uuid) = status["result"]["atomic_swap_uuid"].as_str() {
@@ -324,38 +315,37 @@ fn test_aggregated_swap_mainnet_polygon_arbitrum_impl(
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let _bob_enable_pol_tokens = block_on(enable_pol_tokens(&mm_bob, &[
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]));
+    let _bob_enable_pol_tokens = block_on(enable_pol_tokens(
+        &mm_bob,
+        &[&dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    ));
     let _bob_enable_arb_tokens = block_on(enable_arb_tokens(&mm_bob, &[&arb_ticker, &crv_ticker, &grt_ticker]));
-    print_balances(&mm_bob, "Bob balance before swap:", &[
-        MATIC,
-        &eth_arb_ticker,
-        &arb_ticker,
-        &grt_ticker,
-    ]);
+    print_balances(
+        &mm_bob,
+        "Bob balance before swap:",
+        &[MATIC, &eth_arb_ticker, &arb_ticker, &grt_ticker],
+    );
 
-    let _alice_enable_pol_tokens = block_on(enable_pol_tokens(&mm_alice, &[
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-    ]));
+    let _alice_enable_pol_tokens = block_on(enable_pol_tokens(
+        &mm_alice,
+        &[&dai_ticker, &oneinch_ticker, &agix_ticker, &aave_ticker],
+    ));
     let _alice_enable_arb_tokens = block_on(enable_arb_tokens(&mm_alice, &[&arb_ticker, &crv_ticker, &grt_ticker]));
-    print_balances(&mm_alice, "Alice balance before swap:", &[
-        MATIC,
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-        &eth_arb_ticker,
-        &arb_ticker,
-        &grt_ticker,
-        &crv_ticker,
-    ]);
+    print_balances(
+        &mm_alice,
+        "Alice balance before swap:",
+        &[
+            MATIC,
+            &dai_ticker,
+            &oneinch_ticker,
+            &agix_ticker,
+            &aave_ticker,
+            &eth_arb_ticker,
+            &arb_ticker,
+            &grt_ticker,
+            &crv_ticker,
+        ],
+    );
     let alice_balance_before = block_on(my_balance(&mm_alice, receive_token));
 
     if let Err(err) = block_on(set_swap_gas_fee_policy(&mm_alice, MATIC, "Medium")) {
@@ -459,17 +449,21 @@ fn test_aggregated_swap_mainnet_polygon_arbitrum_impl(
     );
     check_my_agg_swap_final_status(&taker_swap_status);
     let alice_balance_after = block_on(my_balance(&mm_alice, receive_token));
-    print_balances(&mm_alice, "Alice balance after swap:", &[
-        MATIC,
-        &dai_ticker,
-        &oneinch_ticker,
-        &agix_ticker,
-        &aave_ticker,
-        &eth_arb_ticker,
-        &arb_ticker,
-        &grt_ticker,
-        &crv_ticker,
-    ]);
+    print_balances(
+        &mm_alice,
+        "Alice balance after swap:",
+        &[
+            MATIC,
+            &dai_ticker,
+            &oneinch_ticker,
+            &agix_ticker,
+            &aave_ticker,
+            &eth_arb_ticker,
+            &arb_ticker,
+            &grt_ticker,
+            &crv_ticker,
+        ],
+    );
 
     let status = block_on(my_swap_status(&mm_alice, &agg_uuid.to_string())).unwrap();
     if let Some(atomic_swap_uuid) = status["result"]["atomic_swap_uuid"].as_str() {

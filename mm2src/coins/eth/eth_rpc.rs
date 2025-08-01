@@ -7,9 +7,10 @@ use super::{web3_transport::Web3Transport, EthCoin};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use compatible_time::Duration;
 use serde_json::Value;
-use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState,
-                  Trace, TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256,
-                  H520, H64, U256, U64};
+use web3::types::{
+    Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState, Trace,
+    TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256, H520, H64, U256, U64,
+};
 use web3::{helpers, Transport};
 
 pub(crate) const ETH_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);

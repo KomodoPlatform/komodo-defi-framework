@@ -49,11 +49,7 @@ pub enum LrSwapError {
     SignTransactionError(String),
     InternalError(String),
     #[display(
-        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBalance {
         coin: String,
@@ -61,12 +57,7 @@ pub enum LrSwapError {
         required: BigDecimal,
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(
-        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
-        volume,
-        coin,
-        threshold
-    )]
+    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
@@ -85,14 +76,16 @@ impl From<CoinFindError> for LrSwapError {
 
 // Implement conversion from lower-level errors
 impl From<SwapStateMachineError> for LrSwapError {
-    fn from(e: SwapStateMachineError) -> Self { LrSwapError::StateError(e.to_string()) }
+    fn from(e: SwapStateMachineError) -> Self {
+        LrSwapError::StateError(e.to_string())
+    }
 }
 
 impl From<MySwapStatusError> for LrSwapError {
     fn from(e: MySwapStatusError) -> Self {
         match e {
             MySwapStatusError::NoSwapWithUuid(uuid) => {
-                LrSwapError::AtomicSwapError(format!("No swap with UUID {}", uuid))
+                LrSwapError::AtomicSwapError(format!("No swap with UUID {uuid}"))
             },
             _ => LrSwapError::InternalError(e.to_string()),
         }

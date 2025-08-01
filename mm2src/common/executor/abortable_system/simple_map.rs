@@ -29,13 +29,17 @@ pub struct AbortableSimpleMap<FutureId: FutureIdTrait> {
 impl<FutureId: FutureIdTrait> AbortableSimpleMap<FutureId> {
     /// Locks the inner `SimpleMapInner` that can be used to spawn/abort/check if contains future
     /// by its `FutureId` identifier.
-    pub fn lock(&self) -> PaMutexGuard<'_, SimpleMapInnerState<FutureId>> { self.inner.lock() }
+    pub fn lock(&self) -> PaMutexGuard<'_, SimpleMapInnerState<FutureId>> {
+        self.inner.lock()
+    }
 }
 
 impl<FutureId: FutureIdTrait> AbortableSystem for AbortableSimpleMap<FutureId> {
     type Inner = SimpleMapInnerState<FutureId>;
 
-    fn __inner(&self) -> InnerShared<Self::Inner> { self.inner.clone() }
+    fn __inner(&self) -> InnerShared<Self::Inner> {
+        self.inner.clone()
+    }
 
     fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
         self.inner.lock().insert_subsystem(subsystem_abort_tx)
@@ -43,7 +47,9 @@ impl<FutureId: FutureIdTrait> AbortableSystem for AbortableSimpleMap<FutureId> {
 }
 
 impl<FutureId: FutureIdTrait> From<InnerShared<SimpleMapInnerState<FutureId>>> for AbortableSimpleMap<FutureId> {
-    fn from(inner: InnerShared<SimpleMapInnerState<FutureId>>) -> Self { AbortableSimpleMap { inner } }
+    fn from(inner: InnerShared<SimpleMapInnerState<FutureId>>) -> Self {
+        AbortableSimpleMap { inner }
+    }
 }
 
 pub enum SimpleMapInnerState<FutureId: FutureIdTrait> {
@@ -82,7 +88,9 @@ impl<FutureId: FutureIdTrait> SystemInner for SimpleMapInnerState<FutureId> {
         Ok(())
     }
 
-    fn is_aborted(&self) -> bool { matches!(self, SimpleMapInnerState::Aborted) }
+    fn is_aborted(&self) -> bool {
+        matches!(self, SimpleMapInnerState::Aborted)
+    }
 }
 
 impl<FutureId: FutureIdTrait> SimpleMapInnerState<FutureId> {

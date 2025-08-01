@@ -11,8 +11,10 @@ use coins::utxo::slp::{EnableSlpError, SlpProtocolConf, SlpToken};
 use coins::utxo::utxo_tx_history_v2::bch_and_slp_history_loop;
 use coins::utxo::UtxoCommonOps;
 use coins::MmCoinEnum;
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod};
+use coins::{
+    CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
+    UnexpectedDerivationMethod,
+};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
 use common::{drop_mutability, true_f};
@@ -88,11 +90,15 @@ impl TokenInitializer for SlpTokenInitializer {
         Ok(tokens)
     }
 
-    fn platform_coin(&self) -> &BchCoin { &self.platform_coin }
+    fn platform_coin(&self) -> &BchCoin {
+        &self.platform_coin
+    }
 }
 
 impl RegisterTokenInfo<SlpToken> for BchCoin {
-    fn register_token_info(&self, token: &SlpToken) { self.add_slp_token_info(token.ticker().into(), token.get_info()) }
+    fn register_token_info(&self, token: &SlpToken) {
+        self.add_slp_token_info(token.ticker().into(), token.get_info())
+    }
 }
 
 impl From<BchWithTokensActivationError> for EnablePlatformCoinWithTokensError {
@@ -103,8 +109,7 @@ impl From<BchWithTokensActivationError> for EnablePlatformCoinWithTokensError {
             },
             BchWithTokensActivationError::InvalidSlpPrefix { ticker, prefix, error } => {
                 EnablePlatformCoinWithTokensError::Internal(format!(
-                    "Invalid slp prefix {} configured for {}. Error: {}",
-                    prefix, ticker, error
+                    "Invalid slp prefix {prefix} configured for {ticker}. Error: {error}"
                 ))
             },
             BchWithTokensActivationError::PrivKeyPolicyNotAllowed(e) => {
@@ -129,11 +134,15 @@ pub struct BchWithTokensActivationRequest {
 }
 
 impl TxHistory for BchWithTokensActivationRequest {
-    fn tx_history(&self) -> bool { self.platform_request.utxo_params.tx_history }
+    fn tx_history(&self) -> bool {
+        self.platform_request.utxo_params.tx_history
+    }
 }
 
 impl ActivationRequestInfo for BchWithTokensActivationRequest {
-    fn is_hw_policy(&self) -> bool { self.platform_request.utxo_params.is_hw_policy() }
+    fn is_hw_policy(&self) -> bool {
+        self.platform_request.utxo_params.is_hw_policy()
+    }
 }
 
 pub struct BchProtocolInfo {
@@ -170,7 +179,9 @@ impl GetPlatformBalance for BchWithTokensActivationResult {
 }
 
 impl CurrentBlock for BchWithTokensActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -191,7 +202,9 @@ pub enum BchWithTokensActivationError {
 }
 
 impl From<UtxoRpcError> for BchWithTokensActivationError {
-    fn from(err: UtxoRpcError) -> Self { BchWithTokensActivationError::Transport(err.to_string()) }
+    fn from(err: UtxoRpcError) -> Self {
+        BchWithTokensActivationError::Transport(err.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for BchWithTokensActivationError {
@@ -201,11 +214,15 @@ impl From<UnexpectedDerivationMethod> for BchWithTokensActivationError {
 }
 
 impl From<PrivKeyPolicyNotAllowed> for BchWithTokensActivationError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { BchWithTokensActivationError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        BchWithTokensActivationError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<CryptoCtxError> for BchWithTokensActivationError {
-    fn from(e: CryptoCtxError) -> Self { BchWithTokensActivationError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        BchWithTokensActivationError::Internal(e.to_string())
+    }
 }
 
 #[async_trait]

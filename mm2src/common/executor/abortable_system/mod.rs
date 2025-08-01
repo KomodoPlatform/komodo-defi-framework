@@ -16,7 +16,9 @@ pub type InnerWeak<Inner> = Weak<PaMutex<Inner>>;
 pub struct AbortedError;
 
 impl fmt::Display for AbortedError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Abortable system has been aborted already") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Abortable system has been aborted already")
+    }
 }
 
 pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
@@ -24,7 +26,9 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
 
     /// Aborts all spawned futures and subsystems if they present.
     /// The abortable system is considered not to be
-    fn abort_all(&self) -> Result<(), AbortedError> { self.__inner().lock().abort_all() }
+    fn abort_all(&self) -> Result<(), AbortedError> {
+        self.__inner().lock().abort_all()
+    }
 
     /// Aborts all the spawned futures & subsystems if present, and resets the system
     /// to the initial state for further use.

@@ -1,18 +1,23 @@
 //! RPC implementations for swaps with liquidity routing (LR) of EVM tokens
 
 use super::one_inch::types::ClassicSwapDetails;
-use crate::lp_swap::{check_balance_for_taker_swap, check_my_coin_balance_for_swap, check_other_coin_balance_for_swap,
-                     CheckBalanceError};
+use crate::lp_swap::{
+    check_balance_for_taker_swap, check_my_coin_balance_for_swap, check_other_coin_balance_for_swap, CheckBalanceError,
+};
 use crate::lr_swap::lr_helpers::{check_if_one_inch_supports_pair, get_coin_for_one_inch, sell_buy_method};
 use crate::lr_swap::lr_impl::find_best_swap_path_with_lr;
 use crate::lr_swap::lr_swap_state_machine::lp_start_agg_taker_swap;
 use crate::lr_swap::{AtomicSwapParams, LrSwapParams};
 use crate::rpc::lp_commands::one_inch::errors::ApiIntegrationRpcError;
-use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, FeeApproxStage, MarketCoinOps, MmCoin, MmCoinEnum, TradeFee};
+use coins::{
+    lp_coinfind_or_err, CoinWithDerivationMethod, FeeApproxStage, MarketCoinOps, MmCoin, MmCoinEnum, TradeFee,
+};
 use common::log::debug;
 use futures::compat::Future01CompatExt;
-use lr_api_types::{LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest,
-                   LrFindBestQuoteResponse, LrGetQuotesForTokensRequest};
+use lr_api_types::{
+    LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest, LrFindBestQuoteResponse,
+    LrGetQuotesForTokensRequest,
+};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::mm_error::MmResult;

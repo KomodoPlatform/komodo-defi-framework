@@ -13,8 +13,10 @@ use crate::lp_swap::{check_balance_for_taker_swap, AGG_TAKER_SWAP_TYPE};
 use async_trait::async_trait;
 use coins::eth::{u256_from_big_decimal, u256_to_big_decimal, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
-use coins::{lp_coinfind_or_err, ConfirmPaymentInput, FeeApproxStage, MarketCoinOps, SignEthTransactionParams,
-            SignRawTransactionEnum, SignRawTransactionRequest};
+use coins::{
+    lp_coinfind_or_err, ConfirmPaymentInput, FeeApproxStage, MarketCoinOps, SignEthTransactionParams,
+    SignRawTransactionEnum, SignRawTransactionRequest,
+};
 use coins::{DexFee, MmCoin};
 use coins::{MmCoinEnum, Ticker};
 use common::executor::abortable_queue::AbortableQueue;
@@ -103,7 +105,9 @@ pub struct AggTakerSwapStorage {
 }
 
 impl AggTakerSwapStorage {
-    pub fn new(ctx: MmArc) -> Self { AggTakerSwapStorage { ctx } }
+    pub fn new(ctx: MmArc) -> Self {
+        AggTakerSwapStorage { ctx }
+    }
 }
 
 #[async_trait]
@@ -233,7 +237,9 @@ pub struct AggTakerSwapDbRepr {
 impl StateMachineDbRepr for AggTakerSwapDbRepr {
     type Event = AggTakerSwapEvent;
 
-    fn add_event(&mut self, event: Self::Event) { self.events.push(event) }
+    fn add_event(&mut self, event: Self::Event) {
+        self.events.push(event)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -292,9 +298,13 @@ impl AggTakerSwapDbRepr {
         }
     }
 
-    pub(crate) fn routing_coin_0(&self) -> Option<Ticker> { self.lr_swap_0.as_ref().map(|p| p.dst.clone()) }
+    pub(crate) fn routing_coin_0(&self) -> Option<Ticker> {
+        self.lr_swap_0.as_ref().map(|p| p.dst.clone())
+    }
 
-    pub(crate) fn routing_coin_1(&self) -> Option<Ticker> { self.lr_swap_1.as_ref().map(|p| p.dst.clone()) }
+    pub(crate) fn routing_coin_1(&self) -> Option<Ticker> {
+        self.lr_swap_1.as_ref().map(|p| p.dst.clone())
+    }
 }
 
 /// Represents the state machine for maker's side of the Trading Protocol Upgrade swap (v2).
@@ -350,9 +360,13 @@ impl StorableStateMachine for AggTakerSwapStateMachine {
         }
     }
 
-    fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
+    fn storage(&mut self) -> &mut Self::Storage {
+        &mut self.storage
+    }
 
-    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId { self.uuid }
+    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId {
+        self.uuid
+    }
 
     async fn recreate_machine(
         uuid: Uuid,
@@ -440,7 +454,9 @@ impl StorableStateMachine for AggTakerSwapStateMachine {
         init_agg_swap_context_impl(&self.ctx, swap_info);
     }
 
-    fn clean_up_context(&mut self) { clean_up_agg_swap_context_impl(&self.ctx, &self.uuid); }
+    fn clean_up_context(&mut self) {
+        clean_up_agg_swap_context_impl(&self.ctx, &self.uuid);
+    }
 
     fn on_event(&mut self, event: &AggTakerSwapEvent) {
         match event {
@@ -658,7 +674,9 @@ mod states {
     impl StorableState for RunLrSwap0 {
         type StateMachine = AggTakerSwapStateMachine;
 
-        fn get_event(&self) -> AggTakerSwapEvent { AggTakerSwapEvent::RunLrSwap0 {} }
+        fn get_event(&self) -> AggTakerSwapEvent {
+            AggTakerSwapEvent::RunLrSwap0 {}
+        }
     }
 
     impl TransitionFrom<Initialize> for RunLrSwap0 {}
@@ -764,7 +782,9 @@ mod states {
     impl StorableState for RunLrSwap1 {
         type StateMachine = AggTakerSwapStateMachine;
 
-        fn get_event(&self) -> AggTakerSwapEvent { AggTakerSwapEvent::RunLrSwap1 {} }
+        fn get_event(&self) -> AggTakerSwapEvent {
+            AggTakerSwapEvent::RunLrSwap1 {}
+        }
     }
 
     impl TransitionFrom<WaitingForAtomicSwap> for RunLrSwap1 {}
@@ -817,7 +837,9 @@ mod states {
     impl StorableState for Completed {
         type StateMachine = AggTakerSwapStateMachine;
 
-        fn get_event(&self) -> AggTakerSwapEvent { AggTakerSwapEvent::Completed }
+        fn get_event(&self) -> AggTakerSwapEvent {
+            AggTakerSwapEvent::Completed
+        }
     }
 
     #[async_trait]
@@ -913,9 +935,13 @@ impl AggTakerSwapStateMachine {
         }
     }
 
-    fn atomic_swap_maker_coin(&self) -> Ticker { self.atomic_swap.maker_coin() }
+    fn atomic_swap_maker_coin(&self) -> Ticker {
+        self.atomic_swap.maker_coin()
+    }
 
-    fn atomic_swap_taker_coin(&self) -> Ticker { self.atomic_swap.taker_coin() }
+    fn atomic_swap_taker_coin(&self) -> Ticker {
+        self.atomic_swap.taker_coin()
+    }
 
     pub(crate) fn find_atomic_swap_uuid_in_events(events: &[AggTakerSwapEvent]) -> Option<Uuid> {
         events.iter().find_map(|event| {
@@ -1109,8 +1135,7 @@ impl AggTakerSwapStateMachine {
                     MySwapStatusError::NoSwapWithUuid(_) => return Ok(false),
                     other_err => {
                         return MmError::err(LrSwapError::InternalError(format!(
-                            "Failed to get swap status: {}",
-                            other_err
+                            "Failed to get swap status: {other_err}"
                         )))
                     },
                 }
@@ -1150,9 +1175,12 @@ impl AggTakerSwapStateMachine {
         // We do not have any time limits for waiting the atomic swap to finish,
         // assuming the atomic swap code ensures it won't hang.
         loop {
-            let swap_result = my_swap_status_rpc(self.ctx.clone(), MySwapStatusRequest {
-                uuid: *atomic_swap_uuid,
-            })
+            let swap_result = my_swap_status_rpc(
+                self.ctx.clone(),
+                MySwapStatusRequest {
+                    uuid: *atomic_swap_uuid,
+                },
+            )
             .await;
             if Self::check_atomic_swap_status(&swap_result)? {
                 break;

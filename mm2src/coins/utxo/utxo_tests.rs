@@ -2,21 +2,24 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
-use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDConfirmAddress, HDConfirmAddressError,
-                       HDWallet, HDWalletCoinStorage, HDWalletMockStorage, HDWalletStorageInternalOps,
-                       MockableConfirmAddress};
+use crate::hd_wallet::{
+    HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDConfirmAddress, HDConfirmAddressError, HDWallet,
+    HDWalletCoinStorage, HDWalletMockStorage, HDWalletStorageInternalOps, MockableConfirmAddress,
+};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcError, GetNewAddressRpcOps};
-use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
-                                                      ScanAddressesResponse};
+use crate::rpc_command::init_scan_for_new_addresses::{
+    InitScanAddressesRpcOps, ScanAddressesParams, ScanAddressesResponse,
+};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
-use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
-                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
-                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+use crate::utxo::rpc_clients::{
+    ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes, ListSinceBlockRes,
+    NativeClient, NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock,
+};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -28,9 +31,11 @@ use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_
 use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
-use crate::{BlockHeightAndTime, CoinBalance, CoinBalanceMap, ConfirmPaymentInput, DexFee, IguanaPrivKey,
-            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps,
-            TradePreimageValue, TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG};
+use crate::{
+    BlockHeightAndTime, CoinBalance, CoinBalanceMap, ConfirmPaymentInput, DexFee, IguanaPrivKey, PrivKeyBuildPolicy,
+    SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
+    TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
@@ -47,15 +52,17 @@ use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_number::MmNumber;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
-                                  MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
+use mm2_test_helpers::for_tests::{
+    electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS,
+};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
-#[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
+#[cfg(not(target_arch = "wasm32"))]
+use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -93,7 +100,9 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
 /// Returned client won't work by default, requires some mocks to be usable
 #[cfg(not(target_arch = "wasm32"))]
-fn native_client_for_test() -> NativeClient { NativeClient(Arc::new(NativeClientImpl::default())) }
+fn native_client_for_test() -> NativeClient {
+    NativeClient(Arc::new(NativeClientImpl::default()))
+}
 
 fn utxo_coin_for_test(
     rpc_client: UtxoRpcClientEnum,
@@ -216,7 +225,7 @@ fn test_generate_transaction() {
 
     let outputs = vec![TransactionOutput {
         script_pubkey: vec![].into(),
-        value: 98001,
+        value: 98781,
     }];
 
     let builder = block_on(UtxoTxBuilder::new(&coin))
@@ -227,7 +236,7 @@ fn test_generate_transaction() {
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000 + 999);
+    assert_eq!(generated.1.fee_amount, 220 + 999);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 100000);
 
@@ -253,10 +262,10 @@ fn test_generate_transaction() {
     let generated = block_on(builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000);
-    assert_eq!(generated.1.received_by_me, 99000);
+    assert_eq!(generated.1.fee_amount, 211);
+    assert_eq!(generated.1.received_by_me, 99789);
     assert_eq!(generated.1.spent_by_me, 100000);
-    assert_eq!(generated.0.outputs[0].value, 99000);
+    assert_eq!(generated.0.outputs[0].value, 99789);
 
     let unspents = vec![UnspentInfo {
         value: 100000,
@@ -618,7 +627,7 @@ fn test_withdraw_impl_set_fixed_fee() {
     let expected = Some(
         UtxoFeeDetails {
             coin: Some(TEST_COIN_NAME.into()),
-            amount: "0.1".parse().unwrap(),
+            amount: "0.0245".parse().unwrap(),
         }
         .into(),
     );
@@ -916,7 +925,7 @@ fn test_withdraw_kmd_rewards_impl(
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: "0.00000245".parse().unwrap(),
     });
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
@@ -994,7 +1003,7 @@ fn test_withdraw_rick_rewards_none() {
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: "0.00000245".parse().unwrap(),
     });
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
@@ -1079,7 +1088,7 @@ fn test_electrum_rpc_client_error() {
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
     let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object {"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")}) }"#;
-    let actual = format!("{}", err);
+    let actual = format!("{err}");
 
     assert!(actual.contains(expected));
 }
@@ -1300,10 +1309,13 @@ fn test_generate_transaction_random_values() {
         if let Err(ref err) = result {
             let tx_size_max = est_tx_size(input_vals.len(), output_vals.len() + 1);
             let tx_fee_max = fee_rate * tx_size_max / 1000;
-            if matches!(err.get_inner(), GenerateTxError::NotEnoughUtxos {
-                sum_utxos: _,
-                required: _
-            }) {
+            if matches!(
+                err.get_inner(),
+                GenerateTxError::NotEnoughUtxos {
+                    sum_utxos: _,
+                    required: _
+                }
+            ) {
                 assert!(total_inputs < total_outputs + tx_fee_max);
                 continue;
             }
@@ -1334,9 +1346,6 @@ fn test_generate_transaction_random_values() {
 
         let tx_size = est_tx_size(generated.0.inputs.len(), generated.0.outputs.len());
         let estimated_txfee = fee_rate * tx_size / 1000;
-        //println!("generated.1.fee_amount={} estimated_txfee={} received_by_me={} output_vals.len={} generated.0.outputs.len={} dust={}, fee_rate={}",
-        //    generated.1.fee_amount, estimated_txfee, generated.1.received_by_me, output_vals.len(), generated.0.outputs.len(), dust, fee_rate);
-
         const CHANGE_OUTPUT_SIZE: u64 = 1 + 25 + 8;
         let max_overpay = dust + fee_rate * CHANGE_OUTPUT_SIZE / 1000; // could be slight overpay due to dust change removed from tx
         if generated.1.fee_amount > estimated_txfee {
@@ -2786,7 +2795,6 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let fee1 = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(my_balance.clone()),
         FeeApproxStage::WithoutApprox,
-        false,
     ))
     .expect("!get_sender_trade_fee");
 
@@ -2795,19 +2803,15 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     let fee2 = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::Exact(value_without_fee),
         FeeApproxStage::WithoutApprox,
-        false,
     ))
     .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee2);
 
     // `2.21934443` value was obtained as a result of executing the `max_taker_vol` RPC call for this wallet
     let max_taker_vol = BigDecimal::from_str("2.21934443").expect("!BigDecimal::from_str");
-    let fee3 = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::Exact(max_taker_vol),
-        FeeApproxStage::WithoutApprox,
-        false,
-    ))
-    .expect("!get_sender_trade_fee");
+    let fee3 =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(max_taker_vol), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     assert_eq!(fee1, fee3);
 }
 
@@ -3038,7 +3042,9 @@ fn firo_spark_tx_details() {
 
 #[test]
 fn test_generate_tx_doge_fee() {
-    // A tx below 1kb is always 0,01 doge fee per kb.
+    // Doge coin does not use fee rounding anymore, so this is not true now: 'a tx below 1kb is always 0,01 doge fee per kb'
+    // That is, this test was fixed for lesser txfee.
+    // See DINGO coin for the fee rounding.
     let config = json!({
         "coin": "DOGE",
         "name": "dogecoin",
@@ -3084,7 +3090,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 1000000;
+    let expected_fee = 227000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -3105,7 +3111,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 2000000;
+    let expected_fee = 1592000;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -3126,7 +3132,7 @@ fn test_generate_tx_doge_fee() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2292000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
@@ -3140,6 +3146,84 @@ fn doge_mtp() {
     let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
         .unwrap();
     assert_eq!(mtp, 1614849084);
+}
+
+#[test]
+fn test_parse_fixed_utxo_txfee_config() {
+    let config = json!({
+        "coin": "DOGE",
+        "name": "dogecoin",
+        "fname": "Dogecoin",
+        "rpcport": 22555,
+        "pubtype": 30,
+        "p2shtype": 22,
+        "wiftype": 158,
+        "txfee": 1000000,
+        "force_min_relay_fee": true,
+        "mm2": 1,
+        "required_confirmations": 2,
+        "avg_blocktime": 1,
+        "protocol": {
+            "type": "UTXO"
+        }
+    });
+    let request = json!({
+        "method": "electrum",
+        "coin": "DOGE",
+        "servers": [{"url": "electrum1.cipig.net:10060"},{"url": "electrum2.cipig.net:10060"},{"url": "electrum3.cipig.net:10060"}],
+    });
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
+
+    let priv_key = Secp256k1Secret::from([1; 32]);
+    let doge = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "DOGE", &config, &params, priv_key,
+    ))
+    .unwrap();
+    assert!(matches!(doge.as_ref().tx_fee, FeeRate::FixedPerKb(1000000_u64)));
+}
+
+#[test]
+fn test_parse_fixed_dingo_txfee_config() {
+    let config = json!({
+        "coin": "DINGO",
+        "name": "dingocoin",
+        "fname": "Dingocoin",
+        "sign_message_prefix": "Dingocoin Signed Message:\n",
+        "rpcport": 34646,
+        "pubtype": 30,
+        "p2shtype": 22,
+        "wiftype": 158,
+        "txfee": 100000000,
+        "dingo_fee": true,
+        "force_min_relay_fee": true,
+        "dust": 100000000,
+        "mm2": 1,
+        "required_confirmations": 5,
+        "avg_blocktime": 60,
+        "protocol": {
+          "type": "UTXO"
+        },
+        "derivation_path": "m/44'/3'",
+        "links": {
+          "github": "https://github.com/dingocoin/dingocoin",
+          "homepage": "https://dingocoin.com"
+        }
+    });
+    let request = json!({
+        "method": "electrum",
+        "coin": "DINGO",
+        "servers": [{"url": "elecx1.dingocoin.com:3342"},{"url": "elecx1.dingocoin.com:3339"},{"url": "elecx2.dingocoin.com:3342"},{"url": "elecx2.dingocoin.com:3339"},{"url": "delecx.twinkykms.com:3342"},{"url": "delecx.twinkykms.com:3339"}],
+    });
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&request).unwrap();
+
+    let priv_key = Secp256k1Secret::from([1; 32]);
+    let dingo = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "DINGO", &config, &params, priv_key,
+    ))
+    .unwrap();
+    assert!(matches!(dingo.as_ref().tx_fee, FeeRate::FixedPerKbDingo(100000000_u64)));
 }
 
 #[test]
@@ -3634,7 +3718,7 @@ fn test_withdraw_p2pk_balance() {
     assert_eq!(output_script, expected_script);
 
     // And it should have this value (p2pk balance - amount sent - fees).
-    assert_eq!(transaction.outputs[1].value, 899999000);
+    assert_eq!(transaction.outputs[1].value, 899999755);
 }
 
 /// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.
@@ -3817,6 +3901,8 @@ fn test_split_qtum() {
     log!("Res = {:?}", res);
 }
 
+/// Test to validate the fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313 produces valid txfee for tx with many inputs
+/// (as before the fix)
 #[test]
 fn test_raven_low_tx_fee_okay() {
     let config = json!({
@@ -3994,11 +4080,11 @@ fn test_raven_low_tx_fee_okay() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2065000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
-/// Test to validate fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313
+/// Test to validate the fix for https://github.com/KomodoPlatform/komodo-defi-framework/issues/2313 (code before the fix created tx with too low txfee )
 #[test]
 fn test_raven_low_tx_fee_error() {
     let config = json!({
@@ -4172,7 +4258,7 @@ fn test_raven_low_tx_fee_error() {
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let expected_fee = 2031000;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
@@ -4233,15 +4319,18 @@ fn test_account_balance_rpc() {
     macro_rules! known_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:literal) => {
             addresses_map.insert($address.to_string(), $balance);
-            balances_by_der_path.insert($der_path.to_string(), HDAddressBalance {
-                address: $address.to_string(),
-                derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
-                chain: $chain,
-                balance: HashMap::from([(
-                    TEST_COIN_NAME.to_string(),
-                    CoinBalance::new(BigDecimal::from($balance)),
-                )]),
-            })
+            balances_by_der_path.insert(
+                $der_path.to_string(),
+                HDAddressBalance {
+                    address: $address.to_string(),
+                    derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
+                    chain: $chain,
+                    balance: HashMap::from([(
+                        TEST_COIN_NAME.to_string(),
+                        CoinBalance::new(BigDecimal::from($balance)),
+                    )]),
+                },
+            )
         };
     }
 
@@ -4251,24 +4340,78 @@ fn test_account_balance_rpc() {
         };
     }
 
-    #[rustfmt::skip]
     {
         // Account#0, external addresses.
-        known_address!("m/44'/141'/0'/0/0", "RRqF4cYniMwYs66S4QDUUZ4GJQFQF69rBE", Bip44Chain::External, balance = 0);
-        known_address!("m/44'/141'/0'/0/1", "RSVLsjXc9LJ8fm9Jq7gXjeubfja3bbgSDf", Bip44Chain::External, balance = 0);
-        known_address!("m/44'/141'/0'/0/2", "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h", Bip44Chain::External, balance = 0);
-        known_address!("m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1", Bip44Chain::External, balance = 98);
-        known_address!("m/44'/141'/0'/0/4", "RUkEvRzb7mtwfVeKiSFEbYupLkcvU5KJBw", Bip44Chain::External, balance = 1);
-        known_address!("m/44'/141'/0'/0/5", "RP8deqVfjBbkvxbGbsQ2EGdamMaP1wxizR", Bip44Chain::External, balance = 0);
-        known_address!("m/44'/141'/0'/0/6", "RSvKMMegKGP5e2EanH7fnD4yNsxdJvLAmL", Bip44Chain::External, balance = 32);
+        known_address!(
+            "m/44'/141'/0'/0/0",
+            "RRqF4cYniMwYs66S4QDUUZ4GJQFQF69rBE",
+            Bip44Chain::External,
+            balance = 0
+        );
+        known_address!(
+            "m/44'/141'/0'/0/1",
+            "RSVLsjXc9LJ8fm9Jq7gXjeubfja3bbgSDf",
+            Bip44Chain::External,
+            balance = 0
+        );
+        known_address!(
+            "m/44'/141'/0'/0/2",
+            "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h",
+            Bip44Chain::External,
+            balance = 0
+        );
+        known_address!(
+            "m/44'/141'/0'/0/3",
+            "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1",
+            Bip44Chain::External,
+            balance = 98
+        );
+        known_address!(
+            "m/44'/141'/0'/0/4",
+            "RUkEvRzb7mtwfVeKiSFEbYupLkcvU5KJBw",
+            Bip44Chain::External,
+            balance = 1
+        );
+        known_address!(
+            "m/44'/141'/0'/0/5",
+            "RP8deqVfjBbkvxbGbsQ2EGdamMaP1wxizR",
+            Bip44Chain::External,
+            balance = 0
+        );
+        known_address!(
+            "m/44'/141'/0'/0/6",
+            "RSvKMMegKGP5e2EanH7fnD4yNsxdJvLAmL",
+            Bip44Chain::External,
+            balance = 32
+        );
 
         // Account#0, internal addresses.
-        known_address!("m/44'/141'/0'/1/0", "RLZxcZSYtKe74JZd1hBAmmD9PNHZqb72oL", Bip44Chain::Internal, balance = 13);
-        known_address!("m/44'/141'/0'/1/1", "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP", Bip44Chain::Internal, balance = 44);
-        known_address!("m/44'/141'/0'/1/2", "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH", Bip44Chain::Internal, balance = 10);
+        known_address!(
+            "m/44'/141'/0'/1/0",
+            "RLZxcZSYtKe74JZd1hBAmmD9PNHZqb72oL",
+            Bip44Chain::Internal,
+            balance = 13
+        );
+        known_address!(
+            "m/44'/141'/0'/1/1",
+            "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP",
+            Bip44Chain::Internal,
+            balance = 44
+        );
+        known_address!(
+            "m/44'/141'/0'/1/2",
+            "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH",
+            Bip44Chain::Internal,
+            balance = 10
+        );
 
         // Account#1, internal addresses.
-        known_address!("m/44'/141'/1'/1/0", "RGo7sYzivPtzv8aRQ4A6vRJDxoqkRRBRhZ", Bip44Chain::Internal, balance = 0);
+        known_address!(
+            "m/44'/141'/1'/1/0",
+            "RGo7sYzivPtzv8aRQ4A6vRJDxoqkRRBRhZ",
+            Bip44Chain::Internal,
+            balance = 0
+        );
     }
 
     NativeClient::display_balances.mock_safe(move |_, addresses: Vec<Address>, _| {
@@ -4535,14 +4678,17 @@ fn test_scan_for_new_addresses() {
                 non_empty_addresses.insert($address.to_string());
             }
             expected_checked_addresses.push($address.to_string());
-            balances_by_der_path.insert($der_path.to_string(), HDAddressBalance {
-                address: $address.to_string(),
-                derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
-                chain: $chain,
-                balance: $balance.map_or_else(HashMap::default, |balance| {
-                    HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
-                }),
-            });
+            balances_by_der_path.insert(
+                $der_path.to_string(),
+                HDAddressBalance {
+                    address: $address.to_string(),
+                    derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
+                    chain: $chain,
+                    balance: $balance.map_or_else(HashMap::default, |balance| {
+                        HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
+                    }),
+                },
+            );
         }};
     }
 
@@ -4560,30 +4706,74 @@ fn test_scan_for_new_addresses() {
     }
 
     // Please note that the order of the `known` and `new` addresses is important.
-    #[rustfmt::skip]
     {
         // Account#0, external addresses.
-        new_address!("m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1", Bip44Chain::External, balance = Some(98));
+        new_address!(
+            "m/44'/141'/0'/0/3",
+            "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1",
+            Bip44Chain::External,
+            balance = Some(98)
+        );
         unused_address!("m/44'/141'/0'/0/4", "RUkEvRzb7mtwfVeKiSFEbYupLkcvU5KJBw");
         unused_address!("m/44'/141'/0'/0/5", "RP8deqVfjBbkvxbGbsQ2EGdamMaP1wxizR");
         unused_address!("m/44'/141'/0'/0/6", "RSvKMMegKGP5e2EanH7fnD4yNsxdJvLAmL");
         unused_address!("m/44'/141'/0'/0/7", "RX76e9G7H4Xy6cYrtr1qGghxytAmWpv375"); // Stop searching for a non-empty address (gap_limit = 3).
 
         // Account#0, internal addresses.
-        new_address!("m/44'/141'/0'/1/1", "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP", Bip44Chain::Internal, balance = Some(98));
-        new_address!("m/44'/141'/0'/1/2", "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH", Bip44Chain::Internal, balance = None::<u64>);
-        new_address!("m/44'/141'/0'/1/3", "RQstQeTUEZLh6c3YWJDkeVTTQoZUsfvNCr", Bip44Chain::Internal, balance = Some(14));
+        new_address!(
+            "m/44'/141'/0'/1/1",
+            "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP",
+            Bip44Chain::Internal,
+            balance = Some(98)
+        );
+        new_address!(
+            "m/44'/141'/0'/1/2",
+            "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH",
+            Bip44Chain::Internal,
+            balance = None::<u64>
+        );
+        new_address!(
+            "m/44'/141'/0'/1/3",
+            "RQstQeTUEZLh6c3YWJDkeVTTQoZUsfvNCr",
+            Bip44Chain::Internal,
+            balance = Some(14)
+        );
         unused_address!("m/44'/141'/0'/1/4", "RT54m6pfj9scqwSLmYdfbmPcrpxnWGAe9J");
         unused_address!("m/44'/141'/0'/1/5", "RYWfEFxqA6zya9c891Dj7vxiDojCmuWR9T");
         unused_address!("m/44'/141'/0'/1/6", "RSkY6twW8knTcn6wGACUAG9crJHcuQ2kEH");
         unused_address!("m/44'/141'/0'/1/7", "RGRybU5awT9Chn9FeKZd8CEBREq5vNFDKJ"); // Stop searching for a non-empty address (gap_limit = 3).
 
         // Account#1, external addresses.
-        new_address!("m/44'/141'/1'/0/0", "RBQFLwJ88gVcnfkYvJETeTAB6AAYLow12K", Bip44Chain::External, balance = Some(9));
-        new_address!("m/44'/141'/1'/0/1", "RCyy77sRWFa2oiFPpyimeTQfenM1aRoiZs", Bip44Chain::External, balance = Some(7));
-        new_address!("m/44'/141'/1'/0/2", "RDnNa3pQmisfi42KiTZrfYfuxkLC91PoTJ", Bip44Chain::External, balance = None::<u64>);
-        new_address!("m/44'/141'/1'/0/3", "RQRGgXcGJz93CoAfQJoLgBz2r9HtJYMX3Z", Bip44Chain::External, balance = None::<u64>);
-        new_address!("m/44'/141'/1'/0/4", "RM6cqSFCFZ4J1LngLzqKkwo2ouipbDZUbm", Bip44Chain::External, balance = Some(11));
+        new_address!(
+            "m/44'/141'/1'/0/0",
+            "RBQFLwJ88gVcnfkYvJETeTAB6AAYLow12K",
+            Bip44Chain::External,
+            balance = Some(9)
+        );
+        new_address!(
+            "m/44'/141'/1'/0/1",
+            "RCyy77sRWFa2oiFPpyimeTQfenM1aRoiZs",
+            Bip44Chain::External,
+            balance = Some(7)
+        );
+        new_address!(
+            "m/44'/141'/1'/0/2",
+            "RDnNa3pQmisfi42KiTZrfYfuxkLC91PoTJ",
+            Bip44Chain::External,
+            balance = None::<u64>
+        );
+        new_address!(
+            "m/44'/141'/1'/0/3",
+            "RQRGgXcGJz93CoAfQJoLgBz2r9HtJYMX3Z",
+            Bip44Chain::External,
+            balance = None::<u64>
+        );
+        new_address!(
+            "m/44'/141'/1'/0/4",
+            "RM6cqSFCFZ4J1LngLzqKkwo2ouipbDZUbm",
+            Bip44Chain::External,
+            balance = Some(11)
+        );
         unused_address!("m/44'/141'/1'/0/5", "RX2fGBZjNZMNdNcnc5QBRXvmsXTvadvTPN");
         unused_address!("m/44'/141'/1'/0/6", "RJJ7muUETyp59vxVXna9KAZ9uQ1QSqmcjE");
         unused_address!("m/44'/141'/1'/0/7", "RYJ6vbhxFre5yChCMiJJFNTTBhAQbKM9AY");
@@ -4593,7 +4783,8 @@ fn test_scan_for_new_addresses() {
         unused_address!("m/44'/141'/1'/0/2", "RCjRDibDAXKYpVYSUeJXrbTzZ1UEKYAwJa");
         unused_address!("m/44'/141'/1'/0/3", "REs1NRzg8XjwN3v8Jp1wQUAyQb3TzeT8EB");
         unused_address!("m/44'/141'/1'/0/4", "RS4UZtkwZ8eYaTL1xodXgFNryJoTbPJYE5");
-        unused_address!("m/44'/141'/1'/0/5", "RDzcAqivNqUCJA4auetoVE4hcmH2p4L1fB"); // Stop searching for a non-empty address (gap_limit = 3).
+        unused_address!("m/44'/141'/1'/0/5", "RDzcAqivNqUCJA4auetoVE4hcmH2p4L1fB");
+        // Stop searching for a non-empty address (gap_limit = 3).
     }
 
     NativeClient::display_balance.mock_safe(move |_, address: Address, _| {

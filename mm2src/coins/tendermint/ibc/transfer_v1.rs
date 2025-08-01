@@ -55,7 +55,9 @@ impl TryFrom<IBCTransferV1Proto> for MsgTransfer {
     type Error = ErrorReport;
 
     #[inline(always)]
-    fn try_from(proto: IBCTransferV1Proto) -> Result<MsgTransfer, Self::Error> { MsgTransfer::try_from(&proto) }
+    fn try_from(proto: IBCTransferV1Proto) -> Result<MsgTransfer, Self::Error> {
+        MsgTransfer::try_from(&proto)
+    }
 }
 
 impl TryFrom<&IBCTransferV1Proto> for MsgTransfer {
@@ -80,7 +82,9 @@ impl TryFrom<&IBCTransferV1Proto> for MsgTransfer {
 }
 
 impl From<MsgTransfer> for IBCTransferV1Proto {
-    fn from(coin: MsgTransfer) -> IBCTransferV1Proto { IBCTransferV1Proto::from(&coin) }
+    fn from(coin: MsgTransfer) -> IBCTransferV1Proto {
+        IBCTransferV1Proto::from(&coin)
+    }
 }
 
 impl From<&MsgTransfer> for IBCTransferV1Proto {
