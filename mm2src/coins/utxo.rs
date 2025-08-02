@@ -63,6 +63,8 @@ use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
+use kdf_walletconnect::chain::WcChainId;
+use kdf_walletconnect::WalletConnectCtx;
 use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
@@ -122,6 +124,7 @@ use crate::hd_wallet::{
     AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
 };
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
+use crate::utxo::wallet_connect::sign_p2pkh_with_walletconect;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
@@ -1891,9 +1894,24 @@ where
                 coin.as_ref().conf.fork_id
             ))
         },
-        PrivKeyPolicy::WalletConnect { .. } => {
-            // fixme: swapops (taker fee, maker payment, taker payment)
-            return Err(TransactionErr::Plain("Can't sign tx with wallet connect".to_string()));
+        PrivKeyPolicy::WalletConnect { ref session_topic, .. } => {
+            let ctx = MmArc::from_weak(&coin.as_ref().ctx)
+                .ok_or_else(|| TransactionErr::Plain("Couldn't get access to MmArc".to_string()))?;
+            let wc_ctx = try_tx_s!(WalletConnectCtx::from_ctx(&ctx));
+            // FIXME: Set proper chain_id getter.
+            let chain_id = WcChainId::try_from_str("bip122:00000000da84f2bafbbc53dee25a72ae").unwrap();
+            try_tx_s!(
+                sign_p2pkh_with_walletconect(
+                    &wc_ctx,
+                    session_topic,
+                    &chain_id,
+                    &my_address,
+                    &unsigned,
+                    // FIXME: This will make p2pkh signing fail. You need to query for the prev transactions of each P2PKH input.
+                    HashMap::new()
+                )
+                .await
+            )
         },
         PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
         #[cfg(target_arch = "wasm32")]
