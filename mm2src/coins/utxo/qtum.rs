@@ -460,7 +460,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
