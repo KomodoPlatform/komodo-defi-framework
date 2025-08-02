@@ -5754,10 +5754,6 @@ fn test_scan_and_deserialize_block_headers() {
             num_to_fetch = num_to_fetch.min(remaining);
         }
 
-        if num_to_fetch == 0 {
-            break;
-        }
-
         println!("Fetching {num_to_fetch} headers from height {current_height}");
         let headers_res =
             block_on_f01(client.blockchain_block_headers(current_height, NonZeroU64::new(num_to_fetch).unwrap()))
@@ -5784,9 +5780,9 @@ fn test_scan_and_deserialize_block_headers() {
                 let chunk_hex_str = hex::encode(raw_chunk_bytes);
                 panic!(
                     "\n\n!!! Deserialization failed on header index {} (block height: {}) within the chunk starting at {} !!!\n\
-                     Raw Chunk Hex: {}\n\
-                     Deserialization Error: {:?}\n\n",
-                    i, block_height_of_header, current_height, chunk_hex_str, e
+                    Deserialization Error: {:?}\n\
+                    Raw Chunk Hex: {}\n\n",
+                    i, block_height_of_header, current_height, e, chunk_hex_str
                 );
             }
         }

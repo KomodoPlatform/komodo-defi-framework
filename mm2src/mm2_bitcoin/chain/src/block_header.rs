@@ -242,7 +242,7 @@ impl Deserializable for BlockHeader {
         let nonce = if is_zcash {
             BlockHeaderNonce::H256(reader.read()?)
         } else if (version == KAWPOW_VERSION && reader.coin_variant().is_rvn())
-            || version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME
+            || (version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME)
         {
             BlockHeaderNonce::U32(0)
         } else {
