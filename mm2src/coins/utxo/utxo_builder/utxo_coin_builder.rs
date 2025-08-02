@@ -14,9 +14,8 @@ use crate::utxo::{
     UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT,
 };
 use crate::{
-    BlockchainNetwork, CoinProtocol, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-    PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler,
-    UtxoActivationParams,
+    BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey, PrivKeyBuildPolicy,
+    PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler, UtxoActivationParams,
 };
 use async_trait::async_trait;
 use chain::TxHashAlgo;
@@ -30,7 +29,6 @@ use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use kdf_walletconnect::chain::WcChainId;
 use kdf_walletconnect::error::WalletConnectError;
 use kdf_walletconnect::{WalletConnectCtx, WcTopic};
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public};
@@ -290,7 +288,11 @@ where
         .build()
         .map_mm_err()?;
 
-    let chain_id = builder.wallet_connect_chain_id()?;
+    let chain_id = conf.chain_id.clone().ok_or_else(|| {
+        UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(
+            "chain_id is not set correctly in coins config".to_string(),
+        ))
+    })?;
     let full_derivation_path = builder.full_derivation_path()?;
 
     let wc_ctx = WalletConnectCtx::from_ctx(builder.ctx()).map_mm_err()?;
@@ -581,30 +583,6 @@ pub trait UtxoCoinBuilderCommonOps {
                 .map_to_mm(|e| UtxoCoinBuildError::InvalidBlockchainNetwork(e.to_string()));
         }
         Ok(BlockchainNetwork::Mainnet)
-    }
-
-    /// Returns WcChainId for this coin. Parsed from the coin config.
-    fn wallet_connect_chain_id(&self) -> UtxoCoinBuildResult<WcChainId> {
-        let protocol: CoinProtocol = json::from_value(self.conf()["protocol"].clone()).map_to_mm(|e| {
-            UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(format!(
-                "Couldn't parse protocol info: {e}"
-            )))
-        })?;
-
-        if let CoinProtocol::UTXO(utxo_info) = protocol {
-            let utxo_info = utxo_info.ok_or_else(|| {
-                WalletConnectError::InvalidChainId(format!(
-                    "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
-                    self.ticker()
-                ))
-            })?;
-            let chain_id = WcChainId::try_from_str(&utxo_info.chain_id).map_mm_err()?;
-            Ok(chain_id)
-        } else {
-            MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(
-                format!("Expected UTXO protocol, got: {protocol:?}"),
-            )))
-        }
     }
 
     /// Constructs the full HD derivation path from the coin config and the activation params partial paths.

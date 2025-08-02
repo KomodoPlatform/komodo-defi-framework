@@ -602,6 +602,9 @@ pub struct UtxoCoinConf {
     pub checksum_type: ChecksumType,
     /// Fork id used in sighash
     pub fork_id: u32,
+    /// A CAIP-2 complaiant chain ID. This is used to identify the UTXO chain in WalletConnect and other cross-chain protocols.
+    /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
+    pub chain_id: Option<WcChainId>,
     /// Signature version
     pub signature_version: SignatureVersion,
     pub required_confirmations: AtomicU64,
@@ -1898,13 +1901,17 @@ where
             let ctx = MmArc::from_weak(&coin.as_ref().ctx)
                 .ok_or_else(|| TransactionErr::Plain("Couldn't get access to MmArc".to_string()))?;
             let wc_ctx = try_tx_s!(WalletConnectCtx::from_ctx(&ctx));
-            // FIXME: Set proper chain_id getter.
-            let chain_id = WcChainId::try_from_str("bip122:00000000da84f2bafbbc53dee25a72ae").unwrap();
+            let chain_id = coin
+                .as_ref()
+                .conf
+                .chain_id
+                .as_ref()
+                .ok_or_else(|| TransactionErr::Plain("Chain ID is not set".to_string()))?;
             try_tx_s!(
                 sign_p2pkh_with_walletconect(
                     &wc_ctx,
                     session_topic,
-                    &chain_id,
+                    chain_id,
                     &my_address,
                     &unsigned,
                     // FIXME: This will make p2pkh signing fail. You need to query for the prev transactions of each P2PKH input.
