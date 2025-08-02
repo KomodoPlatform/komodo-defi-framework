@@ -61,9 +61,8 @@ impl From<BlockHeaderBits> for Compact {
     }
 }
 
-const AUX_POW_VERSION_DOGE: u32 = 6422788;
-const AUX_POW_VERSION_NMC: u32 = 65796;
-const AUX_POW_VERSION_SYS: u32 = 537919744;
+// The version number used by AuxPow-enabled coins is a bitmask.
+const AUXPOW_VERSION_FLAG: u32 = 1 << 8;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
 const BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION: u32 = 536870912;
@@ -242,8 +241,8 @@ impl Deserializable for BlockHeader {
         };
         let nonce = if is_zcash {
             BlockHeaderNonce::H256(reader.read()?)
-        } else if (version == KAWPOW_VERSION && !reader.coin_variant().is_btc())
-            || version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME
+        } else if (version == KAWPOW_VERSION && reader.coin_variant().is_rvn())
+            || (version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME)
         {
             BlockHeaderNonce::U32(0)
         } else {
@@ -252,10 +251,7 @@ impl Deserializable for BlockHeader {
         let solution = if is_zcash { Some(reader.read_list()?) } else { None };
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
-        let aux_pow = if matches!(
-            version,
-            AUX_POW_VERSION_DOGE | AUX_POW_VERSION_SYS | AUX_POW_VERSION_NMC
-        ) {
+        let aux_pow = if (version & AUXPOW_VERSION_FLAG) != 0 {
             let coinbase_tx = deserialize_tx(reader, TxType::StandardWithWitness)?;
             let parent_block_hash = reader.read()?;
             let coinbase_branch = reader.read()?;
@@ -297,7 +293,7 @@ impl Deserializable for BlockHeader {
             };
 
         // https://github.com/RavenProject/Ravencoin/blob/61c790447a5afe150d9892705ac421d595a2df60/src/primitives/block.h#L67
-        let (n_height, n_nonce_u64, mix_hash) = if version == KAWPOW_VERSION && !reader.coin_variant().is_btc() {
+        let (n_height, n_nonce_u64, mix_hash) = if version == KAWPOW_VERSION && reader.coin_variant().is_rvn() {
             (Some(reader.read()?), Some(reader.read()?), Some(reader.read()?))
         } else {
             (None, None, None)
@@ -387,12 +383,14 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     use super::ExtBlockHeader;
     use block_header::{
-        BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC, AUX_POW_VERSION_SYS,
-        BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME,
+        BlockHeader, BlockHeaderBits, BlockHeaderNonce, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION,
+        MTP_POW_VERSION, PROG_POW_SWITCH_TIME,
     };
     use hex::FromHex;
     use primitives::bytes::Bytes;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
+
+    const AUX_POW_VERSION_DOGE: u32 = 6422788;
 
     #[test]
     fn test_block_header_stream() {
@@ -1055,6 +1053,7 @@ mod tests {
 
     #[test]
     fn test_nmc_block_headers_serde_11() {
+        const AUX_POW_VERSION_NMC: u32 = 65796;
         // NMC block headers
         // start - #622807
         // end - #622796
@@ -1569,6 +1568,7 @@ mod tests {
 
     #[test]
     fn test_sys_block_headers_serde_11() {
+        const AUX_POW_VERSION_SYS: u32 = 537919744;
         let headers_bytes: &[u8] = &[
             11, 0, 1, 16, 32, 224, 75, 244, 161, 185, 248, 38, 215, 191, 60, 214, 46, 170, 129, 104, 51, 104, 181, 69,
             119, 171, 121, 183, 144, 38, 57, 67, 7, 99, 24, 201, 157, 180, 182, 0, 37, 120, 169, 194, 158, 75, 173,
@@ -2468,7 +2468,7 @@ mod tests {
             252, 71, 214, 56, 220, 173, 79, 220, 196, 15, 211,
         ];
 
-        let mut reader = Reader::new(headers_bytes);
+        let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::RVN);
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
             assert_eq!(header.version, KAWPOW_VERSION);
@@ -2881,6 +2881,18 @@ mod tests {
         let mut reader = Reader::new_with_coin_variant(&header_bytes, "MORTY".into());
         let header = reader.read::<BlockHeader>().unwrap();
         assert_eq!(header.version, 4);
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
+    }
+
+    #[test]
+    fn test_chta_kawpow_version_header() {
+        let header_hex = "00000030f0aceae7f05f5951ec0a6adae323f6e77bcd28beda092749e30800000000000072c4e8c753c4694ec6152fe97c73f72baf5b58176ca05adc7060989267b4816265ae8268cada0a1afcabfdbd";
+        let header_bytes: Vec<u8> = header_hex.from_hex().unwrap();
+        let header: BlockHeader = deserialize(header_bytes.as_slice()).unwrap();
+
+        assert_eq!(header.version, KAWPOW_VERSION);
+
         let serialized = serialize(&header);
         assert_eq!(serialized.take(), header_bytes);
     }
