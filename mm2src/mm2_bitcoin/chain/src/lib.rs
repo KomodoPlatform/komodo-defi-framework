@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 extern crate bitcoin as ext_bitcoin;
 extern crate bitcrypto as crypto;
 extern crate primitives;

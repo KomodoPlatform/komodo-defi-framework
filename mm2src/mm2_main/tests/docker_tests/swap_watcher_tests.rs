@@ -1535,7 +1535,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
-        other_pubkey: maker_pubkey,
+        other_pubkey: &maker_pubkey,
         secret_hash: secret_hash.as_slice(),
         amount: BigDecimal::from(10),
         swap_contract_address: &None,
@@ -1558,7 +1558,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let taker_payment_refund_preimage = block_on_f01(taker_coin.create_taker_payment_refund_preimage(
         &taker_payment.tx_hex(),
         time_lock,
-        maker_pubkey,
+        &maker_pubkey,
         secret_hash.as_slice(),
         &None,
         &[],
@@ -1630,7 +1630,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let taker_payment_wrong_secret = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
-        other_pubkey: maker_pubkey,
+        other_pubkey: &maker_pubkey,
         secret_hash: wrong_secret_hash.as_slice(),
         amount: BigDecimal::from(10),
         swap_contract_address: &taker_coin.swap_contract_address(),
@@ -1678,7 +1678,7 @@ fn test_watcher_validate_taker_payment_utxo() {
     let wrong_taker_payment_refund_preimage = block_on_f01(taker_coin.create_taker_payment_refund_preimage(
         &taker_payment.tx_hex(),
         time_lock,
-        maker_pubkey,
+        &maker_pubkey,
         wrong_secret_hash.as_slice(),
         &None,
         &[],
@@ -1694,7 +1694,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoin(maker_coin),
     }))
     .unwrap_err()
     .into_inner();
@@ -2189,7 +2189,7 @@ fn test_taker_validates_taker_payment_refund_utxo() {
     let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
-        other_pubkey: maker_pubkey,
+        other_pubkey: &maker_pubkey,
         secret_hash: secret_hash.as_slice(),
         amount: BigDecimal::from(10),
         swap_contract_address: &None,
@@ -2212,7 +2212,7 @@ fn test_taker_validates_taker_payment_refund_utxo() {
     let taker_payment_refund_preimage = block_on_f01(taker_coin.create_taker_payment_refund_preimage(
         &taker_payment.tx_hex(),
         time_lock,
-        maker_pubkey,
+        &maker_pubkey,
         secret_hash.as_slice(),
         &None,
         &[],
@@ -2221,7 +2221,7 @@ fn test_taker_validates_taker_payment_refund_utxo() {
 
     let taker_payment_refund = block_on_f01(taker_coin.send_taker_payment_refund_preimage(RefundPaymentArgs {
         payment_tx: &taker_payment_refund_preimage.tx_hex(),
-        other_pubkey: maker_pubkey,
+        other_pubkey: &maker_pubkey,
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: secret_hash.as_slice(),
         },
@@ -2680,7 +2680,7 @@ fn test_taker_validates_maker_payment_spend_utxo() {
     let maker_payment = block_on(maker_coin.send_maker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
-        other_pubkey: taker_pubkey,
+        other_pubkey: &taker_pubkey,
         secret_hash: secret_hash.as_slice(),
         amount: BigDecimal::from(10),
         swap_contract_address: &None,
@@ -2703,7 +2703,7 @@ fn test_taker_validates_maker_payment_spend_utxo() {
     let maker_payment_spend_preimage = block_on_f01(taker_coin.create_maker_payment_spend_preimage(
         &maker_payment.tx_hex(),
         time_lock,
-        maker_pubkey,
+        &maker_pubkey,
         secret_hash.as_slice(),
         &[],
     ))
@@ -2714,7 +2714,7 @@ fn test_taker_validates_maker_payment_spend_utxo() {
             preimage: &maker_payment_spend_preimage.tx_hex(),
             secret_hash: secret_hash.as_slice(),
             secret: secret.as_slice(),
-            taker_pub: taker_pubkey,
+            taker_pub: &taker_pubkey,
             watcher_reward: false,
         },
     ))
@@ -3166,7 +3166,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         secret_hash: &[0; 20],
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -3189,7 +3189,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
     let refund_tx = block_on_f01(coin.create_taker_payment_refund_preimage(
         &tx.tx_hex(),
         time_lock,
-        my_public_key,
+        &my_public_key,
         &[0; 20],
         &None,
         &[],
@@ -3202,7 +3202,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &[0; 20],
         },
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         time_lock,
         swap_unique_data: &[],
         watcher_reward: false,
@@ -3218,9 +3218,10 @@ fn test_send_taker_payment_refund_preimage_utxo() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
