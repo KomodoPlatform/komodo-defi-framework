@@ -437,7 +437,10 @@ impl MmCtx {
     }
 
     pub fn disable_watchers_globally(&self) -> bool {
-        !self.conf["use_watchers"].as_bool().unwrap_or(true)
+        // FIXME: This is temporary to don't let the taker try to sign any preimage for watchers
+        //        This is needed for the walletconnect test to pass.
+        false
+        // !self.conf["use_watchers"].as_bool().unwrap_or(true)
     }
 
     pub fn netid(&self) -> u16 {
