@@ -1699,14 +1699,14 @@ pub fn send_maker_payment<T>(coin: T, args: SendPaymentArgs) -> TransactionFut
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let maker_pubkey = coin.derive_htlc_pubkey(args.swap_unique_data);
     let SwapPaymentOutputsResult {
         payment_address,
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
         try_tx_fus!(args.time_lock.try_into()),
-        maker_htlc_key_pair.public_slice(),
+        &try_tx_fus!(Public::from_slice(&maker_pubkey)),
         args.other_pubkey,
         args.amount,
         SwapTxTypeWithSecretHash::TakerOrMakerPayment {
@@ -1737,14 +1737,14 @@ where
         None => args.amount,
     };
 
-    let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let taker_pubkey = coin.derive_htlc_pubkey(args.swap_unique_data);
     let SwapPaymentOutputsResult {
         payment_address,
         outputs,
     } = try_tx_fus!(generate_swap_payment_outputs(
         &coin,
         try_tx_fus!(args.time_lock.try_into()),
-        taker_htlc_key_pair.public_slice(),
+        &try_tx_fus!(Public::from_slice(&taker_pubkey)),
         args.other_pubkey,
         total_amount,
         SwapTxTypeWithSecretHash::TakerOrMakerPayment {
@@ -2594,7 +2594,8 @@ pub async fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let our_pub = Public::from_slice(&coin.derive_htlc_pubkey(&input.unique_swap_data))
+        .map_to_mm(|e| ValidatePaymentError::InternalError(format!("Failed to derive HTLC pubkey: {e}")))?;
     let other_pub = Public::from_slice(&input.other_pub)
         .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
     let time_lock = input
@@ -2606,7 +2607,7 @@ pub async fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         &tx,
         DEFAULT_SWAP_VOUT,
         &other_pub,
-        htlc_keypair.public(),
+        &our_pub,
         SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &input.secret_hash,
         },
@@ -2704,7 +2705,8 @@ pub async fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let our_pub = Public::from_slice(&coin.derive_htlc_pubkey(&input.unique_swap_data))
+        .map_to_mm(|e| ValidatePaymentError::InternalError(format!("Failed to derive HTLC pubkey: {e}")))?;
     let other_pub = Public::from_slice(&input.other_pub)
         .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
     let time_lock = input
@@ -2716,7 +2718,7 @@ pub async fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         &tx,
         DEFAULT_SWAP_VOUT,
         &other_pub,
-        htlc_keypair.public(),
+        &our_pub,
         SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &input.secret_hash,
         },
@@ -2770,11 +2772,11 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-    let my_htlc_keypair = coin.derive_htlc_key_pair(swap_unique_data);
+    let my_pub = coin.derive_htlc_pubkey(swap_unique_data);
     let script = payment_script(
         time_lock,
         secret_hash,
-        my_htlc_keypair.public(),
+        &try_fus!(Public::from_slice(&my_pub)),
         &try_fus!(Public::from_slice(other_pub)),
     );
     let hash = dhash160(&script);
@@ -2850,7 +2852,7 @@ pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
     search_for_swap_output_spend(
         coin.as_ref(),
         try_s!(input.time_lock.try_into()),
-        coin.derive_htlc_key_pair(input.swap_unique_data).public(),
+        &try_s!(Public::from_slice(&coin.derive_htlc_pubkey(input.swap_unique_data))),
         &try_s!(Public::from_slice(input.other_pub)),
         input.secret_hash,
         input.tx,
@@ -2869,7 +2871,7 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
         coin.as_ref(),
         try_s!(input.time_lock.try_into()),
         &try_s!(Public::from_slice(input.other_pub)),
-        coin.derive_htlc_key_pair(input.swap_unique_data).public(),
+        &try_s!(Public::from_slice(&coin.derive_htlc_pubkey(input.swap_unique_data))),
         input.secret_hash,
         input.tx,
         output_index,
@@ -5225,7 +5227,7 @@ pub async fn send_taker_funding<T>(coin: T, args: SendTakerFundingArgs<'_>) -> R
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let taker_pub = coin.derive_htlc_pubkey(args.swap_unique_data);
     let total_amount = &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
     let SwapPaymentOutputsResult {
@@ -5234,7 +5236,7 @@ where
     } = try_tx_s!(generate_swap_payment_outputs(
         &coin,
         try_tx_s!(args.funding_time_lock.try_into()),
-        taker_htlc_key_pair.public_slice(),
+        &try_tx_s!(Public::from_slice(&taker_pub)),
         args.maker_pub,
         total_amount,
         SwapTxTypeWithSecretHash::TakerFunding {
@@ -5317,7 +5319,8 @@ pub async fn validate_taker_funding<T>(coin: &T, args: ValidateTakerFundingArgs<
 where
     T: UtxoCommonOps + SwapOps,
 {
-    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let maker_pub = Public::from_slice(&coin.derive_htlc_pubkey(args.swap_unique_data))
+        .map_to_mm(|e| ValidateSwapV2TxError::Internal(format!("Failed to derive maker public key: {e}")))?;
     let total_expected_amount =
         &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
@@ -5328,12 +5331,8 @@ where
         .try_into()
         .map_to_mm(|e: TryFromIntError| ValidateSwapV2TxError::Overflow(e.to_string()))?;
 
-    let redeem_script = swap_proto_v2_scripts::taker_funding_script(
-        time_lock,
-        args.taker_secret_hash,
-        args.taker_pub,
-        maker_htlc_key_pair.public(),
-    );
+    let redeem_script =
+        swap_proto_v2_scripts::taker_funding_script(time_lock, args.taker_secret_hash, args.taker_pub, &maker_pub);
     let expected_output = TransactionOutput {
         value: expected_amount_sat,
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
@@ -5391,7 +5390,7 @@ pub async fn send_maker_payment_v2<T>(coin: T, args: SendMakerPaymentArgs<'_, T>
 where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
-    let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let maker_pubkey = coin.derive_htlc_pubkey(args.swap_unique_data);
 
     let SwapPaymentOutputsResult {
         payment_address,
@@ -5399,7 +5398,7 @@ where
     } = try_tx_s!(generate_swap_payment_outputs(
         &coin,
         try_tx_s!(args.time_lock.try_into()),
-        maker_htlc_key_pair.public_slice(),
+        &try_tx_s!(Public::from_slice(&maker_pubkey)),
         args.taker_pub,
         args.amount,
         SwapTxTypeWithSecretHash::MakerPaymentV2 {
