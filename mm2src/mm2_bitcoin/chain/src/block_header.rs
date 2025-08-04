@@ -230,16 +230,21 @@ impl Deserializable for BlockHeader {
             None
         };
 
-        let is_zcash = (version == 4 && !reader.coin_variant().is_btc() && !reader.coin_variant().is_ppc())
+        let is_zcash_style = (version == 4 && !reader.coin_variant().is_btc() && !reader.coin_variant().is_ppc())
             || reader.coin_variant().is_kmd_assetchain();
-        let hash_final_sapling_root = if is_zcash { Some(reader.read()?) } else { None };
+        // A PIVX header is a standard header with an added `hash_final_sapling_root`.
+        let hash_final_sapling_root = if is_zcash_style || reader.coin_variant().is_pivx() {
+            Some(reader.read()?)
+        } else {
+            None
+        };
         let time = reader.read()?;
-        let bits = if is_zcash {
+        let bits = if is_zcash_style {
             BlockHeaderBits::U32(reader.read()?)
         } else {
             BlockHeaderBits::Compact(reader.read()?)
         };
-        let nonce = if is_zcash {
+        let nonce = if is_zcash_style {
             BlockHeaderNonce::H256(reader.read()?)
         } else if (version == KAWPOW_VERSION && reader.coin_variant().is_rvn())
             || (version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME)
@@ -248,7 +253,11 @@ impl Deserializable for BlockHeader {
         } else {
             BlockHeaderNonce::U32(reader.read()?)
         };
-        let solution = if is_zcash { Some(reader.read_list()?) } else { None };
+        let solution = if is_zcash_style {
+            Some(reader.read_list()?)
+        } else {
+            None
+        };
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
         let aux_pow = if (version & AUXPOW_VERSION_FLAG) != 0 {
@@ -2892,6 +2901,20 @@ mod tests {
         let header: BlockHeader = deserialize(header_bytes.as_slice()).unwrap();
 
         assert_eq!(header.version, KAWPOW_VERSION);
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
+    }
+
+    #[test]
+    fn test_pivx_sapling_header() {
+        let header_hex = "0b000000097d36aeeb2585e6c08226f8f48cb91213708fcad603cb67be76efa5b3b31c0baf86a77624fd298be0f5a7b908d17d3d83edf8f681de2913b2584fb92380e152594229684411051b00000000c801eff496c2720766cdbf2ec20b5436b37350e2945f85a7feb8a4b4a12d4323";
+        let header_bytes = &header_hex.from_hex::<Vec<u8>>().unwrap() as &[u8];
+        let mut reader = Reader::new_with_coin_variant(header_bytes, CoinVariant::PIVX);
+        let header: BlockHeader = reader.read().unwrap();
+
+        // Sapling root must be present
+        assert!(header.hash_final_sapling_root.is_some());
 
         let serialized = serialize(&header);
         assert_eq!(serialized.take(), header_bytes);
