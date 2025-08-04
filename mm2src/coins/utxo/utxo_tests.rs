@@ -5778,12 +5778,7 @@ fn test_scan_and_deserialize_block_headers() {
                 // If a read fails, we've found the problematic header.
                 // We panic with all the necessary context for debugging.
                 let chunk_hex_str = hex::encode(raw_chunk_bytes);
-                panic!(
-                    "\n\n!!! Deserialization failed on header index {} (block height: {}) within the chunk starting at {} !!!\n\
-                    Deserialization Error: {:?}\n\
-                    Raw Chunk Hex: {}\n\n",
-                    i, block_height_of_header, current_height, e, chunk_hex_str
-                );
+                panic!("\n\n!!! Deserialization failed on header index {} (block height: {}) within the chunk starting at {} !!!\nDeserialization Error: {:?}\nRaw Chunk Hex: {}\n\n", i, block_height_of_header, current_height, e, chunk_hex_str);
             }
         }
 
