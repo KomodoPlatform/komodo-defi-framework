@@ -3277,8 +3277,8 @@ fn rvn_mtp() {
         "electrum2.cipig.net:10051",
         "electrum3.cipig.net:10051",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp =
+        block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::RVN)).unwrap();
     assert_eq!(mtp, 1633946264);
 }
 
