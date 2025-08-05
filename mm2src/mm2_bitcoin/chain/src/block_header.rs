@@ -156,14 +156,23 @@ impl Serializable for BlockHeader {
         if let Some(claim) = &self.claim_trie_root {
             s.append(claim);
         }
-        if let Some(h) = &self.hash_final_sapling_root {
-            s.append(h);
-        };
+        // For Zcash-style headers, the sapling root is serialized before the time.
+        if self.solution.is_some() {
+            if let Some(h) = &self.hash_final_sapling_root {
+                s.append(h);
+            }
+        }
         s.append(&self.time);
         s.append(&self.bits);
         // If a BTC header uses KAWPOW_VERSION, the nonce can't be zero
         if !self.is_prog_pow() && (self.version != KAWPOW_VERSION || self.nonce != BlockHeaderNonce::U32(0)) {
             s.append(&self.nonce);
+        }
+        // For PIVX-style headers, the sapling root is serialized after the nonce.
+        if self.solution.is_none() {
+            if let Some(h) = &self.hash_final_sapling_root {
+                s.append(h);
+            }
         }
         if let Some(sol) = &self.solution {
             s.append_list(sol);
@@ -232,12 +241,7 @@ impl Deserializable for BlockHeader {
 
         let is_zcash_style = (version == 4 && !reader.coin_variant().is_btc() && !reader.coin_variant().is_ppc())
             || reader.coin_variant().is_kmd_assetchain();
-        // A PIVX header is a standard header with an added `hash_final_sapling_root`.
-        let hash_final_sapling_root = if is_zcash_style || reader.coin_variant().is_pivx() {
-            Some(reader.read()?)
-        } else {
-            None
-        };
+        let mut hash_final_sapling_root = if is_zcash_style { Some(reader.read()?) } else { None };
         let time = reader.read()?;
         let bits = if is_zcash_style {
             BlockHeaderBits::U32(reader.read()?)
@@ -252,6 +256,12 @@ impl Deserializable for BlockHeader {
             BlockHeaderNonce::U32(0)
         } else {
             BlockHeaderNonce::U32(reader.read()?)
+        };
+        // A PIVX header is a standard header with a `hash_final_sapling_root` added after the nonce.
+        hash_final_sapling_root = if reader.coin_variant().is_pivx() {
+            Some(reader.read()?)
+        } else {
+            hash_final_sapling_root
         };
         let solution = if is_zcash_style {
             Some(reader.read_list()?)
