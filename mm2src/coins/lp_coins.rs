@@ -301,6 +301,8 @@ use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
+pub mod solana;
+
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;

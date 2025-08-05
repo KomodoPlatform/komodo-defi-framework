@@ -1,0 +1,1 @@
+mod solana_coin;
