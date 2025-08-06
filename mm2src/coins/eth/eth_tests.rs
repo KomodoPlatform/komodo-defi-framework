@@ -120,44 +120,44 @@ fn display_u256_with_point() {
 }
 
 #[test]
-fn test_wei_from_big_decimal() {
+fn test_u256_from_big_decimal() {
     let amount = "0.000001".parse().unwrap();
-    let wei = wei_from_big_decimal(&amount, 18).unwrap();
+    let wei = u256_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "1.000001".parse().unwrap();
-    let wei = wei_from_big_decimal(&amount, 18).unwrap();
+    let wei = u256_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000001000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1.into();
-    let wei = wei_from_big_decimal(&amount, 18).unwrap();
+    let wei = u256_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "0.000000000000000001".parse().unwrap();
-    let wei = wei_from_big_decimal(&amount, 18).unwrap();
+    let wei = u256_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(&amount, 9).unwrap();
+    let wei = u256_from_big_decimal(&amount, 9).unwrap();
     let expected_wei: U256 = 1234000000000u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(&amount, 0).unwrap();
+    let wei = u256_from_big_decimal(&amount, 0).unwrap();
     let expected_wei: U256 = 1234u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = 1234.into();
-    let wei = wei_from_big_decimal(&amount, 1).unwrap();
+    let wei = u256_from_big_decimal(&amount, 1).unwrap();
     let expected_wei: U256 = 12340u64.into();
     assert_eq!(expected_wei, wei);
 
     let amount = "1234.12345".parse().unwrap();
-    let wei = wei_from_big_decimal(&amount, 1).unwrap();
+    let wei = u256_from_big_decimal(&amount, 1).unwrap();
     let expected_wei: U256 = 12341u64.into();
     assert_eq!(expected_wei, wei);
 }
@@ -215,7 +215,7 @@ fn test_withdraw_impl_manual_fee() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
 
     EthCoin::address_balance.mock_safe(|_, _| {
-        let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
+        let balance = u256_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
     EthCoin::get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
@@ -261,7 +261,7 @@ fn test_withdraw_impl_fee_details() {
     );
 
     EthCoin::address_balance.mock_safe(|_, _| {
-        let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
+        let balance = u256_from_big_decimal(&1000000000.into(), 18).unwrap();
         MockResult::Return(Box::new(futures01::future::ok(balance)))
     });
     EthCoin::get_addr_nonce.mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok((0.into(), vec![])))));
@@ -295,18 +295,18 @@ fn test_withdraw_impl_fee_details() {
 
 #[test]
 fn test_add_ten_pct_one_gwei() {
-    let num = wei_from_big_decimal(&"0.1".parse().unwrap(), 9).unwrap();
-    let expected = wei_from_big_decimal(&"1.1".parse().unwrap(), 9).unwrap();
+    let num = u256_from_big_decimal(&"0.1".parse().unwrap(), 9).unwrap();
+    let expected = u256_from_big_decimal(&"1.1".parse().unwrap(), 9).unwrap();
     let actual = increase_by_percent_one_gwei(num, GAS_PRICE_PERCENT);
     assert_eq!(expected, actual);
 
-    let num = wei_from_big_decimal(&"9.9".parse().unwrap(), 9).unwrap();
-    let expected = wei_from_big_decimal(&"10.9".parse().unwrap(), 9).unwrap();
+    let num = u256_from_big_decimal(&"9.9".parse().unwrap(), 9).unwrap();
+    let expected = u256_from_big_decimal(&"10.9".parse().unwrap(), 9).unwrap();
     let actual = increase_by_percent_one_gwei(num, GAS_PRICE_PERCENT);
     assert_eq!(expected, actual);
 
-    let num = wei_from_big_decimal(&"30.1".parse().unwrap(), 9).unwrap();
-    let expected = wei_from_big_decimal(&"33.11".parse().unwrap(), 9).unwrap();
+    let num = u256_from_big_decimal(&"30.1".parse().unwrap(), 9).unwrap();
+    let expected = u256_from_big_decimal(&"33.11".parse().unwrap(), 9).unwrap();
     let actual = increase_by_percent_one_gwei(num, GAS_PRICE_PERCENT);
     assert_eq!(expected, actual);
 }

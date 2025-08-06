@@ -499,15 +499,15 @@ pub enum PayForGasParams {
 #[derive(Clone, Debug, Deserialize)]
 pub struct SignEthTransactionParams {
     /// Eth transfer value
-    value: Option<BigDecimal>,
+    pub value: Option<BigDecimal>,
     /// Eth to address
-    to: Option<String>,
+    pub to: Option<String>,
     /// Eth contract data
-    data: Option<String>,
+    pub data: Option<String>,
     /// Eth gas use limit
-    gas_limit: U256,
+    pub gas_limit: U256,
     /// Optional gas price or fee per gas params
-    pay_for_gas: Option<PayForGasParams>,
+    pub pay_for_gas: Option<PayForGasParams>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -520,9 +520,9 @@ pub enum SignRawTransactionEnum {
 /// sign_raw_transaction RPC request
 #[derive(Clone, Debug, Deserialize)]
 pub struct SignRawTransactionRequest {
-    coin: String,
+    pub coin: String,
     #[serde(flatten)]
-    tx: SignRawTransactionEnum,
+    pub tx: SignRawTransactionEnum,
 }
 
 #[derive(Debug, Deserialize)]
