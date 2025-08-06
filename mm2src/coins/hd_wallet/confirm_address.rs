@@ -178,7 +178,7 @@ where
                 .await
                 .map_mm_err()?,
             TrezorMessageType::Ethereum => trezor_session
-                .get_eth_address(derivation_path, SHOW_ADDRESS_ON_DISPLAY)
+                .get_eth_address(&derivation_path, SHOW_ADDRESS_ON_DISPLAY)
                 .await
                 .map_mm_err()?
                 .process(pubkey_processor.clone())

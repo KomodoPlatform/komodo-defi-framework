@@ -76,11 +76,11 @@ impl<'a> TrezorSession<'a> {
     /// Retrieves the EVM address associated with a given derivation path from the Trezor device.
     pub async fn get_eth_address<'b>(
         &'b mut self,
-        derivation_path: DerivationPath,
+        derivation_path: &DerivationPath,
         show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, Option<String>>> {
         let req = proto_ethereum::EthereumGetAddress {
-            address_n: derivation_path.iter().map(|child| child.0).collect(),
+            address_n: serialize_derivation_path(derivation_path),
             show_display: Some(show_display),
             encoded_network: None,
             chunkify: None,
