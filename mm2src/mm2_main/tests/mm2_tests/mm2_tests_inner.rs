@@ -6680,7 +6680,8 @@ fn test_connection_healthcheck_rpc() {
 
 #[cfg(all(feature = "run-device-tests", not(target_arch = "wasm32")))]
 mod trezor_tests {
-    use coins::eth::{eth_coin_from_conf_and_request, gas_limit, EthCoin};
+    use coins::eth::eth_gas::gas_limit;
+    use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
     use coins::for_tests::test_withdraw_init_loop;
     use coins::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps};
     use coins::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcOps};

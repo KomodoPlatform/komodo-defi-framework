@@ -1,7 +1,4 @@
-use super::{
-    checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
-    EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
-};
+use super::*;
 use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{
     calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
@@ -237,7 +234,7 @@ where
         let (mut wei_amount, dec_amount) = if req.max {
             (my_balance, my_balance_dec.clone())
         } else {
-            let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
+            let wei_amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
             (wei_amount, req.amount.clone())
         };
         if wei_amount > my_balance {
@@ -287,7 +284,7 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                let address_lock = coin.get_address_lock(my_address).await;
                 let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
@@ -325,6 +322,7 @@ where
                     nonce: None,
                     ..TransactionRequest::default()
                 };
+                // TODO: we should get _nonce_lock here (when Metamask is supported for swaps)
                 self.send_withdraw_tx(&req, tx_to_send).await?
             },
             EthPrivKeyPolicy::WalletConnect { .. } => {
@@ -338,6 +336,7 @@ where
                 ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+                // TODO: we should get _nonce_lock here (when WalletConnect is supported for swaps)
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
@@ -586,5 +585,240 @@ fn eth_get_withdraw_iguana_sender(
         address: *my_address,
         pubkey: *pubkey,
         derivation_path: None,
+    })
+}
+
+pub(super) async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
+    StandardEthWithdraw::new(coin.clone(), req)?.build().await
+}
+
+#[async_trait]
+impl InitWithdrawCoin for EthCoin {
+    async fn init_withdraw(
+        &self,
+        ctx: MmArc,
+        req: WithdrawRequest,
+        task_handle: WithdrawTaskHandleShared,
+    ) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        InitEthWithdraw::new(ctx, self.clone(), req, task_handle)?.build().await
+    }
+}
+
+/// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
+/// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
+pub(crate) async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> WithdrawNftResult {
+    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker())
+        .await
+        .map_mm_err()?;
+    let (to_addr, token_addr, eth_coin) =
+        get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address).map_mm_err()?;
+
+    let token_id_str = &withdraw_type.token_id.to_string();
+    let wallet_erc1155_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await.map_mm_err()?;
+
+    let amount_uint = if withdraw_type.max {
+        wallet_erc1155_amount.clone()
+    } else {
+        withdraw_type.amount.unwrap_or_else(|| BigUint::from(1u32))
+    };
+
+    if amount_uint > wallet_erc1155_amount {
+        return MmError::err(WithdrawError::NotEnoughNftsAmount {
+            token_address: withdraw_type.token_address,
+            token_id: withdraw_type.token_id.to_string(),
+            available: wallet_erc1155_amount,
+            required: amount_uint,
+        });
+    }
+
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
+        EthCoinType::Eth => {
+            let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
+            let token_id_u256 = U256::from_dec_str(token_id_str)
+                .map_to_mm(|e| NumConversError::new(format!("{e:?}")))
+                .map_mm_err()?;
+            let amount_u256 = U256::from_dec_str(&amount_uint.to_string())
+                .map_to_mm(|e| NumConversError::new(format!("{e:?}")))
+                .map_mm_err()?;
+            let data = function.encode_input(&[
+                Token::Address(my_address),
+                Token::Address(to_addr),
+                Token::Uint(token_id_u256),
+                Token::Uint(amount_u256),
+                Token::Bytes("0x".into()),
+            ])?;
+            (0.into(), data, token_addr, eth_coin.ticker())
+        },
+        EthCoinType::Erc20 { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Erc20 coin type doesnt support withdraw nft".to_owned(),
+            ))
+        },
+        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
+    };
+    let (gas, pay_for_gas_option) = get_eth_gas_details_from_withdraw_fee(
+        &eth_coin,
+        withdraw_type.fee,
+        eth_value,
+        data.clone().into(),
+        my_address,
+        call_addr,
+        false,
+    )
+    .await
+    .map_mm_err()?;
+    let address_lock = eth_coin.get_address_lock(my_address).await;
+    let _nonce_lock = address_lock.lock().await;
+    let (nonce, _) = eth_coin
+        .clone()
+        .get_addr_nonce(my_address)
+        .compat()
+        .timeout_secs(30.)
+        .await?
+        .map_to_mm(WithdrawError::Transport)?;
+
+    let tx_type = tx_type_from_pay_for_gas_option!(pay_for_gas_option);
+    if !eth_coin.is_tx_type_supported(&tx_type) {
+        return MmError::err(WithdrawError::TxTypeNotSupported);
+    }
+    let chain_id = match eth_coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add support for Tron NFTs
+        ChainSpec::Tron { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Tron is not supported for withdraw_erc1155 yet".to_owned(),
+            ))
+        },
+    };
+    let tx_builder = UnSignedEthTxBuilder::new(tx_type, nonce, gas, Action::Call(call_addr), eth_value, data);
+    let tx_builder = tx_builder_with_pay_for_gas_option(&eth_coin, tx_builder, &pay_for_gas_option)?;
+    let tx = tx_builder
+        .build()
+        .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+    let secret = eth_coin.priv_key_policy.activated_key_or_err().map_mm_err()?.secret();
+    let signed = tx.sign(secret, Some(chain_id))?;
+    let signed_bytes = rlp::encode(&signed);
+    let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin).map_mm_err()?;
+
+    Ok(TransactionNftDetails {
+        tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
+        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
+        from: vec![my_address.display_address()],
+        to: vec![withdraw_type.to],
+        contract_type: ContractType::Erc1155,
+        token_address: withdraw_type.token_address,
+        token_id: withdraw_type.token_id,
+        amount: amount_uint,
+        fee_details: Some(fee_details.into()),
+        coin: eth_coin.ticker.clone(),
+        block_height: 0,
+        timestamp: now_sec(),
+        internal_id: 0,
+        transaction_type: TransactionType::NftTransfer,
+    })
+}
+
+/// `withdraw_erc721` function returns details of `ERC-721` transaction including tx hex,
+/// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
+pub(crate) async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> WithdrawNftResult {
+    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker())
+        .await
+        .map_mm_err()?;
+    let (to_addr, token_addr, eth_coin) =
+        get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address).map_mm_err()?;
+
+    let token_id_str = &withdraw_type.token_id.to_string();
+    let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await.map_mm_err()?;
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    if token_owner != my_address {
+        return MmError::err(WithdrawError::MyAddressNotNftOwner {
+            my_address: my_address.display_address(),
+            token_owner: token_owner.display_address(),
+        });
+    }
+
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
+        EthCoinType::Eth => {
+            let function = ERC721_CONTRACT.function("safeTransferFrom")?;
+            let token_id_u256 = U256::from_dec_str(&withdraw_type.token_id.to_string())
+                .map_to_mm(|e| NumConversError::new(format!("{e:?}")))
+                .map_mm_err()?;
+            let data = function.encode_input(&[
+                Token::Address(my_address),
+                Token::Address(to_addr),
+                Token::Uint(token_id_u256),
+            ])?;
+            (0.into(), data, token_addr, eth_coin.ticker())
+        },
+        EthCoinType::Erc20 { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Erc20 coin type doesnt support withdraw nft".to_owned(),
+            ))
+        },
+        // TODO: start to use NFT GLOBAL TOKEN for withdraw
+        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
+    };
+    let (gas, pay_for_gas_option) = get_eth_gas_details_from_withdraw_fee(
+        &eth_coin,
+        withdraw_type.fee,
+        eth_value,
+        data.clone().into(),
+        my_address,
+        call_addr,
+        false,
+    )
+    .await
+    .map_mm_err()?;
+
+    let address_lock = eth_coin.get_address_lock(my_address).await;
+    let _nonce_lock = address_lock.lock().await;
+    let (nonce, _) = eth_coin
+        .clone()
+        .get_addr_nonce(my_address)
+        .compat()
+        .timeout_secs(30.)
+        .await?
+        .map_to_mm(WithdrawError::Transport)?;
+
+    let tx_type = tx_type_from_pay_for_gas_option!(pay_for_gas_option);
+    if !eth_coin.is_tx_type_supported(&tx_type) {
+        return MmError::err(WithdrawError::TxTypeNotSupported);
+    }
+    let tx_builder = UnSignedEthTxBuilder::new(tx_type, nonce, gas, Action::Call(call_addr), eth_value, data);
+    let tx_builder = tx_builder_with_pay_for_gas_option(&eth_coin, tx_builder, &pay_for_gas_option)?;
+    let tx = tx_builder
+        .build()
+        .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+    let secret = eth_coin.priv_key_policy.activated_key_or_err().map_mm_err()?.secret();
+    let chain_id = match eth_coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add support for Tron NFTs
+        ChainSpec::Tron { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Tron is not supported for withdraw_erc721 yet".to_owned(),
+            ))
+        },
+    };
+    let signed = tx.sign(secret, Some(chain_id))?;
+    let signed_bytes = rlp::encode(&signed);
+    let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin).map_mm_err()?;
+
+    Ok(TransactionNftDetails {
+        tx_hex: BytesJson::from(signed_bytes.to_vec()),
+        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
+        from: vec![my_address.display_address()],
+        to: vec![withdraw_type.to],
+        contract_type: ContractType::Erc721,
+        token_address: withdraw_type.token_address,
+        token_id: withdraw_type.token_id,
+        amount: BigUint::from(1u8),
+        fee_details: Some(fee_details.into()),
+        coin: eth_coin.ticker.clone(),
+        block_height: 0,
+        timestamp: now_sec(),
+        internal_id: 0,
+        transaction_type: TransactionType::NftTransfer,
     })
 }

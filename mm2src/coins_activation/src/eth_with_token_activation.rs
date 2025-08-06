@@ -221,6 +221,7 @@ pub struct IguanaEthWithTokensActivationResult {
     eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
     nfts_infos: HashMap<String, NftInfo>,
+    // TODO: add decimals
 }
 
 /// Activation result for activating an EVM-based coin along with its associated tokens (ERC20 and NFTs) for HD wallets.
