@@ -3723,6 +3723,7 @@ pub enum MmCoinEnum {
     TendermintToken(TendermintToken),
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoin(LightningCoin),
+    Solana(solana::SolanaCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoin(SiaCoin),
     #[cfg(any(test, feature = "for-tests"))]
@@ -3791,6 +3792,12 @@ impl From<LightningCoin> for MmCoinEnum {
     }
 }
 
+impl From<solana::SolanaCoin> for MmCoinEnum {
+    fn from(c: solana::SolanaCoin) -> MmCoinEnum {
+        MmCoinEnum::Solana(c)
+    }
+}
+
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum {
         MmCoinEnum::ZCoin(c)
@@ -3820,6 +3827,7 @@ impl Deref for MmCoinEnum {
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             MmCoinEnum::ZCoin(ref c) => c,
+            MmCoinEnum::Solana(ref c) => c,
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoin(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use coins::{my_tx_history_v2::TxHistoryStorage, solana::SolanaCoin, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
@@ -26,7 +27,7 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
     async fn enable_platform_coin(
         ctx: MmArc,
         ticker: String,
-        coin_conf: &Json,
+        coin_conf: &serde_json::Value,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
