@@ -2916,9 +2916,13 @@ impl Orderbook {
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
     ) -> Option<OrdermatchRequest> {
-        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-        pubkey_state.last_keep_alive = now_sec();
+        {
+            let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            pubkey_state.last_keep_alive = now_sec();
+        }
+
         let mut trie_roots_to_request = HashMap::new();
+
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
                 .topics_subscribed_to
@@ -2927,6 +2931,8 @@ impl Orderbook {
                 continue;
             }
 
+            // Empty/null root: clear local orders for (pubkey, pair),
+            // remember the null root, and don't request a sync.
             if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
                 log::debug!(
                     "Received zero or hashed_null_node pair {} trie root from pub {}",
@@ -2934,10 +2940,24 @@ impl Orderbook {
                     from_pubkey
                 );
 
+                // Clear local orders for this pubkey/pair.
+                remove_pubkey_pair_orders(self, from_pubkey, &alb_pair);
+
+                // Remember that the latest known root for this pair is null/empty.
+                {
+                    let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+                    pubkey_state.trie_roots.insert(alb_pair.clone(), trie_root);
+                }
+
                 continue;
             }
-            let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
-            if *actual_trie_root != trie_root {
+
+            // For non-null roots, compare with our current view and request sync if it differs.
+            let current_root = {
+                let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+                *order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair)
+            };
+            if current_root != trie_root {
                 trie_roots_to_request.insert(alb_pair, trie_root);
             }
         }

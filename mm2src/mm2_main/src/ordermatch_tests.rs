@@ -3509,3 +3509,70 @@ fn test_maker_order_balance_loops() {
     assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
     assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
 }
+
+#[test]
+fn process_orders_keep_alive_with_null_root_clears_pair_and_does_not_request() {
+    let (ctx, _our_pubkey, _our_secret) = make_ctx_for_tests();
+    let (maker_pubkey, maker_secret) = pubkey_and_secret_for_test("maker-passphrase");
+
+    // Build one remote order from maker_pubkey for RICK/MORTY and insert it locally.
+    let mut orders = make_random_orders(maker_pubkey.clone(), &maker_secret, "RICK".into(), "MORTY".into(), 1);
+    let order = orders.pop().expect("one order generated");
+    let inserted_uuid = order.uuid;
+
+    {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        // Mark the pair as subscribed so keep-alive handling considers it.
+        orderbook.topics_subscribed_to.insert(
+            orderbook_topic_from_base_rel("RICK", "MORTY"),
+            OrderbookRequestingState::Requested,
+        );
+
+        // Insert as if it came from the network; this updates trie state as well.
+        orderbook.insert_or_update_order_update_trie(order);
+
+        // Sanity: the order is present.
+        assert!(
+            orderbook.order_set.contains_key(&inserted_uuid),
+            "precondition: order must be present"
+        );
+    }
+
+    // Craft a keep-alive that advertises a null/empty root for (maker_pubkey, alb_pair).
+    let alb_pair = alb_ordered_pair("RICK", "MORTY");
+    let keep_alive = PubkeyKeepAlive {
+        trie_roots: HashMap::from_iter(std::iter::once((alb_pair.clone(), [0u8; 8]))),
+        timestamp: now_sec(),
+    };
+
+    // For a null root, we must clear the pair locally and NOT request a sync.
+    let res = block_on(process_orders_keep_alive(
+        ctx.clone(),
+        "dummy_peer".to_string(),
+        maker_pubkey.clone(),
+        keep_alive,
+        false,
+    ));
+    assert!(res.is_ok(), "process_orders_keep_alive returned error");
+
+    // The order must be gone now.
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let orderbook = ordermatch_ctx.orderbook.lock();
+    assert!(
+        !orderbook.order_set.contains_key(&inserted_uuid),
+        "orders for (pubkey, pair) must be cleared by null-root keep-alive"
+    );
+
+    // And the remembered trie root for that pair should be the null root.
+    let state = orderbook
+        .pubkeys_state
+        .get(&maker_pubkey)
+        .expect("pubkey state missing");
+    assert_eq!(
+        state.trie_roots.get(&alb_pair).copied(),
+        Some([0u8; 8]),
+        "null root should be remembered in pubkey state"
+    );
+}
