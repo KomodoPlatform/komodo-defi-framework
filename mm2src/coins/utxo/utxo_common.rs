@@ -917,17 +917,15 @@ pub enum P2SHSigner {
     WalletConnect(WcTopic),
 }
 
-impl TryFrom<&PrivKeyPolicy<KeyPair>> for P2SHSigner {
-    type Error = String;
-
-    fn try_from(value: &PrivKeyPolicy<KeyPair>) -> Result<Self, Self::Error> {
-        match value {
-            // FIXME: This is bad. We should rather use `coin.derive_htlc_key_pair` which requires a `SwapOps` capable object.
-            PrivKeyPolicy::Iguana(key_pair)
-            | PrivKeyPolicy::HDWallet {
-                activated_key: key_pair,
-                ..
-            } => Ok(P2SHSigner::KeyPair(*key_pair)),
+impl P2SHSigner {
+    fn try_from_coin<Coin>(coin: &Coin, swap_unique_data: &[u8]) -> Result<Self, String>
+    where
+        Coin: UtxoCommonOps + SwapOps,
+    {
+        match &coin.as_ref().priv_key_policy {
+            PrivKeyPolicy::Iguana { .. } | PrivKeyPolicy::HDWallet { .. } => {
+                Ok(P2SHSigner::KeyPair(coin.derive_htlc_key_pair(swap_unique_data)))
+            },
             PrivKeyPolicy::Trezor => Err("P2SH signing is not supported for Trezor".to_string()),
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => Err("P2SH signing is not supported for Metamask".to_string()),
@@ -1808,7 +1806,7 @@ pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from(&coin.as_ref().priv_key_policy)
+    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
         .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
 
     let input = P2SHSpendingTxInput {
@@ -2033,7 +2031,7 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from(&coin.as_ref().priv_key_policy)
+    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
         .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
 
     let input = P2SHSpendingTxInput {
@@ -2090,7 +2088,7 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from(&coin.as_ref().priv_key_policy)
+    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
         .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
 
     let input = P2SHSpendingTxInput {
