@@ -26,7 +26,10 @@ async fn perform_walletconnect_swap() {
             }
         }
     });
-    let electrums = vec![json!({ "url": "testnet.aranguren.org:52001", "protocol": "TCP" })];
+    let electrums = vec![
+        json!({ "url": "testnet.aranguren.org:52001", "protocol": "TCP" }),
+        json!({ "url": "blackie.c3-soft.com:57010", "protocol": "SSL" }),
+    ];
 
     // Create two tBTC coins with different coin names to test swapping them.
     let coins: Vec<_> = (1..=2)
@@ -42,6 +45,7 @@ async fn perform_walletconnect_swap() {
                 "pubtype": 111,
                 "p2shtype": 196,
                 "dust": 1000,
+                "txfee": 2000,
                 "segwit": true,
                 "address_format": {
                     "format": "segwit"
@@ -63,6 +67,10 @@ async fn perform_walletconnect_swap() {
     let coins = json!(coins);
 
     let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(&Mm2InitPrivKeyPolicy::GlobalHDAccount, &coins);
+    // Uncomment to test the refund case. The quickest way to test both refunds is to reject signing TakerPaymentSpend (the 4th signing prompt).
+    // This will force the taker to refund himself and after sometime the maker will also refund himself because he can't spend the TakerPayment anymore (as it's already refunded).
+    // Note that you need to run the test with `--features custom-swap-locktime` to enable the custom `payment_locktime` feature.
+    // bob_conf.conf["payment_locktime"] = (1 * 60).into();
     let mut mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, None)
         .await
         .unwrap();
@@ -76,6 +84,8 @@ async fn perform_walletconnect_swap() {
         &coins,
         &mm_bob.my_seed_addr(),
     );
+    // Uncomment to test the refund case
+    // alice_conf.conf["payment_locktime"] = (1 * 60).into();
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
         .await
         .unwrap();
@@ -118,9 +128,9 @@ async fn perform_walletconnect_swap() {
     }
 
     // Start the swap
-    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, &[trading_pair], 1.0, 1.0, 0.001).await;
+    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, &[trading_pair], 1.0, 1.0, 0.0002).await;
     // Wait for the swaps to finish (you need to accept signing the HTLCs in the WalletConnect in this stage).
-    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, 0.001, 1.0).await;
+    wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, 0.0002, 1.0).await;
 
     mm_bob.stop().await.unwrap();
     mm_alice.stop().await.unwrap();
