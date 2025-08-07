@@ -1872,7 +1872,7 @@ where
     }
     let (unsigned, _) = try_tx_s!(builder.build().await);
 
-    let spent_unspents = unsigned
+    let spent_unspents: Vec<_> = unsigned
         .inputs
         .iter()
         .map(|input| UnspentInfo {
@@ -1907,17 +1907,30 @@ where
                 .chain_id
                 .as_ref()
                 .ok_or_else(|| TransactionErr::Plain("Chain ID is not set".to_string()))?;
+            // Collect the outpoints of each P2PKH input.
+            let prev_p2pkh_tx_hashes = spent_unspents
+                .iter()
+                .filter(|input| input.script.is_pay_to_public_key_hash())
+                .map(|input| input.outpoint.hash.reversed().into())
+                .collect();
+            // Get the previous transactions that created these P2PKH inputs.
+            let prev_p2pkh_txs =
+                utxo_common::get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_p2pkh_tx_hashes)
+                    .await
+                    .map_err(|e| {
+                        TransactionErr::Plain(format!("Failed to get previous transactions for P2PKH inputs: {e}"))
+                    })?
+                    .into_iter()
+                    .map(|(hash, tx)| Ok((hash.reversed().into(), deserialize(tx.into_inner().hex.as_slice())?)))
+                    .collect::<Result<_, SerError>>()
+                    .map_err(|e| {
+                        TransactionErr::Plain(format!(
+                    "Failed to deserialize a previous transaction in preparation for WalletConnect P2PKH signing: {e}"
+                ))
+                    })?;
             try_tx_s!(
-                sign_p2pkh_with_walletconect(
-                    &wc_ctx,
-                    session_topic,
-                    chain_id,
-                    &my_address,
-                    &unsigned,
-                    // FIXME: This will make p2pkh signing fail. You need to query for the prev transactions of each P2PKH input.
-                    HashMap::new()
-                )
-                .await
+                sign_p2pkh_with_walletconect(&wc_ctx, session_topic, chain_id, &my_address, &unsigned, prev_p2pkh_txs)
+                    .await
             )
         },
         PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
