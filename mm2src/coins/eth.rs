@@ -5880,11 +5880,11 @@ impl MmCoin for EthCoin {
         self.abortable_system.weak_spawner()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(get_raw_transaction_impl(self.clone(), req).boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         if tx_hash.len() != H256::len_bytes() {
             let error = format!(
                 "TX hash should have exactly {} bytes, got {}",

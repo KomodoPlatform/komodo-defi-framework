@@ -1048,7 +1048,7 @@ pub fn median<T: Add<Output = T> + Div<Output = T> + Copy + From<u8> + Ord>(inpu
     }
     input.sort();
     let median_index = input.len() / 2;
-    if input.len() % 2 == 0 {
+    if input.len().is_multiple_of(2) {
         Some((input[median_index - 1] + input[median_index]) / T::from(2u8))
     } else {
         Some(input[median_index])
@@ -1078,7 +1078,7 @@ pub fn calc_total_pages(entries_len: usize, limit: usize) -> usize {
         return 0;
     }
     let pages_num = entries_len / limit;
-    if entries_len % limit == 0 {
+    if entries_len.is_multiple_of(limit) {
         pages_num
     } else {
         pages_num + 1

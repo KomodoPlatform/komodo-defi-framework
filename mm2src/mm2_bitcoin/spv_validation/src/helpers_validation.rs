@@ -90,7 +90,7 @@ struct MerkleArray<'a>(&'a [u8]);
 impl<'a> MerkleArray<'a> {
     /// Return a new merkle array from a slice
     pub fn new(slice: &'a [u8]) -> Result<MerkleArray<'a>, SPVError> {
-        if slice.len() % 32 == 0 {
+        if slice.len().is_multiple_of(32) {
             Ok(Self(slice))
         } else {
             Err(SPVError::BadMerkleProof)

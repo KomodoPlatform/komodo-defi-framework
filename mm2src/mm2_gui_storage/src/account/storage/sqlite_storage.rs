@@ -126,7 +126,7 @@ impl SqliteAccountStorage {
         })
     }
 
-    fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<'_, Connection>> {
         self.conn
             .lock()
             .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {e}")))
