@@ -600,6 +600,15 @@ pub async fn handle_orderbook_msg(
 pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: bool) -> OrderbookP2PHandlerResult {
     match decode_signed::<new_protocol::OrdermatchMessage>(msg) {
         Ok((message, _sig, pubkey)) => {
+            {
+                let my_persistent = mm2_internal_pubkey_hex(&ctx, String::from).ok().flatten();
+                let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
+                let my_p2p = &ordermatch_ctx.orderbook.lock().my_p2p_pubkeys;
+                if is_my_order(&pubkey.to_hex(), &my_persistent, my_p2p) {
+                    return Ok(());
+                }
+            }
+
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
                 return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
@@ -614,14 +623,14 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                 },
                 new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
                     let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
-                    process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
+                    process_taker_request(ctx, msg).await;
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
                     let spawner = ctx.spawner();
-                    spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
+                    spawner.spawn(process_maker_reserved(ctx, msg));
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -3937,7 +3946,7 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     }
 }
 
-async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
+async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
     log::debug!("Processing MakerReserved {:?}", reserved_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     {
@@ -3945,15 +3954,6 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         if !my_taker_orders.contains_key(&reserved_msg.taker_order_uuid) {
             return;
         }
-    }
-
-    // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
-    let our_public_id = CryptoCtx::from_ctx(&ctx)
-        .expect("'CryptoCtx' must be initialized already")
-        .mm2_internal_public_id();
-    if our_public_id.bytes == from_pubkey.0 {
-        log::warn!("Skip maker reserved from our pubkey");
-        return;
     }
 
     let uuid = reserved_msg.taker_order_uuid;
@@ -4016,6 +4016,9 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     false,
                 )
             {
+                let our_public_id = CryptoCtx::from_ctx(&ctx)
+                    .expect("'CryptoCtx' must be initialized already")
+                    .mm2_internal_public_id();
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
                     dest_pub_key: reserved_msg.sender_pubkey,
@@ -4054,17 +4057,6 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
-        Err(_) => return,
-    };
-
-    let unprefixed_from = from_pubkey.unprefixed();
-    if our_public_id.bytes == unprefixed_from {
-        log::warn!("Skip maker connected from our pubkey");
-        return;
-    }
-
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
         Entry::Occupied(e) => e,
@@ -4081,7 +4073,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         },
     };
 
-    if order_match.reserved.sender_pubkey != unprefixed_from.into() {
+    if order_match.reserved.sender_pubkey != from_pubkey.unprefixed().into() {
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
@@ -4107,17 +4099,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         .ok();
 }
 
-async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
+async fn process_taker_request(ctx: MmArc, taker_request: TakerRequest) {
+    log::debug!("Processing request {:?}", taker_request);
+
     let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
         Err(_) => return,
     };
-
-    if our_public_id == from_pubkey {
-        log::warn!("Skip the request originating from our pubkey");
-        return;
-    }
-    log::debug!("Processing request {:?}", taker_request);
 
     if !taker_request.can_match_with_maker_pubkey(&our_public_id) {
         return;
@@ -4223,17 +4211,6 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
-        Err(_) => return,
-    };
-
-    let sender_unprefixed = sender_pubkey.unprefixed();
-    if our_public_id.bytes == sender_unprefixed {
-        log::warn!("Skip taker connect from our pubkey");
-        return;
-    }
-
     let order_mutex = {
         match ordermatch_ctx
             .maker_orders_ctx
@@ -4256,12 +4233,16 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
             return;
         },
     };
-    if order_match.request.sender_pubkey != sender_unprefixed.into() {
+    if order_match.request.sender_pubkey != sender_pubkey.unprefixed().into() {
         log::warn!("Connect message sender pubkey != request message sender pubkey");
         return;
     }
 
     if order_match.connected.is_none() && order_match.connect.is_none() {
+        // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
+        let our_public_id = CryptoCtx::from_ctx(&ctx)
+            .expect("'CryptoCtx' must be initialized already")
+            .mm2_internal_public_id();
         let connected = MakerConnected {
             sender_pubkey: our_public_id.bytes.into(),
             dest_pub_key: connect_msg.sender_pubkey,
