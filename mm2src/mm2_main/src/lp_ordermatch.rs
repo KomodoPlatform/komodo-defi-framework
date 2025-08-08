@@ -2582,8 +2582,12 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
 
 struct OrderbookPubkeyState {
-    /// Timestamp of the latest keep alive message received
+    /// Local receive time (seconds) when we last accepted a keep-alive from this pubkey.
+    /// Used by inactivity GC to purge stale pubkeys and their orders.
     last_keep_alive: u64,
+    /// Monotonic maker-published timestamp of the last processed PubkeyKeepAlive.
+    /// Used to ignore out-of-order or replayed keep-alive messages from this pubkey.
+    latest_maker_timestamp: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
     order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
@@ -2596,7 +2600,10 @@ struct OrderbookPubkeyState {
 impl OrderbookPubkeyState {
     pub fn new() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
+            // Keep `last_keep_alive` based on local receive time. This is used for cleaning up orders of an inactive pubkey.
             last_keep_alive: now_sec(),
+            // Start at 0 so the first message from this pubkey always passes the monotonic check.
+            latest_maker_timestamp: 0,
             order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
@@ -2918,6 +2925,16 @@ impl Orderbook {
     ) -> Option<OrdermatchRequest> {
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            if message.timestamp <= pubkey_state.latest_maker_timestamp {
+                log::debug!(
+                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
+                    from_pubkey,
+                    message.timestamp,
+                    pubkey_state.latest_maker_timestamp
+                );
+                return None;
+            }
+            pubkey_state.latest_maker_timestamp = message.timestamp;
             pubkey_state.last_keep_alive = now_sec();
         }
 
