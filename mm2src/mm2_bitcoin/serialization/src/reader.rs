@@ -2,6 +2,7 @@ use compact_integer::CompactInteger;
 use derive_more::Display;
 use std::{io, marker};
 
+const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV"];
 const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC"];
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
@@ -102,10 +103,8 @@ fn ticker_matches(ticker: &str, with: &str) -> bool {
 impl From<&str> for CoinVariant {
     fn from(ticker: &str) -> Self {
         match ticker {
-            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
-            t if ticker_matches(t, "BTC") => CoinVariant::BTC,
-            // "BCH", "tBCH", etc..
-            t if ticker_matches(t, "BCH") => CoinVariant::BTC,
+            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", "BCH", "tBCH", etc..
+            t if BTC_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::BTC,
             // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
             t if ticker_matches(t, "QTUM") => CoinVariant::Qtum,
             // "LBC", "LBC-segwit", etc..
