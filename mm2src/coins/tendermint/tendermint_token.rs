@@ -573,11 +573,11 @@ impl MmCoin for TendermintToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         self.platform_coin.get_raw_transaction(req)
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         unimplemented!()
     }
 

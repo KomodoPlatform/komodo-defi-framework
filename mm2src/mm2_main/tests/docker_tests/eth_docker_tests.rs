@@ -51,8 +51,8 @@ use mm2_test_helpers::structs::{
 use serde_json::Value as Json;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
-use std::thread;
 use std::time::Duration;
+use std::{slice, thread};
 use uuid::Uuid;
 use web3::contract::{Contract, Options};
 use web3::ethabi::Token;
@@ -2833,7 +2833,7 @@ fn test_v2_eth_eth_kickstart() {
                     &swap_contract_address,
                     contracts.clone(),
                     None,
-                    &[node.clone()]
+                    slice::from_ref(&node)
                 ))
             );
         }
