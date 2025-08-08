@@ -2,6 +2,8 @@ use compact_integer::CompactInteger;
 use derive_more::Display;
 use std::{io, marker};
 
+const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC"];
+
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
 where
     R: io::Read,
@@ -114,8 +116,8 @@ impl From<&str> for CoinVariant {
             t if ticker_matches(t, "RICK") => CoinVariant::RICK,
             // "MORTY"
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
-            // "RVN"
-            t if ticker_matches(t, "RVN") => CoinVariant::RVN,
+            // `RVN`, `AIPG`, etc..
+            t if RVN_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::RVN,
             // "PIVX"
             t if ticker_matches(t, "PIVX") => CoinVariant::PIVX,
             _ => CoinVariant::Standard,
