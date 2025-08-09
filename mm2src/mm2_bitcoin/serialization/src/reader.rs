@@ -2,7 +2,7 @@ use compact_integer::CompactInteger;
 use derive_more::Display;
 use std::{io, marker};
 
-const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV"];
+const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV", "RIC"];
 const PIVX_FORKS: &[&str] = &["PIVX", "DOGEC"];
 const QTUM_FORKS: &[&str] = &["QTUM", "RUNES"];
 const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC"];
