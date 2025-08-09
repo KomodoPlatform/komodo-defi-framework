@@ -3,6 +3,7 @@ use derive_more::Display;
 use std::{io, marker};
 
 const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV"];
+const PIVX_FORKS: &[&str] = &["PIVX", "DOGEC"];
 const QTUM_FORKS: &[&str] = &["QTUM", "RUNES"];
 const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC"];
 
@@ -118,8 +119,8 @@ impl From<&str> for CoinVariant {
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
             // `RVN`, `AIPG`, etc..
             t if RVN_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::RVN,
-            // "PIVX"
-            t if ticker_matches(t, "PIVX") => CoinVariant::PIVX,
+            // PIVX family ("PIVX", "DOGEC", …)
+            t if PIVX_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::PIVX,
             _ => CoinVariant::Standard,
         }
     }
