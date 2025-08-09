@@ -5,7 +5,7 @@ use std::{io, marker};
 const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV", "RIC"];
 const PIVX_FORKS: &[&str] = &["PIVX", "DOGEC"];
 const QTUM_FORKS: &[&str] = &["QTUM", "RUNES"];
-const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC"];
+const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC", "AVN"];
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
 where
