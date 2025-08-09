@@ -3260,7 +3260,14 @@ pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'sta
 }
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
+    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| {
+        TxMarshalingErr::InvalidInput(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.conf.ticker,
+            hex::encode(bytes),
+            e
+        ))
+    })?;
 
     let serialized_length = transaction.tx_hex().len();
     if bytes.len() != serialized_length {
