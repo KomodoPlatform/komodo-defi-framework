@@ -135,6 +135,28 @@ async fn merge_utxo_loop<T>(
 ) where
     T: UtxoCommonOps + GetUtxoListOps,
 {
+    let (my_address, script_pubkey) = match weak.upgrade() {
+        Some(arc) => {
+            let coin = constructor(arc);
+            let my_address = match coin.as_ref().derivation_method {
+                DerivationMethod::SingleAddress(ref my_address) => my_address,
+                DerivationMethod::HDWallet(_) => {
+                    warn!("'merge_utxo_loop' is currently not used for HD wallets");
+                    return;
+                },
+            };
+            let script_pubkey = match output_script(my_address) {
+                Ok(script) => script.to_bytes(),
+                Err(e) => {
+                    error!("Error {} on output_script for coin {}", e, coin.as_ref().conf.ticker);
+                    return;
+                },
+            };
+            (my_address.clone(), script_pubkey)
+        },
+        None => return,
+    };
+
     loop {
         Timer::sleep(check_every).await;
 
@@ -143,16 +165,8 @@ async fn merge_utxo_loop<T>(
             None => break,
         };
 
-        let my_address = match coin.as_ref().derivation_method {
-            DerivationMethod::SingleAddress(ref my_address) => my_address,
-            DerivationMethod::HDWallet(_) => {
-                warn!("'merge_utxo_loop' is currently not used for HD wallets");
-                return;
-            },
-        };
-
         let ticker = &coin.as_ref().conf.ticker;
-        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(my_address).await {
+        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(&my_address).await {
             Ok((unspents, recently_spent)) => (unspents, recently_spent),
             Err(e) => {
                 error!("Error {} on get_unspent_ordered_list of coin {}", e, ticker);
@@ -163,16 +177,9 @@ async fn merge_utxo_loop<T>(
             let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
             info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
             let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = match output_script(my_address) {
-                Ok(script) => script,
-                Err(e) => {
-                    error!("Error {} on output_script for coin {}", e, ticker);
-                    return;
-                },
-            };
             let output = TransactionOutput {
                 value,
-                script_pubkey: script_pubkey.into(),
+                script_pubkey: script_pubkey.clone(),
             };
             let merge_tx_fut = generate_and_send_tx(
                 &coin,
