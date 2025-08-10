@@ -3,7 +3,8 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcCl
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::{
-    generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle, UtxoWeak,
+    generate_and_send_tx, output_script, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
+    UtxoWeak,
 };
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
@@ -17,7 +18,6 @@ use mm2_err_handle::prelude::*;
 #[cfg(test)]
 use mocktopus::macros::*;
 use rand::Rng;
-use script::Builder;
 use serde_json::Value as Json;
 use serialization::Reader;
 use spv_validation::conf::SPVConf;
@@ -163,8 +163,17 @@ async fn merge_utxo_loop<T>(
             let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
             info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
             let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();
-            let output = TransactionOutput { value, script_pubkey };
+            let script_pubkey = match output_script(my_address) {
+                Ok(script) => script,
+                Err(e) => {
+                    error!("Error {} on output_script for coin {}", e, ticker);
+                    return;
+                },
+            };
+            let output = TransactionOutput {
+                value,
+                script_pubkey: script_pubkey.into(),
+            };
             let merge_tx_fut = generate_and_send_tx(
                 &coin,
                 unspents,
