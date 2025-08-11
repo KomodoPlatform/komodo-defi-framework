@@ -3283,6 +3283,14 @@ fn rvn_mtp() {
 }
 
 #[test]
+fn pivx_mtp() {
+    let electrum = electrum_client_for_test(&["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"]);
+    let mtp =
+        block_on_f01(electrum.get_median_time_past(5014894, NonZeroU64::new(11).unwrap(), CoinVariant::PIVX)).unwrap();
+    assert_eq!(mtp, 1754356500);
+}
+
+#[test]
 fn qtum_mtp() {
     let electrum = electrum_client_for_test(&[
         "electrum1.cipig.net:10050",
@@ -5729,13 +5737,13 @@ fn test_electrum_v14_block_hash() {
 fn test_scan_and_deserialize_block_headers() {
     // ========================== CONFIGURATION ==========================
     /// The ticker of the coin to test (e.g., "NMC", "CHTA", "RVN").
-    const COIN_TICKER: &str = "NMC";
+    const COIN_TICKER: &str = "PIVX";
     /// A list of active Electrum servers for the specified coin.
-    const ELECTRUM_URLS: &[&str] = &["nmc2.bitcoins.sk:57001", "nmc2.bitcoins.sk:57002"];
+    const ELECTRUM_URLS: &[&str] = &["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"];
     /// The block height to start scanning from.
-    const START_HEIGHT: u64 = 701614;
+    const START_HEIGHT: u64 = 4903982;
     /// The block height to stop scanning at. Set to `None` to scan to the tip of the chain.
-    const END_HEIGHT: Option<u64> = Some(701616);
+    const END_HEIGHT: Option<u64> = Some(4913982);
     /// The number of headers to fetch in a single RPC call.
     const CHUNK_SIZE: u64 = 100;
     // ===================================================================

@@ -22,7 +22,7 @@ const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
 pub const MAX_BITS_BTC: u32 = 486604799;
 
 fn is_retarget_height(height: u64) -> bool {
-    height % RETARGETING_INTERVAL as u64 == 0
+    height.is_multiple_of(RETARGETING_INTERVAL as u64)
 }
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

@@ -23,7 +23,7 @@
 
 pub mod bch;
 pub(crate) mod bchd_grpc;
-#[allow(clippy::all)]
+#[allow(dead_code, clippy::all)]
 #[rustfmt::skip]
 #[path = "utxo/pb.rs"]
 mod bchd_pb;
@@ -315,7 +315,7 @@ impl ActualFeeRate {
             ActualFeeRate::FixedPerKb(fee_rate) => (fee_rate * tx_size) / KILO_BYTE,
             ActualFeeRate::FixedPerKbDingo(fee_rate) => {
                 // Implement rounding mechanism (earlier used in DOGE, now in DINGO coin)
-                let tx_size_kb = if tx_size % KILO_BYTE == 0 {
+                let tx_size_kb = if tx_size.is_multiple_of(KILO_BYTE) {
                     tx_size / KILO_BYTE
                 } else {
                     tx_size / KILO_BYTE + 1

@@ -65,6 +65,7 @@ pub enum CoinVariant {
     /// Same reason as RICK.
     MORTY,
     RVN,
+    PIVX,
 }
 
 impl CoinVariant {
@@ -85,6 +86,10 @@ impl CoinVariant {
     }
     pub fn is_rvn(&self) -> bool {
         matches!(self, CoinVariant::RVN)
+    }
+
+    pub fn is_pivx(&self) -> bool {
+        matches!(self, CoinVariant::PIVX)
     }
 }
 
@@ -111,6 +116,8 @@ impl From<&str> for CoinVariant {
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
             // "RVN"
             t if ticker_matches(t, "RVN") => CoinVariant::RVN,
+            // "PIVX"
+            t if ticker_matches(t, "PIVX") => CoinVariant::PIVX,
             _ => CoinVariant::Standard,
         }
     }

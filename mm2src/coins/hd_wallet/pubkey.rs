@@ -196,26 +196,3 @@ where
             .mm_err(HDExtractPubkeyError::from)
     }
 }
-
-/// This is a wrapper over `XPubExtractor`. The main goal of this structure is to allow construction of an Xpub extractor
-/// even if HD wallet is not supported. But if someone tries to extract an Xpub despite HD wallet is not supported,
-/// it fails with an inner `HDExtractPubkeyError` error.
-pub struct XPubExtractorUnchecked<XPubExtractor>(MmResult<XPubExtractor, HDExtractPubkeyError>);
-
-#[async_trait]
-impl<XPubExtractor> HDXPubExtractor for XPubExtractorUnchecked<XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
-    async fn extract_xpub(
-        &self,
-        trezor_coin: String,
-        derivation_path: DerivationPath,
-    ) -> MmResult<XPub, HDExtractPubkeyError> {
-        self.0
-            .as_ref()
-            .map_err(Clone::clone)?
-            .extract_xpub(trezor_coin, derivation_path)
-            .await
-    }
-}

@@ -402,7 +402,7 @@ impl MmCtx {
 
     /// Returns a SQL connection to the global database.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_db(&self) -> MutexGuard<Connection> {
+    pub fn global_db(&self) -> MutexGuard<'_, Connection> {
         self.global_db_conn.get().unwrap().lock().unwrap()
     }
 
@@ -410,7 +410,7 @@ impl MmCtx {
     ///
     /// For new implementations, use `self.async_wallet_db()` instead.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn wallet_db(&self) -> MutexGuard<Connection> {
+    pub fn wallet_db(&self) -> MutexGuard<'_, Connection> {
         self.wallet_db_conn.get().unwrap().lock().unwrap()
     }
 
@@ -564,12 +564,12 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
+    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<'_, Connection>> {
         self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
+    pub fn sqlite_connection(&self) -> MutexGuard<'_, Connection> {
         self.sqlite_connection
             .get()
             .expect("sqlite_connection is not initialized")
@@ -578,7 +578,7 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_sqlite_conn(&self) -> MutexGuard<Connection> {
+    pub fn shared_sqlite_conn(&self) -> MutexGuard<'_, Connection> {
         self.shared_sqlite_conn
             .get()
             .expect("shared_sqlite_conn is not initialized")
