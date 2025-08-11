@@ -271,7 +271,7 @@ impl Deserializable for BlockHeader {
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
         // AuxPoW is only for AuxPoW coins (Dogecoin, Namecoin, Syscoin, etc.).
-        // BTC-like variants (BTC, BCH, NAV, …) must NOT interpret bit 8 as AuxPoW.
+        // BTC-like variants (BTC, BCH, NAV, ...) must NOT interpret bit 8 as AuxPoW.
         let aux_pow = if (version & AUXPOW_VERSION_FLAG) != 0 && !reader.coin_variant().is_btc() {
             let coinbase_tx = deserialize_tx(reader, TxType::StandardWithWitness)?;
             let parent_block_hash = reader.read()?;
