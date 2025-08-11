@@ -132,7 +132,7 @@ where
 
 /// Merges unspent UTXOs from `from_address` address to `to_script_pubkey` script.
 /// If `custom_unspents` is provided, it will be used instead of fetching the `from_address` UTXOs from the coin.
-async fn merge_utxos<Coin>(
+pub async fn merge_utxos<Coin>(
     coin: &Coin,
     from_address: &Address,
     to_script_pubkey: &Script,

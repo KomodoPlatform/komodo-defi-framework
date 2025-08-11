@@ -1,4 +1,5 @@
 pub mod account_balance;
+pub mod consolidate_utxos;
 pub mod get_current_mtp;
 pub mod get_enabled_coins;
 pub mod get_new_address;

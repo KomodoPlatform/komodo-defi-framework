@@ -36,6 +36,7 @@ use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{
     account_balance::account_balance,
+    consolidate_utxos::consolidate_utxos_rpc,
     get_current_mtp::get_current_mtp_rpc,
     get_enabled_coins::get_enabled_coins_rpc,
     get_new_address::{
@@ -251,6 +252,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
+        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
