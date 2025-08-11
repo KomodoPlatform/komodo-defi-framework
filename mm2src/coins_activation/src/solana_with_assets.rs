@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,

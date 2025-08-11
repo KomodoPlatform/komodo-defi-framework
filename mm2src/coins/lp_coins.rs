@@ -301,6 +301,7 @@ use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
+#[cfg(feature = "enable-solana")]
 pub mod solana;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -3723,9 +3724,10 @@ pub enum MmCoinEnum {
     TendermintToken(TendermintToken),
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoin(LightningCoin),
-    Solana(solana::SolanaCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoin(SiaCoin),
+    #[cfg(feature = "enable-solana")]
+    Solana(solana::SolanaCoin),
     #[cfg(any(test, feature = "for-tests"))]
     Test(TestCoin),
 }
@@ -3792,6 +3794,7 @@ impl From<LightningCoin> for MmCoinEnum {
     }
 }
 
+#[cfg(feature = "enable-solana")]
 impl From<solana::SolanaCoin> for MmCoinEnum {
     fn from(c: solana::SolanaCoin) -> MmCoinEnum {
         MmCoinEnum::Solana(c)
@@ -3827,9 +3830,10 @@ impl Deref for MmCoinEnum {
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             MmCoinEnum::ZCoin(ref c) => c,
-            MmCoinEnum::Solana(ref c) => c,
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoin(ref c) => c,
+            #[cfg(feature = "enable-solana")]
+            MmCoinEnum::Solana(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::Test(ref c) => c,
         }

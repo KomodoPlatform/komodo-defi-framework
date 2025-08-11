@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use std::ops::Deref;
 use std::sync::Arc;
 
