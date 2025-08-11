@@ -3559,9 +3559,9 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_>;
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut;
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
@@ -4294,7 +4294,7 @@ impl CoinsContext {
     }
 
     #[inline(always)]
-    pub async fn lock_coins(&self) -> AsyncMutexGuard<HashMap<String, MmCoinStruct>> {
+    pub async fn lock_coins(&self) -> AsyncMutexGuard<'_, HashMap<String, MmCoinStruct>> {
         self.coins.lock().await
     }
 }

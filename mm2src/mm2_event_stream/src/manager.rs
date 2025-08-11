@@ -119,12 +119,12 @@ pub struct StreamingManager(Arc<RwLock<StreamingManagerInner>>);
 
 impl StreamingManager {
     /// Returns a read guard over the streaming manager.
-    fn read(&self) -> RwLockReadGuard<StreamingManagerInner> {
+    fn read(&self) -> RwLockReadGuard<'_, StreamingManagerInner> {
         self.0.read()
     }
 
     /// Returns a write guard over the streaming manager.
-    fn write(&self) -> RwLockWriteGuard<StreamingManagerInner> {
+    fn write(&self) -> RwLockWriteGuard<'_, StreamingManagerInner> {
         self.0.write()
     }
 

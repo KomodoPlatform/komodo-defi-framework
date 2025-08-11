@@ -89,7 +89,7 @@ impl QtumDockerOps {
     }
 }
 
-pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
+pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
     let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
         .with_env_var("CLIENTS", "2")
         .with_env_var("COIN_RPC_PORT", port.to_string())

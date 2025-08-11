@@ -1570,7 +1570,7 @@ impl MmCoin for SlpToken {
         self.conf.abortable_system.weak_spawner()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(
             utxo_common::get_raw_transaction(self.platform_coin.as_ref(), req)
                 .boxed()
@@ -1578,7 +1578,7 @@ impl MmCoin for SlpToken {
         )
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         Box::new(
             utxo_common::get_tx_hex_by_hash(self.platform_coin.as_ref(), tx_hash)
                 .boxed()

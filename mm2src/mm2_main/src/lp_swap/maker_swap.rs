@@ -256,12 +256,12 @@ pub struct MakerSwap {
 
 impl MakerSwap {
     #[inline]
-    fn w(&self) -> RwLockWriteGuard<MakerSwapMut> {
+    fn w(&self) -> RwLockWriteGuard<'_, MakerSwapMut> {
         self.mutable.write().unwrap()
     }
 
     #[inline]
-    fn r(&self) -> RwLockReadGuard<MakerSwapMut> {
+    fn r(&self) -> RwLockReadGuard<'_, MakerSwapMut> {
         self.mutable.read().unwrap()
     }
 

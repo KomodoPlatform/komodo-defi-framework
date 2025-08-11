@@ -908,11 +908,11 @@ impl MmCoin for QtumCoin {
         self.as_ref().abortable_system.weak_spawner()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         Box::new(
             utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
                 .boxed()
