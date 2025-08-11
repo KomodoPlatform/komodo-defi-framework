@@ -2,20 +2,18 @@ use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::{MapMmError, MmResult, MmResultExt};
+use mm2_err_handle::prelude::{MmResult, MmResultExt};
 
 use crate::{
     hd_wallet::HDWalletOps,
     lp_coinfind_or_err,
-    utxo::{output_script, utxo_builder::merge_utxos, utxo_common::checked_address_from_str},
+    utxo::{output_script, utxo_builder::merge_utxos},
     CoinFindError, DerivationMethod, MmCoinEnum,
 };
 
 #[derive(Deserialize)]
 pub struct ConsolidateUtxoRequest {
     coin: String,
-    from_address: Option<String>,
-    to_address: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -56,37 +54,16 @@ pub async fn consolidate_utxos_rpc(
     let coin = lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::UtxoCoin(coin) => {
-            let from_address = request
-                .from_address
-                .map(|addr| {
-                    checked_address_from_str(&coin, &addr).map_err(|e| {
-                        ConsolidateUtxoError::InvalidAddress(format!("Failed to parse `from_address`: {e}"))
-                    })
-                })
-                .transpose()?;
-            let from_address = match from_address {
-                Some(address) => address,
-                None => match &coin.as_ref().derivation_method {
-                    DerivationMethod::SingleAddress(my_address) => my_address.clone(),
-                    DerivationMethod::HDWallet(wallet) => {
-                        let hd_address = wallet.get_enabled_address().await.ok_or_else(|| {
-                            ConsolidateUtxoError::InvalidAddress("No enabled address found in HD wallet".to_string())
-                        })?;
-                        hd_address.address
-                    },
+            let from_address = match &coin.as_ref().derivation_method {
+                DerivationMethod::SingleAddress(my_address) => my_address.clone(),
+                DerivationMethod::HDWallet(wallet) => {
+                    let hd_address = wallet.get_enabled_address().await.ok_or_else(|| {
+                        ConsolidateUtxoError::InvalidAddress("No enabled address found in HD wallet".to_string())
+                    })?;
+                    hd_address.address
                 },
             };
-
-            // Use the `to_address` if it exists, otherwise, use the `from_address` as the destination.
-            let to_address = request
-                .to_address
-                .map(|addr| {
-                    checked_address_from_str(&coin, &addr)
-                        .mm_err(|e| ConsolidateUtxoError::InvalidAddress(format!("Failed to parse `to_address`: {e}")))
-                })
-                .unwrap_or_else(|| Ok(from_address.clone()))?;
-
-            let to_script_pubkey = output_script(&to_address).map_err(|e| {
+            let to_script_pubkey = output_script(&from_address).map_err(|e| {
                 ConsolidateUtxoError::InvalidAddress(format!("Failed to convert `to_address` to a script_pubkey: {e}"))
             })?;
 
