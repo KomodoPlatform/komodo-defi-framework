@@ -1,22 +1,33 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError};
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
-use async_trait::async_trait;
 
 use crate::{
-    coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult}, hd_wallet::HDAddressSelector, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest
+    coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
+    hd_wallet::HDAddressSelector,
+    BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
+    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
+    RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
+    SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+    TransactionEnum, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+    ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs,
+    WatcherOps, WithdrawFut, WithdrawRequest,
 };
 
 #[derive(Clone)]
 pub struct SolanaCoin(Arc<SolanaCoinFields>);
 
 pub struct SolanaCoinFields {}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SolanaProtocolInfo {}
 
 impl Deref for SolanaCoin {
     type Target = SolanaCoinFields;
@@ -25,6 +36,9 @@ impl Deref for SolanaCoin {
         &self.0
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct SolanaInitError {}
 
 #[async_trait]
 impl MmCoin for SolanaCoin {

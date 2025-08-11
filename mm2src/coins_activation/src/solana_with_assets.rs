@@ -1,28 +1,78 @@
 use async_trait::async_trait;
-use coins::{my_tx_history_v2::TxHistoryStorage, solana::SolanaCoin, MmCoinEnum};
+use coins::{
+    my_tx_history_v2::TxHistoryStorage,
+    solana::{SolanaCoin, SolanaInitError, SolanaProtocolInfo},
+    CoinProtocol, MmCoinEnum,
+};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 use rpc_task::RpcTaskHandleShared;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     context::CoinsActivationContext,
     platform_coin_with_tokens::{
-        InitPlatformCoinWithTokensTask, InitPlatformCoinWithTokensTaskManagerShared,
+        EnablePlatformCoinWithTokensError, GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
+        InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+        InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction,
         PlatformCoinWithTokensActivationOps, TokenAsMmCoinInitializer,
     },
+    prelude::{ActivationRequestInfo, CurrentBlock, TryFromCoinProtocol, TxHistory},
 };
+
+#[derive(Clone, Deserialize)]
+pub struct SolanaActivationRequest {}
+
+impl TxHistory for SolanaActivationRequest {
+    fn tx_history(&self) -> bool {
+        todo!()
+    }
+}
+
+impl ActivationRequestInfo for SolanaActivationRequest {
+    fn is_hw_policy(&self) -> bool {
+        todo!()
+    }
+}
+
+impl TryFromCoinProtocol for SolanaProtocolInfo {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>> {
+        todo!()
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct SolanaActivationResult {}
+
+impl CurrentBlock for SolanaActivationResult {
+    fn current_block(&self) -> u64 {
+        todo!()
+    }
+}
+
+impl GetPlatformBalance for SolanaActivationResult {
+    fn get_platform_balance(&self) -> Option<BigDecimal> {
+        todo!()
+    }
+}
+
+impl From<SolanaInitError> for EnablePlatformCoinWithTokensError {
+    fn from(err: SolanaInitError) -> Self {
+        todo!()
+    }
+}
 
 #[async_trait]
 impl PlatformCoinWithTokensActivationOps for SolanaCoin {
-    type ActivationRequest;
-    type PlatformProtocolInfo;
-    type ActivationResult;
-    type ActivationError;
+    type ActivationRequest = SolanaActivationRequest;
+    type PlatformProtocolInfo = SolanaProtocolInfo;
+    type ActivationResult = SolanaActivationResult;
+    type ActivationError = SolanaInitError;
 
-    type InProgressStatus;
-    type AwaitingStatus;
-    type UserAction;
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,

@@ -12,10 +12,10 @@ mod prelude;
 #[cfg(feature = "enable-sia")]
 mod sia_coin_activation;
 mod slp_token_activation;
+mod solana_with_assets;
 mod standalone_coin;
 mod tendermint_token_activation;
 mod tendermint_with_assets_activation;
-mod solana_with_assets;
 mod token;
 mod utxo_activation;
 #[cfg(not(target_arch = "wasm32"))]
