@@ -10,6 +10,7 @@ enable-sia = [
 	"dep:blake2b_simd",
 	"dep:sia-rust"
 ]
+enable-solana = []
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
