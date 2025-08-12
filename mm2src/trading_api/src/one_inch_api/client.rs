@@ -223,7 +223,10 @@ impl ApiClient {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
             .mm_err(OneInchError::TransportError)?;
-        log::debug!("1inch response body={}", String::from_utf8_lossy(&body));
+        log::debug!(
+            "1inch response body={}",
+            String::from_utf8_lossy(&body[..std::cmp::min(128, body.len())])
+        );
         // TODO: handle text body errors like 'The limit of requests per second has been exceeded'
         let body = serde_json::from_slice(&body).map_to_mm(|err| OneInchError::ParseBodyError {
             error_msg: err.to_string(),

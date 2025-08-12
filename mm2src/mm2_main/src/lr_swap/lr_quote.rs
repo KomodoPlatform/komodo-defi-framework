@@ -1038,7 +1038,6 @@ fn cross_prices_close(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
     series.first().map(|p| p.close.clone().into())
 }
 
-
 fn log_cross_prices(prices: &HashMap<(Ticker, Ticker), Option<MmNumber>>) {
     for p in prices {
         log::debug!(
