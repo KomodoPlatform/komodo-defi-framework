@@ -24,8 +24,8 @@ pub struct ConsolidateUtxoResponse {
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConsolidateUtxoError {
-    NoSuchCoin(String),
-    NotSupportedCoin(String),
+    NoSuchCoin,
+    CoinNotSupported,
     InvalidAddress(String),
     MergeError(String),
 }
@@ -33,8 +33,8 @@ pub enum ConsolidateUtxoError {
 impl HttpStatusCode for ConsolidateUtxoError {
     fn status_code(&self) -> StatusCode {
         match self {
-            ConsolidateUtxoError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            ConsolidateUtxoError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
+            ConsolidateUtxoError::NoSuchCoin => StatusCode::NOT_FOUND,
+            ConsolidateUtxoError::CoinNotSupported => StatusCode::BAD_REQUEST,
             ConsolidateUtxoError::InvalidAddress(_) => StatusCode::BAD_REQUEST,
             ConsolidateUtxoError::MergeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -43,7 +43,9 @@ impl HttpStatusCode for ConsolidateUtxoError {
 
 impl From<CoinFindError> for ConsolidateUtxoError {
     fn from(err: CoinFindError) -> Self {
-        ConsolidateUtxoError::NoSuchCoin(err.to_string())
+        match err {
+            CoinFindError::NoSuchCoin { .. } => ConsolidateUtxoError::NoSuchCoin,
+        }
     }
 }
 
@@ -75,6 +77,6 @@ pub async fn consolidate_utxos_rpc(
                 tx_hash: transaction.hash().reversed().to_string(),
             })
         },
-        _ => Err(ConsolidateUtxoError::NotSupportedCoin(request.coin).into()),
+        _ => Err(ConsolidateUtxoError::CoinNotSupported.into()),
     }
 }
