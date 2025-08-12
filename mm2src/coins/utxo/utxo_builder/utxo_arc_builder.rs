@@ -1,3 +1,4 @@
+use crate::hd_wallet::HDWalletOps;
 use crate::utxo::rpc_clients::{
     ElectrumClient, ElectrumClientImpl, UnspentInfo, UtxoJsonRpcClientInfo, UtxoRpcClientEnum,
 };
@@ -12,7 +13,7 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, Transaction, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{debug, error, info, warn};
+use common::log::{debug, error, info};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::Address;
@@ -180,21 +181,30 @@ async fn merge_utxo_loop<T>(
     let (my_address, script_pubkey) = match weak.upgrade() {
         Some(arc) => {
             let coin = constructor(arc);
-            let my_address = match coin.as_ref().derivation_method {
-                DerivationMethod::SingleAddress(ref my_address) => my_address,
-                DerivationMethod::HDWallet(_) => {
-                    warn!("'merge_utxo_loop' is currently not used for HD wallets");
-                    return;
+            let my_address = match &coin.as_ref().derivation_method {
+                DerivationMethod::SingleAddress(my_address) => my_address.clone(),
+                DerivationMethod::HDWallet(hd_wallet) => match hd_wallet.get_enabled_address().await {
+                    Some(hd_address) => hd_address.address,
+                    None => {
+                        // When this happens, this might be due to using HW wallet that its addresses hasn't been polled yet.
+                        // Anyway we don't really need a consolidation loop for HW wallets since they can't swap and
+                        // such a loop will keep asking for consolidation signatures every now and then.
+                        error!(
+                            "No enabled address found in HD wallet for coin {}",
+                            coin.as_ref().conf.ticker
+                        );
+                        return;
+                    },
                 },
             };
-            let script_pubkey = match output_script(my_address) {
+            let script_pubkey = match output_script(&my_address) {
                 Ok(script) => script,
                 Err(e) => {
                     error!("Error {} on output_script for coin {}", e, coin.as_ref().conf.ticker);
                     return;
                 },
             };
-            (my_address.clone(), script_pubkey)
+            (my_address, script_pubkey)
         },
         None => return,
     };
