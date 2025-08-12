@@ -151,6 +151,7 @@ pub struct LrGetQuotesForTokensRequest {
 }
 
 /// Details for best swap with LR
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct QuoteDetails {
     /// interim token to route to/from
@@ -164,6 +165,7 @@ pub struct QuoteDetails {
 }
 
 /// Response for quotes to fill order with LR
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct LrGetQuotesForTokensResponse {
     pub quotes: Vec<QuoteDetails>,

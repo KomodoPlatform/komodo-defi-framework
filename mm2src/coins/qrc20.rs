@@ -275,7 +275,7 @@ impl UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'_> {
         };
 
         if rel_to_home {
-            let home = dirs::home_dir().or_mm_err(|| UtxoCoinBuildError::CantDetectUserHome)?;
+            let home = std::env::home_dir().or_mm_err(|| UtxoCoinBuildError::CantDetectUserHome)?;
             Ok(home.join(confpath))
         } else {
             Ok(confpath.into())
@@ -1245,11 +1245,11 @@ impl MmCoin for Qrc20Coin {
         Box::new(qrc20_withdraw(self.clone(), req).boxed().compat())
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_raw_transaction(&self.utxo, req).boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_tx_hex_by_hash(&self.utxo, tx_hash).boxed().compat())
     }
 

@@ -825,12 +825,12 @@ pub enum TakerSwapCommand {
 
 impl TakerSwap {
     #[inline]
-    fn w(&self) -> RwLockWriteGuard<TakerSwapMut> {
+    fn w(&self) -> RwLockWriteGuard<'_, TakerSwapMut> {
         self.mutable.write().unwrap()
     }
 
     #[inline]
-    pub fn r(&self) -> RwLockReadGuard<TakerSwapMut> {
+    pub fn r(&self) -> RwLockReadGuard<'_, TakerSwapMut> {
         self.mutable.read().unwrap()
     }
 

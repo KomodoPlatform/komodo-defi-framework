@@ -379,7 +379,7 @@ impl ConnectionManager {
         // The connections that we can consider (all connections - candidate connections).
         let all_candidate_connections: Vec<_> = all_connections
             .iter()
-            .filter(|&(_, conn_ctx)| (!maintained_connections.contains_key(&conn_ctx.id)))
+            .filter(|&(_, conn_ctx)| !maintained_connections.contains_key(&conn_ctx.id))
             .map(|(_, conn_ctx)| (conn_ctx.connection.clone(), conn_ctx.id))
             .collect();
         // The candidate connections from above, but further filtered by whether they are suspended or not.
@@ -465,12 +465,12 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
+    fn read_connections(&self) -> RwLockReadGuard<'_, HashMap<String, ConnectionContext>> {
         self.0.connections.read().unwrap()
     }
 
     #[inline]
-    fn write_connections(&self) -> RwLockWriteGuard<HashMap<String, ConnectionContext>> {
+    fn write_connections(&self) -> RwLockWriteGuard<'_, HashMap<String, ConnectionContext>> {
         self.0.connections.write().unwrap()
     }
 
@@ -482,7 +482,7 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn read_maintained_connections(&self) -> RwLockReadGuard<BTreeMap<ID, String>> {
+    fn read_maintained_connections(&self) -> RwLockReadGuard<'_, BTreeMap<ID, String>> {
         self.0.maintained_connections.read().unwrap()
     }
 
