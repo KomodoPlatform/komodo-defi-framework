@@ -72,7 +72,7 @@ pub async fn consolidate_utxos_rpc(
                 .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
 
             Ok(ConsolidateUtxoResponse {
-                tx_hash: format!("{:?}", transaction.hash().reversed()),
+                tx_hash: transaction.hash().reversed().to_string(),
             })
         },
         _ => Err(ConsolidateUtxoError::NotSupportedCoin(request.coin).into()),
