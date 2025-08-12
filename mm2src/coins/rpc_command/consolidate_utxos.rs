@@ -9,13 +9,19 @@ use rpc::v1::types::ToTxHash;
 use crate::{
     hd_wallet::{AddrToString, HDWalletOps},
     lp_coinfind_or_err,
-    utxo::{output_script, utxo_builder::merge_utxos, utxo_common::big_decimal_from_sat_unsigned, UtxoFeeDetails},
+    utxo::{
+        output_script,
+        utxo_builder::{merge_utxos, MergeConditions},
+        utxo_common::big_decimal_from_sat_unsigned,
+        UtxoFeeDetails,
+    },
     CoinFindError, DerivationMethod, MmCoinEnum, Transaction, TransactionData, TransactionDetails,
 };
 
 #[derive(Deserialize)]
 pub struct ConsolidateUtxoRequest {
     coin: String,
+    merge_conditions: MergeConditions,
 }
 
 #[derive(Serialize)]
@@ -78,9 +84,10 @@ pub async fn consolidate_utxos_rpc(
                 ConsolidateUtxoError::InvalidAddress(format!("Failed to convert `to_address` to a script_pubkey: {e}"))
             })?;
 
-            let (transaction, spent_utxos) = merge_utxos(&coin, &from_address, &to_script_pubkey, None)
-                .await
-                .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
+            let (transaction, spent_utxos) =
+                merge_utxos(&coin, &from_address, &to_script_pubkey, &request.merge_conditions)
+                    .await
+                    .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
 
             let received_by_me = transaction.outputs.iter().map(|o| o.value).sum();
             let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();

@@ -6,14 +6,15 @@ use crate::utxo::rpc_clients::{
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::{
-    generate_and_send_tx, output_script, FeePolicy, GetUtxoListOps, RecentlySpentOutPointsGuard, UtxoArc,
-    UtxoCommonOps, UtxoSyncStatusLoopHandle, UtxoWeak,
+    generate_and_send_tx, output_script, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
+    UtxoWeak,
 };
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, Transaction, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
+use common::{fifty, one_hundred};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::Address;
@@ -131,25 +132,41 @@ where
 {
 }
 
+#[derive(Deserialize)]
+pub struct MergeConditions {
+    /// The minimum number of UTXOs to merge. If the number of UTXOs is less than this, the merge will not be performed.
+    #[serde(default = "one_hundred")]
+    pub merge_at: usize,
+    /// The maximum number of UTXOs to merge at once in a single transaction.
+    #[serde(default = "fifty")]
+    pub max_merge_at_once: usize,
+}
+
 /// Merges unspent UTXOs from `from_address` address to `to_script_pubkey` script.
-/// If `custom_unspents` is provided, it will be used instead of fetching the `from_address` UTXOs from the coin.
 pub async fn merge_utxos<Coin>(
     coin: &Coin,
     from_address: &Address,
     to_script_pubkey: &Script,
-    custom_unspents: Option<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)>,
+    merge_conditions: &MergeConditions,
 ) -> MmResult<(Transaction, Vec<UnspentInfo>), String>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
 {
     let ticker = &coin.as_ref().conf.ticker;
-    let (unspents, recently_spent) = if let Some((unspents, recently_spent)) = custom_unspents {
-        (unspents, recently_spent)
-    } else {
-        coin.get_unspent_ordered_list(from_address)
-            .await
-            .mm_err(|e| format!("Error in get_unspent_ordered_list for coin={ticker}: {e}"))?
-    };
+    let (unspents, recently_spent) = coin
+        .get_unspent_ordered_list(from_address)
+        .await
+        .mm_err(|e| format!("Error in get_unspent_ordered_list for coin={ticker}: {e}"))?;
+
+    if unspents.len() < merge_conditions.merge_at {
+        return Err(format!(
+            "Not enough unspent UTXOs to merge for coin={ticker}, found={}, required={}",
+            unspents.len(),
+            merge_conditions.merge_at
+        )
+        .into());
+    }
+    let unspents: Vec<_> = unspents.into_iter().take(merge_conditions.max_merge_at_once).collect();
 
     let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
     let output = TransactionOutput {
@@ -211,6 +228,11 @@ async fn merge_utxo_loop<T>(
         None => return,
     };
 
+    let merge_conditions = MergeConditions {
+        merge_at,
+        max_merge_at_once,
+    };
+
     loop {
         Timer::sleep(check_every).await;
 
@@ -220,23 +242,12 @@ async fn merge_utxo_loop<T>(
         };
 
         let ticker = &coin.as_ref().conf.ticker;
-        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(&my_address).await {
-            Ok((unspents, recently_spent)) => (unspents, recently_spent),
-            Err(e) => {
-                error!("Error {} on get_unspent_ordered_list of coin {}", e, ticker);
-                continue;
-            },
-        };
-        if unspents.len() >= merge_at {
-            let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
-            match merge_utxos(&coin, &my_address, &script_pubkey, Some((unspents, recently_spent))).await {
-                Ok((tx, _)) => info!(
-                    "UTXO merge successful for coin {}, tx_hash {:?}",
-                    ticker,
-                    tx.hash().reversed()
-                ),
-                Err(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),
-            }
+        match merge_utxos(&coin, &my_address, &script_pubkey, &merge_conditions).await {
+            Ok((tx, _)) => info!(
+                "UTXO merge successful for coin={ticker}, tx_hash {:?}",
+                tx.hash().reversed()
+            ),
+            Err(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),
         }
     }
 }
