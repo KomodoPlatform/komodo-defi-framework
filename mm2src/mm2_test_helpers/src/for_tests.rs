@@ -1750,7 +1750,7 @@ impl MarketMakerIt {
         .map_err(|e| ERRL!("{:?}", e))
     }
 
-/// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
+    /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
     /// because the P2P module logs to a global logger and doesn't log to the dashboard.
     /// Check if the node is connected to at least one seednode,
     /// the rpc is used instead of checking the log for DEBUG messages (to opt out p2p debug logging)
