@@ -14,7 +14,6 @@ use async_trait::async_trait;
 use chain::{BlockHeader, Transaction, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
-use common::{fifty, one_hundred};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::Address;
@@ -135,11 +134,18 @@ where
 #[derive(Deserialize)]
 pub struct MergeConditions {
     /// The minimum number of UTXOs to merge. If the number of UTXOs is less than this, the merge will not be performed.
-    #[serde(default = "one_hundred")]
     pub merge_at: usize,
     /// The maximum number of UTXOs to merge at once in a single transaction.
-    #[serde(default = "fifty")]
     pub max_merge_at_once: usize,
+}
+
+impl Default for MergeConditions {
+    fn default() -> Self {
+        MergeConditions {
+            merge_at: 50,
+            max_merge_at_once: 50,
+        }
+    }
 }
 
 /// Merges unspent UTXOs from `from_address` address to `to_script_pubkey` script.

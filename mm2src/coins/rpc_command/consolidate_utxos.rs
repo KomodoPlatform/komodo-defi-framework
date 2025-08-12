@@ -21,6 +21,7 @@ use crate::{
 #[derive(Deserialize)]
 pub struct ConsolidateUtxoRequest {
     coin: String,
+    #[serde(default)]
     merge_conditions: MergeConditions,
 }
 
