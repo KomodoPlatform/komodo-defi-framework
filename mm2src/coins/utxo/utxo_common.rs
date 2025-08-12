@@ -3303,8 +3303,7 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
     let fixed_fee_rate = match coin.tx_fee {
         FeeRate::FixedPerKb(sats) => Some(ActualFeeRate::FixedPerKb(sats)),
         FeeRate::FixedPerKbDingo(sats) => Some(ActualFeeRate::FixedPerKbDingo(sats)),
-        // For coins with dynamic fees, an async call would be needed to get the current fee rate.
-        // Since this function is synchronous and its output must be deterministic for the lifetime of
+        // The output of this function must be deterministic for the lifetime of
         // an order / swap, we will use the dust-based calculation.
         FeeRate::Dynamic(_) => None,
     };
