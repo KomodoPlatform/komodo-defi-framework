@@ -50,7 +50,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         secret_hash: &[0; 20],
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -72,7 +72,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &[0; 20],
         },
@@ -91,9 +91,10 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -139,7 +140,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         secret_hash: &[0; 20],
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -161,7 +162,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &[0; 20],
         },
@@ -180,9 +181,10 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -208,7 +210,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_pubkey,
+        other_pubkey: &my_pubkey,
         secret_hash: secret_hash.as_slice(),
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -230,7 +232,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     let maker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_pubkey,
+        other_pubkey: &my_pubkey,
         secret: &secret,
         secret_hash: secret_hash.as_slice(),
         swap_contract_address: &None,
@@ -248,9 +250,10 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &*dhash160(&secret),
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -276,7 +279,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_pubkey,
+        other_pubkey: &my_pubkey,
         secret_hash: secret_hash.as_slice(),
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -298,7 +301,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     let taker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_pubkey,
+        other_pubkey: &my_pubkey,
         secret: &secret,
         secret_hash: secret_hash.as_slice(),
         swap_contract_address: &None,
@@ -316,9 +319,10 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &*dhash160(&secret),
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -347,7 +351,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
         let maker_payment_args = SendPaymentArgs {
             time_lock_duration: 0,
             time_lock: time_lock + i,
-            other_pubkey: my_pubkey,
+            other_pubkey: &my_pubkey,
             secret_hash: &*dhash160(&secret),
             amount: 1.into(),
             swap_contract_address: &coin.swap_contract_address(),

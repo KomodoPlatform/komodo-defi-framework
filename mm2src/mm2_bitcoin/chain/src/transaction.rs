@@ -4,11 +4,8 @@
 use bytes::Bytes;
 use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
-#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
-#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::hash_types::Txid;
-#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::{PackedLockTime, Sequence, Witness};
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
@@ -44,7 +41,6 @@ impl OutPoint {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<OutPoint> for ExtOutpoint {
     fn from(outpoint: OutPoint) -> Self {
         ExtOutpoint {
@@ -81,7 +77,6 @@ impl TransactionInput {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<TransactionInput> for TxIn {
     fn from(txin: TransactionInput) -> Self {
         TxIn {
@@ -108,7 +103,6 @@ impl Default for TransactionOutput {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<TransactionOutput> for TxOut {
     fn from(txout: TransactionOutput) -> Self {
         TxOut {
@@ -245,7 +239,6 @@ impl From<&'static str> for Transaction {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<Transaction> for ExtTransaction {
     fn from(tx: Transaction) -> Self {
         ExtTransaction {
@@ -646,7 +639,6 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_arch = "wasm32"))]
     use super::ExtTransaction;
     use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
@@ -1131,7 +1123,6 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_tx_to_ext_tx() {
         // https://live.blockcypher.com/btc-testnet/tx/2be90e03abb4d5328bf7e9467ca9c571aef575837b55f1253119b87e85ccb94f/

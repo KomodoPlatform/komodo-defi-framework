@@ -4339,6 +4339,7 @@ dependencies = [
  "futures 0.3.28",
  "gstuff",
  "http 0.2.12",
+ "kdf_walletconnect",
  "lazy_static",
  "mm2_core",
  "mm2_io",

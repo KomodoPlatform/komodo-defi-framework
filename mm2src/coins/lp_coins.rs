@@ -4468,6 +4468,10 @@ impl<T> PrivKeyPolicy<T> {
     fn is_trezor(&self) -> bool {
         matches!(self, PrivKeyPolicy::Trezor)
     }
+
+    fn is_native(&self) -> bool {
+        matches!(self, PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::HDWallet { .. })
+    }
 }
 
 /// 'CoinWithPrivKeyPolicy' trait is used to get the private key policy of a coin.
