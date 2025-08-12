@@ -247,11 +247,11 @@ impl SessionManager {
         )
     }
 
-    pub(crate) fn read(&self) -> RwLockReadGuard<HashMap<Topic, Session>> {
+    pub(crate) fn read(&self) -> RwLockReadGuard<'_, HashMap<Topic, Session>> {
         self.0.sessions.read().expect("read shouldn't fail")
     }
 
-    pub(crate) fn write(&self) -> RwLockWriteGuard<HashMap<Topic, Session>> {
+    pub(crate) fn write(&self) -> RwLockWriteGuard<'_, HashMap<Topic, Session>> {
         self.0.sessions.write().expect("read shouldn't fail")
     }
 

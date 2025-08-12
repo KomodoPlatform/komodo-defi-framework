@@ -48,7 +48,7 @@ use std::sync::Mutex;
 cfg_native! {
     use crate::utxo::coin_daemon_data_dir;
     use crate::utxo::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
-    use dirs::home_dir;
+    use std::env::home_dir;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 }

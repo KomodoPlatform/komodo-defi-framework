@@ -3464,7 +3464,7 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut<'_> {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
@@ -3476,7 +3476,7 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         let coin = self.clone();
         let fut = async move {
             let len = tx_hash.len();
@@ -4330,6 +4330,7 @@ pub(crate) async fn create_withdraw_msg_as_any(
                 amount: amount.into(),
             },
         )
+        .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
         .to_any()
     } else {
         MsgSend {
