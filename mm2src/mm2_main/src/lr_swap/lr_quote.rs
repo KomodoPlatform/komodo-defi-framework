@@ -29,10 +29,8 @@ use trading_api::one_inch_api::client::{
 use trading_api::one_inch_api::errors::OneInchError;
 use trading_api::one_inch_api::portfolio_types::{CrossPriceParams, CrossPricesSeries, DataGranularity};
 
-/// To estimate src/dst price query price history for last 5 min
+/// Query price history every 5 min (to estimate src/dst price)
 const CROSS_PRICES_GRANULARITY: DataGranularity = DataGranularity::FiveMin;
-/// Use no more than 1 price history samples to estimate src/dst price
-const CROSS_PRICES_LIMIT: u32 = 1;
 
 type ClassicSwapDataResult = MmResult<ClassicSwapData, OneInchError>;
 
@@ -489,7 +487,7 @@ impl LrSwapCandidates {
             // Run src / dst token price query:
             let query_params = CrossPriceParams::new(chain_id, src_contract, dst_contract)
                 .with_granularity(Some(CROSS_PRICES_GRANULARITY))
-                .with_limit(Some(CROSS_PRICES_LIMIT))
+                // We do not use the limit parameter to get multiple samples, because some periods may be missing (if there were no trades)
                 .build_query_params()
                 .map_mm_err()?;
             let url = PortfolioUrlBuilder::create_api_url_builder(ctx, PortfolioApiMethods::CrossPrices)
@@ -507,7 +505,7 @@ impl LrSwapCandidates {
             .into_iter()
             .zip(prices_in_series)
             .map(|((src, dst), series)| {
-                let dst_price = cross_prices_average(series); // estimate SRC/DST price as average from series
+                let dst_price = cross_prices_close(series); // estimate SRC/DST price as average from series
                 ((src, dst), dst_price)
             })
             .collect::<HashMap<_, _>>();
@@ -1017,7 +1015,8 @@ pub async fn find_best_swap_path_with_lr(
     ))
 }
 
-/// Helper to process 1inch token cross prices data and return average price
+/// Process 1inch token cross_prices history and return average price for all history
+#[allow(unused)]
 fn cross_prices_average(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
     let series = series?;
     if series.is_empty() {
@@ -1028,6 +1027,17 @@ fn cross_prices_average(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
     });
     Some(total / MmNumber::from(series.len() as u64))
 }
+
+/// Get the latest close price from cross_prices history
+#[allow(unused)]
+fn cross_prices_close(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
+    let series = series?;
+    if series.is_empty() {
+        return None;
+    }
+    series.first().map(|p| p.close.clone().into())
+}
+
 
 fn log_cross_prices(prices: &HashMap<(Ticker, Ticker), Option<MmNumber>>) {
     for p in prices {
