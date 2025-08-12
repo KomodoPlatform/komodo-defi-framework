@@ -4091,7 +4091,7 @@ impl DexFee {
     }
 
     /// Calculates the total spend amount, considering both the fee and burn amounts.
-    pub fn total_spend_amount(&self) -> MmNumber {
+    pub fn total_amount(&self) -> MmNumber {
         match self {
             DexFee::NoFee => 0.into(),
             DexFee::Standard(t) => t.clone(),
