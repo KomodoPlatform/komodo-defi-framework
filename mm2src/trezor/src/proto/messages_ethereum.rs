@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Request: Ask device for Ethereum address corresponding to address_n path
 /// @start

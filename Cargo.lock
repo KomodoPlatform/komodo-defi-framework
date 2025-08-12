@@ -5111,7 +5111,7 @@ dependencies = [
  "itertools",
  "proc-macro2",
  "quote 1.0.37",
- "syn 2.0.77",
+ "syn 2.0.87",
 ]
 
 [[package]]
