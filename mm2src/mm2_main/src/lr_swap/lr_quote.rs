@@ -176,13 +176,13 @@ impl<'a> Iterator for LrStepDataMut1<'a> {
 }
 
 impl LrSwapCandidates {
-    fn iter_mut_lr_data_0(&mut self) -> LrStepDataMut0 {
+    fn iter_mut_lr_data_0(&mut self) -> LrStepDataMut0<'_> {
         LrStepDataMut0 {
             inner: self.inner.iter_mut(),
         }
     }
 
-    fn iter_mut_lr_data_1(&mut self) -> LrStepDataMut1 {
+    fn iter_mut_lr_data_1(&mut self) -> LrStepDataMut1<'_> {
         LrStepDataMut1 {
             inner: self.inner.iter_mut(),
         }
