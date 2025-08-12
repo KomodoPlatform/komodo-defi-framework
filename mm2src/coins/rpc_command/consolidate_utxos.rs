@@ -3,6 +3,7 @@ use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmResult, MmResultExt};
+use mm2_number::BigDecimal;
 use rpc::v1::types::ToTxHash;
 
 use crate::{
@@ -20,6 +21,7 @@ pub struct ConsolidateUtxoRequest {
 #[derive(Serialize)]
 pub struct ConsolidateUtxoResponse {
     tx: TransactionDetails,
+    consolidated_utxos: Vec<SpentUtxo>,
 }
 
 #[derive(Serialize, Display, SerializeErrorType)]
@@ -48,6 +50,12 @@ impl From<CoinFindError> for ConsolidateUtxoError {
             CoinFindError::NoSuchCoin { .. } => ConsolidateUtxoError::NoSuchCoin,
         }
     }
+}
+
+#[derive(Serialize)]
+struct SpentUtxo {
+    outpoint: String,
+    value: BigDecimal,
 }
 
 pub async fn consolidate_utxos_rpc(
@@ -103,6 +111,13 @@ pub async fn consolidate_utxos_rpc(
                     transaction_type: Default::default(),
                     memo: None,
                 },
+                consolidated_utxos: spent_utxos
+                    .into_iter()
+                    .map(|spent| SpentUtxo {
+                        outpoint: format!("{}:{}", spent.outpoint.hash, spent.outpoint.index),
+                        value: big_decimal_from_sat_unsigned(spent.value, coin.as_ref().decimals),
+                    })
+                    .collect(),
             })
         },
         _ => Err(ConsolidateUtxoError::CoinNotSupported.into()),
