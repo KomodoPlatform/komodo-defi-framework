@@ -963,33 +963,18 @@ pub async fn find_best_swap_path_with_lr(
         },
     }
     let (best_candidate, best_price) = candidates.select_best_swap(ctx).await?;
-    let atomic_swap_volume = match action {
-        TakerAction::Sell => {
-            if best_candidate.lr_data_0.is_none() && best_candidate.atomic_swap_taker_amount.is_none() {
-                return MmError::err(LrSwapError::InternalError("no taker amount".to_owned()));
-            }
-            let taker_coin = lp_coinfind_or_err(ctx, &best_candidate.maker_order.taker_ticker())
-                .await
-                .map_mm_err()?;
-            best_candidate
-                .atomic_swap_taker_amount
-                .map(|amount| wei_to_coins_mm_number(amount, taker_coin.decimals()))
-                .transpose()
-                .map_mm_err()?
-        },
-        TakerAction::Buy => {
-            if best_candidate.lr_data_1.is_none() && best_candidate.atomic_swap_maker_amount.is_none() {
-                return MmError::err(LrSwapError::InternalError("no maker amount".to_owned()));
-            }
-            let maker_coin = lp_coinfind_or_err(ctx, &best_candidate.maker_order.maker_ticker())
-                .await
-                .map_mm_err()?;
-            best_candidate
-                .atomic_swap_maker_amount
-                .map(|amount| wei_to_coins_mm_number(amount, maker_coin.decimals()))
-                .transpose()
-                .map_mm_err()?
-        },
+    let atomic_swap_sell_volume = {
+        if best_candidate.lr_data_0.is_none() && best_candidate.atomic_swap_taker_amount.is_none() {
+            return MmError::err(LrSwapError::InternalError("no taker amount".to_owned()));
+        }
+        let taker_coin = lp_coinfind_or_err(ctx, &best_candidate.maker_order.taker_ticker())
+            .await
+            .map_mm_err()?;
+        best_candidate
+            .atomic_swap_taker_amount
+            .map(|amount| wei_to_coins_mm_number(amount, taker_coin.decimals()))
+            .transpose()
+            .map_mm_err()?
     };
     let lr_data_ext_0 = best_candidate
         .lr_data_0
@@ -1026,7 +1011,7 @@ pub async fn find_best_swap_path_with_lr(
     Ok((
         lr_data_ext_0,
         best_candidate.maker_order,
-        atomic_swap_volume,
+        atomic_swap_sell_volume,
         lr_data_ext_1,
         best_price,
     ))
