@@ -189,7 +189,7 @@ async fn merge_utxo_loop<T>(
                         // When this happens, this might be due to using HW wallet that its addresses hasn't been polled yet.
                         // Anyway we don't really need a consolidation loop for HW wallets since they can't swap and
                         // such a loop will keep asking for consolidation signatures every now and then.
-                        error!(
+                        covered_error!(
                             "No enabled address found in HD wallet for coin {}",
                             coin.as_ref().conf.ticker
                         );
@@ -200,7 +200,7 @@ async fn merge_utxo_loop<T>(
             let script_pubkey = match output_script(&my_address) {
                 Ok(script) => script,
                 Err(e) => {
-                    error!("Error {} on output_script for coin {}", e, coin.as_ref().conf.ticker);
+                    covered_error!("Error {} on output_script for coin {}", e, coin.as_ref().conf.ticker);
                     return;
                 },
             };
