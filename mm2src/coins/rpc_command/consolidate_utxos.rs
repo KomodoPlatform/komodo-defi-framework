@@ -3,12 +3,13 @@ use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmResult, MmResultExt};
+use rpc::v1::types::ToTxHash;
 
 use crate::{
-    hd_wallet::HDWalletOps,
+    hd_wallet::{AddrToString, HDWalletOps},
     lp_coinfind_or_err,
-    utxo::{output_script, utxo_builder::merge_utxos},
-    CoinFindError, DerivationMethod, MmCoinEnum,
+    utxo::{output_script, utxo_builder::merge_utxos, utxo_common::big_decimal_from_sat_unsigned, UtxoFeeDetails},
+    CoinFindError, DerivationMethod, MmCoinEnum, Transaction, TransactionData, TransactionDetails,
 };
 
 #[derive(Deserialize)]
@@ -18,7 +19,7 @@ pub struct ConsolidateUtxoRequest {
 
 #[derive(Serialize)]
 pub struct ConsolidateUtxoResponse {
-    tx_hash: String,
+    tx: TransactionDetails,
 }
 
 #[derive(Serialize, Display, SerializeErrorType)]
@@ -69,12 +70,39 @@ pub async fn consolidate_utxos_rpc(
                 ConsolidateUtxoError::InvalidAddress(format!("Failed to convert `to_address` to a script_pubkey: {e}"))
             })?;
 
-            let transaction = merge_utxos(&coin, &from_address, &to_script_pubkey, None)
+            let (transaction, spent_utxos) = merge_utxos(&coin, &from_address, &to_script_pubkey, None)
                 .await
                 .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
 
+            let received_by_me = transaction.outputs.iter().map(|o| o.value).sum();
+            let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();
+            let received_by_me = big_decimal_from_sat_unsigned(received_by_me, coin.as_ref().decimals);
+            let spent_by_me = big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals);
+
             Ok(ConsolidateUtxoResponse {
-                tx_hash: transaction.hash().reversed().to_string(),
+                tx: TransactionDetails {
+                    from: vec![from_address.addr_to_string()],
+                    to: vec![from_address.addr_to_string()],
+                    received_by_me: received_by_me.clone(),
+                    spent_by_me: spent_by_me.clone(),
+                    total_amount: spent_by_me.clone(),
+                    my_balance_change: &received_by_me - &spent_by_me,
+                    tx: TransactionData::new_signed(
+                        transaction.tx_hex().into(),
+                        transaction.hash().reversed().to_vec().to_tx_hash(),
+                    ),
+                    coin: coin.as_ref().conf.ticker.clone(),
+                    internal_id: transaction.hash().reversed().to_vec().into(),
+                    fee_details: Some(crate::TxFeeDetails::Utxo(UtxoFeeDetails {
+                        coin: Some(coin.as_ref().conf.ticker.clone()),
+                        amount: spent_by_me - received_by_me,
+                    })),
+                    block_height: 0,
+                    timestamp: 0,
+                    kmd_rewards: None,
+                    transaction_type: Default::default(),
+                    memo: None,
+                },
             })
         },
         _ => Err(ConsolidateUtxoError::CoinNotSupported.into()),

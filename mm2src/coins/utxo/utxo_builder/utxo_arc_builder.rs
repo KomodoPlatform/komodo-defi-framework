@@ -138,7 +138,7 @@ pub async fn merge_utxos<Coin>(
     from_address: &Address,
     to_script_pubkey: &Script,
     custom_unspents: Option<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)>,
-) -> MmResult<Transaction, String>
+) -> MmResult<(Transaction, Vec<UnspentInfo>), String>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
 {
@@ -157,16 +157,18 @@ where
         script_pubkey: to_script_pubkey.to_bytes(),
     };
 
-    generate_and_send_tx(
+    let tx = generate_and_send_tx(
         coin,
-        unspents,
+        unspents.clone(),
         None,
         FeePolicy::DeductFromOutput(0),
         recently_spent,
         vec![output],
     )
     .await
-    .map_to_mm(|e| format!("Error in generate_and_send_tx for coin={ticker}: {e}"))
+    .map_to_mm(|e| format!("Error in generate_and_send_tx for coin={ticker}: {e}"))?;
+
+    Ok((tx, unspents))
 }
 
 async fn merge_utxo_loop<T>(
@@ -228,7 +230,7 @@ async fn merge_utxo_loop<T>(
         if unspents.len() >= merge_at {
             let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
             match merge_utxos(&coin, &my_address, &script_pubkey, Some((unspents, recently_spent))).await {
-                Ok(tx) => info!(
+                Ok((tx, _)) => info!(
                     "UTXO merge successful for coin {}, tx_hash {:?}",
                     ticker,
                     tx.hash().reversed()
