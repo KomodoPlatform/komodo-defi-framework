@@ -415,11 +415,11 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut<'_> {
         unimplemented!()
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         unimplemented!()
     }
 

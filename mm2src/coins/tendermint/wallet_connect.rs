@@ -217,9 +217,10 @@ where
 }
 
 fn decode_data(encoded: &str) -> Result<Vec<u8>, &'static str> {
-    if encoded.chars().all(|c| c.is_ascii_hexdigit()) && encoded.len() % 2 == 0 {
+    if encoded.chars().all(|c| c.is_ascii_hexdigit()) && encoded.len().is_multiple_of(2) {
         hex::decode(encoded).map_err(|_| "Invalid hex encoding")
-    } else if encoded.contains('=') || encoded.contains('/') || encoded.contains('+') || encoded.len() % 4 == 0 {
+    } else if encoded.contains('=') || encoded.contains('/') || encoded.contains('+') || encoded.len().is_multiple_of(4)
+    {
         general_purpose::STANDARD
             .decode(encoded)
             .map_err(|_| "Invalid base64 encoding")

@@ -10,6 +10,7 @@ enable-sia = [
 	"dep:blake2b_simd",
 	"dep:sia-rust"
 ]
+enable-solana = []
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
@@ -138,7 +139,6 @@ web-sys = { workspace = true, features = ["console", "Headers", "Request", "Requ
 zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs.workspace = true
 bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }

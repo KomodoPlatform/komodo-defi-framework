@@ -23,7 +23,7 @@
 
 pub mod bch;
 pub(crate) mod bchd_grpc;
-#[allow(clippy::all)]
+#[allow(dead_code, clippy::all)]
 #[rustfmt::skip]
 #[path = "utxo/pb.rs"]
 mod bchd_pb;
@@ -57,8 +57,6 @@ use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
 use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
-#[cfg(not(target_arch = "wasm32"))]
-use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -92,6 +90,8 @@ use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+#[cfg(not(target_arch = "wasm32"))]
+use std::env::home_dir;
 use std::hash::Hash;
 use std::num::{NonZeroU64, TryFromIntError};
 use std::ops::Deref;
@@ -315,7 +315,7 @@ impl ActualFeeRate {
             ActualFeeRate::FixedPerKb(fee_rate) => (fee_rate * tx_size) / KILO_BYTE,
             ActualFeeRate::FixedPerKbDingo(fee_rate) => {
                 // Implement rounding mechanism (earlier used in DOGE, now in DINGO coin)
-                let tx_size_kb = if tx_size % KILO_BYTE == 0 {
+                let tx_size_kb = if tx_size.is_multiple_of(KILO_BYTE) {
                     tx_size / KILO_BYTE
                 } else {
                     tx_size / KILO_BYTE + 1
@@ -577,6 +577,7 @@ pub struct UtxoCoinConf {
     pub tx_version: i32,
     /// Defines if Segwit is enabled for this coin.
     /// https://en.bitcoin.it/wiki/Segregated_Witness
+    /// NOTE: this does not make the coin itself 'segwit'. This just tells that segwit addresses are supported for this coin
     pub segwit: bool,
     /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
@@ -1465,7 +1466,7 @@ pub fn zcash_params_path() -> PathBuf {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     // komodo/util.cpp/GetDefaultDataDir
-    let mut data_dir = match dirs::home_dir() {
+    let mut data_dir = match std::env::home_dir() {
         Some(hd) => hd,
         None => Path::new("/").to_path_buf(),
     };

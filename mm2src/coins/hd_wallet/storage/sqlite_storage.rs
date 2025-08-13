@@ -224,7 +224,7 @@ impl HDWalletSqliteStorage {
             .or_mm_err(|| HDWalletStorageError::Internal("'HDWalletSqliteStorage::conn' doesn't exist".to_owned()))
     }
 
-    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<'_, Connection>> {
         conn.lock()
             .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
