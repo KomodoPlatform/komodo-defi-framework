@@ -2833,7 +2833,8 @@ fn test_v2_eth_eth_kickstart() {
                     &swap_contract_address,
                     contracts.clone(),
                     None,
-                    slice::from_ref(&node)
+                    slice::from_ref(&node),
+                    &[]
                 ))
             );
         }
