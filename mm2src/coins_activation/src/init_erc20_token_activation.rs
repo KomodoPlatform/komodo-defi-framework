@@ -50,7 +50,7 @@ pub enum InitErc20Error {
     Internal(String),
     #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
-    InvalidTokenProtocol,
+    PlatformCoinMismatch,
 }
 
 impl From<InitErc20Error> for InitTokenError {
@@ -68,7 +68,7 @@ impl From<InitErc20Error> for InitTokenError {
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
             InitErc20Error::CustomTokenError(error) => InitTokenError::CustomTokenError(error),
-            InitErc20Error::InvalidTokenProtocol => InitTokenError::InvalidTokenProtocol,
+            InitErc20Error::PlatformCoinMismatch => InitTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -84,7 +84,7 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
             EthTokenActivationError::CustomTokenError(e) => InitErc20Error::CustomTokenError(e),
-            EthTokenActivationError::InvalidTokenProtocol => InitErc20Error::InvalidTokenProtocol,
+            EthTokenActivationError::PlatformCoinMismatch => InitErc20Error::PlatformCoinMismatch,
         }
     }
 }

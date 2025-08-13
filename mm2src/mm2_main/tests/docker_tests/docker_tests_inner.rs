@@ -3710,12 +3710,12 @@ fn test_enable_eth_coin_with_token_then_disable() {
 }
 
 #[test]
-fn test_invalid_token_protocol() {
+fn test_platform_coin_mismatch() {
     let coin = erc20_coin_with_random_privkey(swap_contract());
 
     let priv_key = coin.display_priv_key().unwrap();
     let mut erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
-    erc20_conf["protocol"]["protocol_data"]["platform"] = "MATIC".into(); // set invalid platform coin
+    erc20_conf["protocol"]["protocol_data"]["platform"] = "MATIC".into(); // set a different platform coin
     let coins = json!([eth_dev_conf(), erc20_conf]);
 
     let conf = Mm2TestConf::seednode(&priv_key, &coins);
@@ -3745,13 +3745,13 @@ fn test_invalid_token_protocol() {
     assert_eq!(
         enable.0,
         StatusCode::BAD_REQUEST,
-        "'enable_eth_with_tokens' must fail with InvalidTokenProtocol",
+        "'enable_eth_with_tokens' must fail with PlatformCoinMismatch",
     );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&enable.1).unwrap()["error_type"]
             .as_str()
             .unwrap(),
-        "InvalidTokenProtocol",
+        "PlatformCoinMismatch",
     );
 }
 

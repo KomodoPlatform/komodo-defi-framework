@@ -51,7 +51,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
             EthTokenActivationError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
-            EthTokenActivationError::InvalidTokenProtocol => EnableTokenError::InvalidTokenProtocol,
+            EthTokenActivationError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }

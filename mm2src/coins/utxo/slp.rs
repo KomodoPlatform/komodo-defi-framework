@@ -76,7 +76,7 @@ pub enum EnableSlpError {
     GetBalanceError(UtxoRpcError),
     UnexpectedDerivationMethod(String),
     Internal(String),
-    InvalidTokenProtocol,
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for EnableSlpError {

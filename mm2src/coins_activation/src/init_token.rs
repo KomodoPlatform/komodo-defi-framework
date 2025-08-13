@@ -349,7 +349,7 @@ pub enum InitTokenError {
     Transport(String),
     #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    InvalidTokenProtocol,
+    PlatformCoinMismatch,
 }
 
 impl From<CoinConfWithProtocolError> for InitTokenError {
@@ -390,7 +390,7 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::UnexpectedTokenProtocol { .. }
             | InitTokenError::TokenCreationError { .. }
             | InitTokenError::PlatformCoinIsNotActivated(_)
-            | InitTokenError::InvalidTokenProtocol
+            | InitTokenError::PlatformCoinMismatch
             | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,

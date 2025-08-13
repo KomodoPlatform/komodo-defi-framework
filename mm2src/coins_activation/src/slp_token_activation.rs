@@ -62,7 +62,7 @@ impl From<EnableSlpError> for EnableTokenError {
             EnableSlpError::UnexpectedDerivationMethod(e) | EnableSlpError::Internal(e) => {
                 EnableTokenError::Internal(e)
             },
-            EnableSlpError::InvalidTokenProtocol => EnableTokenError::InvalidTokenProtocol,
+            EnableSlpError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }

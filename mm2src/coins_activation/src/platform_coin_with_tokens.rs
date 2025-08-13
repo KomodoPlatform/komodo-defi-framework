@@ -110,7 +110,7 @@ pub enum InitTokensAsMmCoinsError {
     Transport(String),
     InvalidPayload(String),
     CustomTokenError(CustomTokenError),
-    InvalidTokenProtocol,
+    PlatformCoinMismatch,
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -295,7 +295,7 @@ pub enum EnablePlatformCoinWithTokensError {
     CustomTokenError(CustomTokenError),
     #[display(fmt = "WalletConnect Error: {_0}")]
     WalletConnectError(String),
-    InvalidTokenProtocol,
+    PlatformCoinMismatch,
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -339,7 +339,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
             InitTokensAsMmCoinsError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
-            InitTokensAsMmCoinsError::InvalidTokenProtocol => EnablePlatformCoinWithTokensError::InvalidTokenProtocol,
+            InitTokensAsMmCoinsError::PlatformCoinMismatch => EnablePlatformCoinWithTokensError::PlatformCoinMismatch,
         }
     }
 }
@@ -389,7 +389,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
             | EnablePlatformCoinWithTokensError::WalletConnectError(_)
-            | EnablePlatformCoinWithTokensError::InvalidTokenProtocol
+            | EnablePlatformCoinWithTokensError::PlatformCoinMismatch
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }

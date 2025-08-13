@@ -74,6 +74,7 @@ pub enum TendermintTokenInitError {
     Internal(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for TendermintTokenInitError {
