@@ -54,7 +54,7 @@
 4. Set environment variables required to run WASM tests
    ```shell
    # wasm-bindgen specific variables
-   export WASM_BINDGEN_TEST_TIMEOUT=180
+   export WASM_BINDGEN_TEST_TIMEOUT=600
    export GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN
    # MarketMaker specific variables
    export BOB_PASSPHRASE="also shoot benefit prefer juice shell elder veteran woman mimic image kidney"
