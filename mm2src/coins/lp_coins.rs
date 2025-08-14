@@ -4765,6 +4765,8 @@ pub enum CoinProtocol {
     NFT {
         platform: String,
     },
+    #[cfg(feature = "enable-solana")]
+    SOLANA(solana::SolanaProtocolInfo)
 }
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
@@ -4809,6 +4811,8 @@ impl CoinProtocol {
             | CoinProtocol::ZHTLC(_) => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANA(_) => None,
         }
     }
 
@@ -4832,6 +4836,8 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { .. } => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANA(_) => None,
         }
     }
 
@@ -5184,6 +5190,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::SIA => {
             return ERR!("SIA protocol is not supported by lp_coininit. Use task::enable_sia::init");
         },
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => return ERR!("SOLANA is not supported by lp_coininit"),
     };
 
     let register_params = RegisterCoinParams {
@@ -5827,6 +5835,8 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"), // TODO Alright
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
     }
 }
 

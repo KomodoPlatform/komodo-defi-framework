@@ -1,11 +1,14 @@
 #![allow(unused_variables)]
 
+use std::collections::{HashMap, HashSet};
+
 use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,
     solana::{SolanaCoin, SolanaInitError, SolanaProtocolInfo},
-    CoinProtocol, MmCoinEnum,
+    CoinBalance, CoinProtocol, MmCoinEnum,
 };
+use common::true_f;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
@@ -24,44 +27,66 @@ use crate::{
 };
 
 #[derive(Clone, Deserialize)]
-pub struct SolanaActivationRequest {}
+pub struct SolanaActivationRequest {
+    nodes: coins::solana::RpcNode,
+    #[serde(default)]
+    tx_history: bool,
+    #[serde(default = "true_f")]
+    pub get_balances: bool,
+}
 
 impl TxHistory for SolanaActivationRequest {
     fn tx_history(&self) -> bool {
-        todo!()
+        self.tx_history
     }
 }
 
 impl ActivationRequestInfo for SolanaActivationRequest {
     fn is_hw_policy(&self) -> bool {
-        todo!()
+        false
     }
 }
 
 impl TryFromCoinProtocol for SolanaProtocolInfo {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>> {
-        todo!()
+        match proto {
+            CoinProtocol::SOLANA(proto) => Ok(proto),
+            other => MmError::err(other),
+        }
     }
 }
 
 #[derive(Clone, Serialize)]
-pub struct SolanaActivationResult {}
+pub struct SolanaActivationResult {
+    ticker: String,
+    address: String,
+    current_block: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    balance: Option<CoinBalance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_balances: Option<HashMap<String, CoinBalance>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens_tickers: Option<HashSet<String>>,
+}
 
 impl CurrentBlock for SolanaActivationResult {
     fn current_block(&self) -> u64 {
-        todo!()
+        self.current_block
     }
 }
 
 impl GetPlatformBalance for SolanaActivationResult {
     fn get_platform_balance(&self) -> Option<BigDecimal> {
-        todo!()
+        self.balance.as_ref().map(|b| b.spendable.clone())
     }
 }
 
 impl From<SolanaInitError> for EnablePlatformCoinWithTokensError {
-    fn from(err: SolanaInitError) -> Self {
-        todo!()
+    fn from(e: SolanaInitError) -> Self {
+        EnablePlatformCoinWithTokensError::PlatformCoinCreationError {
+            ticker: e.ticker,
+            error: e.kind.to_string(),
+        }
     }
 }
 
@@ -90,14 +115,17 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         &self,
         _activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
-        todo!()
+        Ok(None)
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
     where
         Self: Sized,
     {
-        todo!()
+        match coin {
+            MmCoinEnum::Solana(coin) => Some(coin),
+            _ => None,
+        }
     }
 
     fn token_initializers(

@@ -4,12 +4,18 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common::executor::{abortable_queue::WeakSpawner, AbortedError};
+use common::executor::{
+    abortable_queue::{AbortableQueue, WeakSpawner},
+    AbortedError,
+};
+use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use solana_client::rpc_client::RpcClient;
+use url::Url;
 
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
@@ -23,10 +29,20 @@ use crate::{
     WatcherOps, WithdrawFut, WithdrawRequest,
 };
 
+#[derive(Clone, Deserialize)]
+pub struct RpcNode {
+    url: Url,
+}
+
 #[derive(Clone)]
 pub struct SolanaCoin(Arc<SolanaCoinFields>);
 
-pub struct SolanaCoinFields {}
+pub struct SolanaCoinFields {
+    ticker: String,
+    decimals: u8,
+    abortable_system: AbortableQueue,
+    rpc_clients: AsyncMutex<Vec<RpcClient>>,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SolanaProtocolInfo {}
@@ -40,7 +56,37 @@ impl Deref for SolanaCoin {
 }
 
 #[derive(Clone, Debug)]
-pub struct SolanaInitError {}
+pub struct SolanaInitError {
+    pub ticker: String,
+    pub kind: SolanaInitErrorKind,
+}
+
+#[derive(Display, Debug, Clone)]
+pub enum SolanaInitErrorKind {
+    EmptyRpcUrls,
+    RpcClientInitError { reason: String },
+    Internal { reason: String },
+}
+
+impl SolanaCoin {
+    pub async fn init(
+        ctx: &MmArc,
+        ticker: String,
+        protocol_info: SolanaProtocolInfo,
+        nodes: Vec<RpcNode>,
+    ) -> MmResult<SolanaCoin, SolanaInitError> {
+        if nodes.is_empty() {
+            return MmError::err(SolanaInitError {
+                ticker,
+                kind: SolanaInitErrorKind::EmptyRpcUrls,
+            });
+        }
+
+        let nodes: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
+
+        todo!()
+    }
+}
 
 #[async_trait]
 impl MmCoin for SolanaCoin {
