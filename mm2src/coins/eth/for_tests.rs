@@ -56,6 +56,11 @@ pub(crate) fn eth_coin_from_keypair(
         EthCoinType::Erc20 { .. } => "JST".to_string(),
         EthCoinType::Nft { ref platform } => platform.to_string(),
     };
+    let platform_ticker = match coin_type {
+        EthCoinType::Eth => "ETH".to_string(),
+        EthCoinType::Erc20 { ref platform, .. } => platform.to_string(),
+        EthCoinType::Nft { ref platform } => platform.to_string(),
+    };
     let my_address = key_pair.address();
     let coin_conf = coin_conf(&ctx, &ticker);
     let max_eth_tx_type = get_conf_param_or_from_plaform_coin(&ctx, &coin_conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)
@@ -95,7 +100,7 @@ pub(crate) fn eth_coin_from_keypair(
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
+        address_nonce_locks: PerNetNonceLocks::get_net_locks(platform_ticker),
         max_eth_tx_type,
         gas_price_adjust,
         erc20_tokens_infos: Default::default(),

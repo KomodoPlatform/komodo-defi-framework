@@ -1,4 +1,4 @@
-use super::{EthCoinType, ETH_DECIMALS, ETH_GWEI_DECIMALS};
+use super::*;
 use crate::{coin_conf, NumConversError, NumConversResult};
 use ethabi::{Function, Token};
 use ethereum_types::{Address, FromDecStrErr, U256};
@@ -18,6 +18,52 @@ pub(super) const GAS_PRICE_ADJUST: &str = "gas_price_adjust";
 pub(super) const ESTIMATE_GAS_MULT: &str = "estimate_gas_mult";
 /// Coin config parameter name for the default eth swap gas fee policy
 pub(super) const SWAP_GAS_FEE_POLICY: &str = "swap_gas_fee_policy";
+
+pub(crate) mod nonce_sequencer {
+    use super::*;
+
+    type PerNetNonceLocksMap = Arc<AsyncMutex<HashMap<Address, Arc<AsyncMutex<()>>>>>;
+
+    /// TODO: better to use ChainSpec instead of ticker
+    type AllNetsNonceLocks = Mutex<HashMap<String, PerNetNonceLocks>>;
+
+    // We can use a nonce lock shared between tokens using the same platform coin and the platform itself.
+    // For example, ETH/USDT-ERC20 should use the same lock, but it will be different for BNB/USDT-BEP20.
+    // This lock is used to ensure that only one transaction is sent at a time per address.
+    lazy_static! {
+        static ref ALL_NETS_NONCE_LOCKS: AllNetsNonceLocks = Mutex::new(HashMap::new());
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct PerNetNonceLocks {
+        locks: PerNetNonceLocksMap,
+    }
+
+    impl PerNetNonceLocks {
+        fn new_nonce_lock() -> PerNetNonceLocks {
+            Self {
+                locks: Arc::new(AsyncMutex::new(HashMap::new())),
+            }
+        }
+
+        pub(crate) fn get_net_locks(platform_ticker: String) -> Self {
+            let mut networks = ALL_NETS_NONCE_LOCKS.lock().unwrap();
+            networks
+                .entry(platform_ticker)
+                .or_insert_with(Self::new_nonce_lock)
+                .clone()
+        }
+
+        pub(crate) async fn get_adddress_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
+            let mut locks = self.locks.lock().await;
+            locks
+                .entry(address)
+                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+                .clone()
+        }
+    }
+}
+
 
 pub(crate) fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
     decoded.get(index).cloned().ok_or(format!(

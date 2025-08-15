@@ -26,6 +26,7 @@ use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
 use super::*;
 use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
+use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
@@ -899,7 +900,7 @@ pub struct EthCoinImpl {
     /// Each address is associated with an `AsyncMutex` which is locked when a transaction is being created and sent,
     /// and unlocked once the transaction is confirmed. This prevents nonce conflicts when multiple transactions
     /// are initiated concurrently from the same address.
-    address_nonce_locks: Arc<AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
+    address_nonce_locks: PerNetNonceLocks,
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenDetails>>>,
     /// Stores information about NFTs owned by the user. Each entry in the HashMap is uniquely identified by a composite key
     /// consisting of the token address and token ID, separated by a comma. This field is essential for tracking the NFT assets
@@ -1202,7 +1203,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     )
     .await
     .map_mm_err()?;
-    let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
+    let address_lock = eth_coin.get_address_lock(my_address).await;
     let _nonce_lock = address_lock.lock().await;
     let (nonce, _) = eth_coin
         .clone()
@@ -1306,7 +1307,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     .await
     .map_mm_err()?;
 
-    let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
+    let address_lock = eth_coin.get_address_lock(my_address).await;
     let _nonce_lock = address_lock.lock().await;
     let (nonce, _) = eth_coin
         .clone()
@@ -2759,15 +2760,6 @@ pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {
     Ok(signed)
 }
 
-type AddressNonceLocks = Mutex<HashMap<String, HashMap<String, Arc<AsyncMutex<()>>>>>;
-
-// We can use a nonce lock shared between tokens using the same platform coin and the platform itself.
-// For example, ETH/USDT-ERC20 should use the same lock, but it will be different for BNB/USDT-BEP20.
-// This lock is used to ensure that only one transaction is sent at a time per address.
-lazy_static! {
-    static ref NONCE_LOCK: AddressNonceLocks = Mutex::new(HashMap::new());
-}
-
 type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Send + 'static>;
 
 /// Signs an Eth transaction using `key_pair`.
@@ -2825,7 +2817,7 @@ async fn sign_and_send_transaction_with_keypair(
     info!(target: "sign-and-send", "get_gas_price…");
     let pay_for_gas_policy = try_tx_s!(coin.get_swap_gas_fee_policy().await);
     let pay_for_gas_option = try_tx_s!(coin.get_swap_pay_for_gas_option(pay_for_gas_policy).await);
-    let address_lock = coin.get_address_lock(address.to_string()).await;
+    let address_lock = coin.get_address_lock(address).await;
     let _nonce_lock = address_lock.lock().await;
     let (signed, web3_instances_with_latest_nonce) =
         sign_transaction_with_keypair(coin, key_pair, value, action, data, gas, &pay_for_gas_option, address).await?;
@@ -2922,7 +2914,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .single_addr_or_err()
                 .await
                 .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
-            let address_lock = coin.get_address_lock(my_address.to_string()).await;
+            let address_lock = coin.get_address_lock(my_address).await;
             let _nonce_lock = address_lock.lock().await;
             info!(target: "sign-and-send", "get_gas_price…");
             let pay_for_gas_option = coin
@@ -2964,7 +2956,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .single_addr_or_err()
                 .await
                 .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
-            let address_lock = coin.get_address_lock(my_address.to_string()).await;
+            let address_lock = coin.get_address_lock(my_address).await;
             let _nonce_lock = address_lock.lock().await;
             let pay_for_gas_option = coin
                 .get_swap_pay_for_gas_option_from_rpc(&args.pay_for_gas)
@@ -3905,14 +3897,8 @@ impl EthCoin {
     ///
     /// This function is used to ensure that only one transaction is sent at a time per address.
     /// If the address does not have an associated lock, a new one is created and stored.
-    async fn get_address_lock(&self, address: String) -> Arc<AsyncMutex<()>> {
-        let address_lock = {
-            let mut lock = self.address_nonce_locks.lock().await;
-            lock.entry(address)
-                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-                .clone()
-        };
-        address_lock
+    async fn get_address_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
+        self.address_nonce_locks.get_adddress_lock(address).await
     }
 }
 
@@ -6518,9 +6504,6 @@ fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcT
     vec![CoinTransportMetrics::new(metrics, ticker, RpcClientType::Ethereum).into_shared()]
 }
 
-#[inline]
-fn new_nonce_lock() -> HashMap<String, Arc<AsyncMutex<()>>> { HashMap::new() }
-
 /// Activate eth coin or erc20 token from coin config and private key build policy
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
@@ -6686,16 +6669,9 @@ pub async fn eth_coin_from_conf_and_request(
         HistorySyncState::NotEnabled
     };
 
-    let key_lock = match &coin_type {
+    let platform_ticker = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
         EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => String::from(platform),
-    };
-
-    let address_nonce_locks = {
-        let mut map = NONCE_LOCK.lock().unwrap();
-        Arc::new(AsyncMutex::new(
-            map.entry(key_lock).or_insert_with(new_nonce_lock).clone(),
-        ))
     };
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
@@ -6736,7 +6712,7 @@ pub async fn eth_coin_from_conf_and_request(
         required_confirmations,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
-        address_nonce_locks,
+        address_nonce_locks: PerNetNonceLocks::get_net_locks(platform_ticker),
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
         gas_limit,
@@ -7646,7 +7622,7 @@ impl EthCoin {
             ctx: self.ctx.clone(),
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
-            address_nonce_locks: Arc::clone(&self.address_nonce_locks),
+            address_nonce_locks: self.address_nonce_locks.clone(),
             erc20_tokens_infos: Arc::clone(&self.erc20_tokens_infos),
             nfts_infos: Arc::clone(&self.nfts_infos),
             gas_limit: EthGasLimit::default(),
