@@ -178,8 +178,8 @@ macro_rules! covered_warn {
     };
 }
 
-#[macro_export]
 /// A macro to log errors in production environment and panic in tests.
+#[macro_export]
 macro_rules! covered_error {
     ($($arg:tt)+) => {
         if cfg!(not(test)) {
