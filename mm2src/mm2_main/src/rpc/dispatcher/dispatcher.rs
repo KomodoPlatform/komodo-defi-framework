@@ -53,6 +53,7 @@ use coins::rpc_command::{
     },
     init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action},
     offline_keys::get_private_keys,
+    utxo_count::utxo_count_rpc,
 };
 #[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoin;
@@ -225,6 +226,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
+        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "delete_wallet" => handle_mmrpc(ctx, request, delete_wallet_rpc).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
@@ -252,7 +254,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
-        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
@@ -269,6 +270,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,
+        "utxo_count" => handle_mmrpc(ctx, request, utxo_count_rpc).await,
         "change_mnemonic_password" => handle_mmrpc(ctx, request, change_mnemonic_password).await,
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
