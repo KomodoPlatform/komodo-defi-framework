@@ -133,8 +133,10 @@ where
 
 #[derive(Deserialize)]
 pub struct MergeConditions {
+    #[serde(default)]
     /// The minimum number of UTXOs to merge. If the number of UTXOs is less than this, the merge will not be performed.
     pub merge_at: usize,
+    #[serde(default)]
     /// The maximum number of UTXOs to merge at once in a single transaction.
     pub max_merge_at_once: usize,
 }
