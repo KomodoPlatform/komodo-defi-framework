@@ -20,16 +20,16 @@ use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSp
             RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
             SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
-use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
-            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
-            SpendPaymentArgs, SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction,
-            ValidateNftMakerPaymentArgs};
+use coins::{lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput,
+            DerivationMethod, Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo,
+            ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+            RegisterCoinParams, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs,
+            SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes,
+            Transaction, ValidateNftMakerPaymentArgs};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_for_kickstart, disable_coin,
                                   enable_erc20_token_v2, enable_eth_coin_v2, enable_eth_with_tokens_v2,
@@ -1039,6 +1039,74 @@ fn test_nonce_lock() {
     let coin = eth_coin_with_random_privkey(swap_contract());
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
     let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
+    let results = block_on(join_all(futures));
+
+    // make sure all transactions are successful
+    for result in results {
+        result.unwrap();
+    }
+}
+
+/// Test to validate duplicate nonces for legacy token activation
+/// https://github.com/KomodoPlatform/komodo-defi-framework/issues/2573
+#[test]
+fn test_nonce_erc20_lock() {
+    use futures::future::join_all;
+
+    let swap_addresses = SwapAddresses::init();
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+
+    let eth_conf = eth_dev_conf();
+    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let eth_ticker = eth_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_ticker = erc20_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_contract = erc20_conf["protocol"]["protocol_data"]["contract_address"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ctx = MmCtxBuilder::new()
+        .with_conf(json!({"coins":[eth_conf, erc20_conf]}))
+        .into_mm_arc();
+
+    let (eth_coin, privkey) =
+        eth_coin_v2_activation_with_random_privkey(&ctx, &eth_ticker, &eth_conf, swap_addresses, false);
+    block_on(lp_register_coin(
+        &ctx,
+        MmCoinEnum::EthCoin(eth_coin.clone()),
+        RegisterCoinParams {
+            ticker: eth_ticker.clone(),
+        },
+    ))
+    .unwrap();
+
+    // Use legacy "enable" RPC for token to validate this issue
+    let req_erc20 = json!({
+        "method": "enable",
+        "coin": erc20_ticker,
+        "swap_contract_address": swap_contract_address,
+        "urls": [ GETH_RPC_URL ]
+    });
+    let eth_token = block_on(eth_coin_from_conf_and_request(
+        &ctx,
+        &erc20_ticker,
+        &erc20_conf,
+        &req_erc20,
+        CoinProtocol::ERC20 {
+            platform: eth_ticker.clone(),
+            contract_address: erc20_contract,
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(privkey),
+    ))
+    .unwrap();
+
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
+
+    let futures = vec![
+        eth_coin.send_to_address(my_address, 100.into()).compat(),
+        eth_token.send_to_address(my_address, 1.into()).compat(),
+        eth_token.send_to_address(my_address, 2.into()).compat(),
+        eth_coin.send_to_address(my_address, 200.into()).compat(),
+    ];
     let results = block_on(join_all(futures));
 
     // make sure all transactions are successful
