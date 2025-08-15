@@ -64,7 +64,6 @@ pub(crate) mod nonce_sequencer {
     }
 }
 
-
 pub(crate) fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
     decoded.get(index).cloned().ok_or(format!(
         "Missing input in function {}: No input found at index {}",
