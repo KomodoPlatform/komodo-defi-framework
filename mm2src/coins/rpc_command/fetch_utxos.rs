@@ -13,40 +13,40 @@ use crate::{
 };
 
 #[derive(Deserialize)]
-pub struct UtxoCountRequest {
+pub struct FetchUtxosRequest {
     pub coin: String,
 }
 
 #[derive(Serialize)]
-pub struct UtxoCountResponse {
+pub struct FetchUtxosResponse {
     pub address: String,
     pub utxos: Vec<UnspentOutputs>,
 }
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum UtxoCountError {
+pub enum FetchUtxosError {
     NoSuchCoin,
     CoinNotSupported,
     InvalidAddress(String),
     Internal(String),
 }
 
-impl HttpStatusCode for UtxoCountError {
+impl HttpStatusCode for FetchUtxosError {
     fn status_code(&self) -> StatusCode {
         match self {
-            UtxoCountError::NoSuchCoin => StatusCode::NOT_FOUND,
-            UtxoCountError::CoinNotSupported => StatusCode::BAD_REQUEST,
-            UtxoCountError::InvalidAddress(_) => StatusCode::BAD_REQUEST,
-            UtxoCountError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            FetchUtxosError::NoSuchCoin => StatusCode::NOT_FOUND,
+            FetchUtxosError::CoinNotSupported => StatusCode::BAD_REQUEST,
+            FetchUtxosError::InvalidAddress(_) => StatusCode::BAD_REQUEST,
+            FetchUtxosError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-impl From<CoinFindError> for UtxoCountError {
+impl From<CoinFindError> for FetchUtxosError {
     fn from(e: CoinFindError) -> Self {
         match e {
-            CoinFindError::NoSuchCoin { .. } => UtxoCountError::NoSuchCoin,
+            CoinFindError::NoSuchCoin { .. } => FetchUtxosError::NoSuchCoin,
         }
     }
 }
@@ -57,7 +57,7 @@ pub struct UnspentOutputs {
     value: BigDecimal,
 }
 
-pub async fn utxo_count_rpc(ctx: MmArc, req: UtxoCountRequest) -> MmResult<UtxoCountResponse, UtxoCountError> {
+pub async fn fetch_utxos_rpc(ctx: MmArc, req: FetchUtxosRequest) -> MmResult<FetchUtxosResponse, FetchUtxosError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match coin {
@@ -66,7 +66,7 @@ pub async fn utxo_count_rpc(ctx: MmArc, req: UtxoCountRequest) -> MmResult<UtxoC
                 DerivationMethod::SingleAddress(my_address) => my_address.clone(),
                 DerivationMethod::HDWallet(wallet) => {
                     let hd_address = wallet.get_enabled_address().await.ok_or_else(|| {
-                        UtxoCountError::InvalidAddress("No enabled address found in HD wallet".to_string())
+                        FetchUtxosError::InvalidAddress("No enabled address found in HD wallet".to_string())
                     })?;
                     hd_address.address
                 },
@@ -75,9 +75,9 @@ pub async fn utxo_count_rpc(ctx: MmArc, req: UtxoCountRequest) -> MmResult<UtxoC
             let (unspents, _) = coin
                 .get_unspent_ordered_list(&from_address)
                 .await
-                .mm_err(|e| UtxoCountError::Internal(format!("Couldn't fetch unspent UTXOs: {e}")))?;
+                .mm_err(|e| FetchUtxosError::Internal(format!("Couldn't fetch unspent UTXOs: {e}")))?;
 
-            Ok(UtxoCountResponse {
+            Ok(FetchUtxosResponse {
                 address: from_address.addr_to_string(),
                 utxos: unspents
                     .into_iter()
@@ -88,6 +88,6 @@ pub async fn utxo_count_rpc(ctx: MmArc, req: UtxoCountRequest) -> MmResult<UtxoC
                     .collect(),
             })
         },
-        _ => Err(UtxoCountError::CoinNotSupported.into()),
+        _ => Err(FetchUtxosError::CoinNotSupported.into()),
     }
 }

@@ -37,6 +37,7 @@ use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{
     account_balance::account_balance,
     consolidate_utxos::consolidate_utxos_rpc,
+    fetch_utxos::fetch_utxos_rpc,
     get_current_mtp::get_current_mtp_rpc,
     get_enabled_coins::get_enabled_coins_rpc,
     get_new_address::{
@@ -53,7 +54,6 @@ use coins::rpc_command::{
     },
     init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action},
     offline_keys::get_private_keys,
-    utxo_count::utxo_count_rpc,
 };
 #[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoin;
@@ -237,6 +237,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
+        "fetch_utxos" => handle_mmrpc(ctx, request, fetch_utxos_rpc).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
@@ -270,7 +271,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,
-        "utxo_count" => handle_mmrpc(ctx, request, utxo_count_rpc).await,
         "change_mnemonic_password" => handle_mmrpc(ctx, request, change_mnemonic_password).await,
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
