@@ -636,6 +636,7 @@ pub enum TransactionErr {
     #[from_stringify("keys::Error")]
     Plain(String),
     ProtocolNotSupported(String),
+    InternalError(String),
 }
 
 impl TransactionErr {
@@ -653,7 +654,9 @@ impl TransactionErr {
     pub fn get_plain_text_format(&self) -> String {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
-            TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err.to_string(),
+            TransactionErr::Plain(err)
+            | TransactionErr::ProtocolNotSupported(err)
+            | TransactionErr::InternalError(err) => err.to_string(),
         }
     }
 }

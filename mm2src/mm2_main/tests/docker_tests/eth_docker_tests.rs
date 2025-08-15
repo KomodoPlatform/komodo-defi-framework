@@ -20,7 +20,7 @@ use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSp
             RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
             SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
-use coins::{lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput,
+use coins::{lp_register_coin, MmCoinEnum, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput,
             DerivationMethod, Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo,
             ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
             RegisterCoinParams, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs,
