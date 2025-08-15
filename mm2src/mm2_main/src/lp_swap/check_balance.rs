@@ -216,6 +216,7 @@ impl From<BalanceError> for CheckBalanceError {
                 CheckBalanceError::InternalError(e.to_string())
             },
             BalanceError::Internal(internal) => CheckBalanceError::InternalError(internal),
+            BalanceError::NoSuchCoin { .. } => CheckBalanceError::InternalError(e.to_string()),
         }
     }
 }
@@ -263,6 +264,7 @@ impl CheckBalanceError {
             TradePreimageError::NftProtocolNotSupported => {
                 CheckBalanceError::InternalError("Nft Protocol is not supported yet!".to_string())
             },
+            TradePreimageError::NoSuchCoin { .. } => CheckBalanceError::InternalError(trade_preimage_err.to_string()),
         }
     }
 
