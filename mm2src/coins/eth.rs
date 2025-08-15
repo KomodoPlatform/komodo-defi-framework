@@ -6530,6 +6530,10 @@ pub async fn eth_coin_from_conf_and_request(
     protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
+    
     fn get_chain_id_from_platform(ctx: &MmArc, ticker: &str, platform: &str) -> Result<u64, String> {
         let platform_conf = coin_conf(ctx, platform);
         if platform_conf.is_null() {
