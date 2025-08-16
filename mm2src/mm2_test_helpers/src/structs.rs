@@ -1229,3 +1229,21 @@ pub struct TokenInfoResponse {
     #[serde(flatten)]
     pub info: TokenInfo,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SpentUtxo {
+    pub outpoint: String,
+    pub value: BigDecimal,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConsolidateUtxoResponse {
+    pub tx: TransactionDetails,
+    pub consolidated_utxos: Vec<SpentUtxo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FetchUtxosResponse {
+    pub address: String,
+    pub utxos: Vec<SpentUtxo>,
+}
