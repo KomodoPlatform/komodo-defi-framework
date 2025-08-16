@@ -3065,7 +3065,7 @@ fn test_utxo_merge_max_merge_at_once() {
 fn test_consolidate_utxos_rpc() {
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let utxos = 50;
-    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 0.into());
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
 
     // fill several times to have more UTXOs on address
     for i in 1..=utxos {
@@ -3094,9 +3094,9 @@ fn test_consolidate_utxos_rpc() {
 
     let consolidate_rpc = |merge_at: u32, merge_at_once: u32| {
         block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
             "userpass": mm_bob.userpass,
             "method": "consolidate_utxos",
-            "mm2": 1,
             "params": {
                 "coin": "MYCOIN",
                 "merge_conditions": {
@@ -3108,7 +3108,7 @@ fn test_consolidate_utxos_rpc() {
         .unwrap()
     };
 
-    let res = consolidate_rpc(51, 4);
+    let res = consolidate_rpc(52, 4);
     assert!(!res.0.is_success(), "Expected error for merge_at > utxos: {}", res.1);
 
     let res = consolidate_rpc(30, 4);
@@ -3126,14 +3126,14 @@ fn test_consolidate_utxos_rpc() {
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
     let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
-    // We have 50 utxos and merged 4 of them which resulted in an extra one.
-    assert_eq!(unspents.len(), 50 - 4 + 1);
+    // We have 51 utxos and merged 4 of them which resulted in an extra one.
+    assert_eq!(unspents.len(), 51 - 4 + 1);
 }
 
 #[test]
 fn test_fetch_utxos_rpc() {
     let timeout = 30; // timeout if test takes more than 30 seconds to run
-    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 0.into());
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
 
     // fill several times to have more UTXOs on address
     for i in 1..=10 {
@@ -3162,9 +3162,9 @@ fn test_fetch_utxos_rpc() {
 
     let fetch_utxo_rpc = || {
         let res = block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
             "userpass": mm_bob.userpass,
             "method": "fetch_utxos",
-            "mm2": 1,
             "params": {
                 "coin": "MYCOIN"
             }
@@ -3177,13 +3177,13 @@ fn test_fetch_utxos_rpc() {
     };
 
     let res = fetch_utxo_rpc();
-    assert!(res.utxos.len() == 10);
+    assert!(res.utxos.len() == 11);
 
     fill_address(&coin, &coin.my_address().unwrap(), 100.into(), timeout);
     thread::sleep(Duration::from_secs(2));
 
     let res = fetch_utxo_rpc();
-    assert!(res.utxos.len() == 11);
+    assert!(res.utxos.len() == 12);
     assert!(res.utxos.iter().any(|utxo| utxo.value == 100.into()));
 }
 
