@@ -175,6 +175,9 @@ where
         .into());
     }
     let unspents: Vec<_> = unspents.into_iter().take(merge_conditions.max_merge_at_once).collect();
+    if unspents.len() < 2 {
+        return Err(format!("No point of merging only a single UTXO (coin={ticker})").into());
+    }
 
     let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
     let output = TransactionOutput {
