@@ -171,9 +171,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     }
 
     async fn delete_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
-        let sql = format!(
-            "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type;",
-        );
+        let sql =  "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type;";
 
         let selfi = self.clone();
         async_blocking(move || {
@@ -186,7 +184,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
                 ":purpose": -1,
                 ":coin_type": -1,
             };
-            conn.execute_named(&sql, &params.as_sql_named_params())
+            conn.execute_named(sql, &params.as_sql_named_params())
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)?;
 

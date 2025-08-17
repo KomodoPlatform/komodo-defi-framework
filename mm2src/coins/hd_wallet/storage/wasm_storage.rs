@@ -233,6 +233,13 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .collect())
     }
 
+    async fn load_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        // We won't have any bad accounts since we purged the wasm DB upon migration.
+        Ok(Vec::new())
+    }
+
+    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> { Ok(()) }
+
     async fn load_account(
         &self,
         wallet_id: HDWalletId,

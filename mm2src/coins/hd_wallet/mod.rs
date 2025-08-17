@@ -372,7 +372,7 @@ where
 pub async fn create_new_account<'a, Coin, XPubExtractor, HDWallet, HDAccount>(
     coin: &Coin,
     hd_wallet: &'a HDWallet,
-    xpub_extractor: Option<XPubExtractor>,
+    xpub_extractor: Option<&XPubExtractor>,
     account_id: Option<u32>,
 ) -> MmResult<HDAccountMut<'a, HDWalletHDAccount<HDWallet>>, NewAccountCreationError>
 where

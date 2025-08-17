@@ -480,14 +480,7 @@ pub mod common_impl {
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
         let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
-        fix_bad_accounts(
-            coin,
-            hd_wallet,
-            xpub_extractor.as_ref(),
-            address_scanner,
-            path_to_address,
-        )
-        .await?;
+        fix_bad_accounts(coin, hd_wallet, xpub_extractor.as_ref(), &address_scanner).await?;
 
         let mut accounts = hd_wallet.get_accounts_mut().await;
 
@@ -504,9 +497,14 @@ pub mod common_impl {
             );
 
             // Create new HD account.
-            let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id))
-                .await
-                .map_mm_err()?;
+            let mut new_account = create_new_account(
+                coin,
+                hd_wallet,
+                xpub_extractor.as_ref(),
+                Some(path_to_address.account_id),
+            )
+            .await
+            .map_mm_err()?;
             let scan_new_addresses = matches!(
                 params.scan_policy,
                 EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
@@ -669,7 +667,6 @@ pub mod common_impl {
         hd_wallet: &Coin::HDWallet,
         xpub_extractor: Option<&XPubExtractor>,
         _address_scanner: &Coin::HDAddressScanner,
-        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<(), EnableCoinBalanceError>
     where
         Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDCoinExtendedPubkey<Coin>>
@@ -681,16 +678,31 @@ pub mod common_impl {
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
         // Load all bad accounts that don't have purpose & coin_type set.
-        let bad_accounts = hd_wallet.hd_wallet_storage().load_bad_accounts().await?;
+        let bad_accounts = hd_wallet
+            .hd_wallet_storage()
+            .load_bad_accounts()
+            .await
+            .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
+            .map_mm_err()?;
         if bad_accounts.is_empty() {
             return Ok(());
         }
+        info!(
+            "Trying to recover {} bad accounts (coin={})",
+            bad_accounts.len(),
+            coin.ticker()
+        );
 
         for bad_account in bad_accounts.iter() {
             if hd_wallet.get_account(bad_account.account_id).await.is_some() {
                 // This bad account had a good account created for it already so we can skip it.
                 // Such a thing might happen if KDF was aborted whilst running this very loop in a previous run.
                 // In such case, we will have created some (or all) good substitute accounts but didn't delete the bad accounts yet.
+                info!(
+                    "Account {} already exists (good), skipping it (coin={})",
+                    bad_account.account_id,
+                    coin.ticker()
+                );
                 continue;
             }
             // FIXME: Use the `address_scanner` here so not to query for xpubs for accounts that don't have any balance in their addresses.
@@ -707,14 +719,24 @@ pub mod common_impl {
                     "Found a bad account in storage that doesn't correspond to the derived xpub (coin={}, derivation_path={}): derived_xpub={}, xpub_from_storage={}",
                     coin.ticker(), account.account_derivation_path(), derived_xpub, bad_account.account_xpub
                 );
-                hd_wallet.hd_wallet_storage().delete_bad_accounts().await?;
+                hd_wallet
+                    .hd_wallet_storage()
+                    .delete_bad_accounts()
+                    .await
+                    .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
+                    .map_mm_err()?;
                 return Ok(());
             }
         }
 
         // Finished creating good substitute accounts for all bad accounts.
         // Now we can delete all the bad accounts.
-        hd_wallet.hd_wallet_storage().delete_bad_accounts().await?;
+        hd_wallet
+            .hd_wallet_storage()
+            .delete_bad_accounts()
+            .await
+            .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
+            .map_mm_err()?;
 
         Ok(())
     }
