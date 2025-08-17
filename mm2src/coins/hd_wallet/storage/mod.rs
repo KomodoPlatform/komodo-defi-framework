@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use common::log::warn;
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, HDPathToCoin, StandardHDPathError, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -100,6 +101,12 @@ pub(crate) trait HDWalletStorageInternalOps {
         Self: Sized;
 
     async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
+
+    /// Loads accounts with bad/unset purpose and coin_type values found in the storage.
+    async fn load_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
+
+    /// Removes accounts with bad/unset purpose and coin_type values found in the storage.
+    async fn delete_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 
     async fn load_account(
         &self,
@@ -271,6 +278,17 @@ impl HDWalletCoinStorage {
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
         self.inner.load_accounts(wallet_id).await
+    }
+
+    pub async fn load_bad_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let wallet_id = self.wallet_id();
+        self.inner.load_bad_accounts(wallet_id).await
+    }
+
+    pub async fn delete_bad_accounts(&self) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        warn!("Deleting bad accounts for wallet={wallet_id:?}");
+        self.inner.delete_bad_accounts(wallet_id).await
     }
 
     async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {

@@ -145,6 +145,56 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         .await
     }
 
+    async fn load_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
+
+            let mut statement = conn.prepare(SELECT_ACCOUNTS_BY_WALLET_ID)?;
+
+            let params = owned_named_params! {
+                ":hd_wallet_rmd160": wallet_id.hd_wallet_rmd160.clone(),
+                ":coin": wallet_id.coin.clone(),
+                // We want to load accounts with unset purpose and coin_type values. These are marked with -1.
+                ":purpose": -1,
+                ":coin_type": -1,
+            };
+            let rows = statement
+                .query_map_named(&params.as_sql_named_params(), |row: &Row<'_>| {
+                    HDAccountStorageItem::try_from(row)
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await
+    }
+
+    async fn delete_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        let sql = format!(
+            "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type;",
+        );
+
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
+
+            let params = owned_named_params! {
+                ":hd_wallet_rmd160": wallet_id.hd_wallet_rmd160.clone(),
+                ":coin": wallet_id.coin.clone(),
+                ":purpose": -1,
+                ":coin_type": -1,
+            };
+            conn.execute_named(&sql, &params.as_sql_named_params())
+                .map(|_| ())
+                .map_to_mm(HDWalletStorageError::from)?;
+
+            Ok(())
+        })
+        .await
+    }
+
     async fn load_account(
         &self,
         wallet_id: HDWalletId,
