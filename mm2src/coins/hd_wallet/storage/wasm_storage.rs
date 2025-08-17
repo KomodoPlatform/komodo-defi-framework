@@ -119,12 +119,17 @@ impl TableSignature for HDAccountTable {
                     // Delete the old indexes and clear the table before creating new ones.
                     table.delete_index(WALLET_ID_INDEX)?;
                     table.delete_index(WALLET_ACCOUNT_ID_INDEX)?;
+                    // FIXME: Here instead of clearing the table, you need to access the table and set every purpose and coin_type field to -1.
                     table.clear()?;
                     // Create the new indexes with the purpose and coin_type fields.
-                    table.create_multi_index(WALLET_ID_INDEX, &["hd_wallet_rmd160", "purpose", "coin_type"], false)?;
+                    table.create_multi_index(
+                        WALLET_ID_INDEX,
+                        &["hd_wallet_rmd160", "coin", "purpose", "coin_type"],
+                        false,
+                    )?;
                     table.create_multi_index(
                         WALLET_ACCOUNT_ID_INDEX,
-                        &["hd_wallet_rmd160", "purpose", "coin_type", "account_id"],
+                        &["hd_wallet_rmd160", "coin", "purpose", "coin_type", "account_id"],
                         true,
                     )?;
                 },
@@ -213,6 +218,8 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
             .with_value(wallet_id.hd_wallet_rmd160)
             .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
             .with_value(wallet_id.path_to_coin.purpose() as u32)
             .map_mm_err()?
             .with_value(wallet_id.path_to_coin.coin_type())
@@ -297,6 +304,8 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
             .with_value(wallet_id.hd_wallet_rmd160)
             .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
             .with_value(wallet_id.path_to_coin.purpose() as u32)
             .map_mm_err()?
             .with_value(wallet_id.path_to_coin.coin_type())
@@ -324,6 +333,8 @@ impl HDWalletIndexedDbStorage {
     ) -> HDWalletStorageResult<Option<(ItemId, HDAccountTable)>> {
         let index_keys = MultiIndex::new(WALLET_ACCOUNT_ID_INDEX)
             .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
             .map_mm_err()?
             .with_value(wallet_id.path_to_coin.purpose() as u32)
             .map_mm_err()?

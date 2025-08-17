@@ -31,11 +31,9 @@ const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
 );";
 
 /// This migration adds `purpose` and `coin_type` columns to the `hd_account` table.
-/// Note that this migration clears the `hd_account` table completely.
-const MIGRATION_1: [&str; 3] = [
-    "ALTER TABLE hd_account ADD COLUMN purpose INTEGER NOT NULL DEFAULT 0;",
-    "DELETE FROM hd_account;",
-    "ALTER TABLE hd_account ADD COLUMN coin_type INTEGER NOT NULL DEFAULT 0;",
+const MIGRATION_1: [&str; 2] = [
+    "ALTER TABLE hd_account ADD COLUMN purpose INTEGER NOT NULL DEFAULT -1;",
+    "ALTER TABLE hd_account ADD COLUMN coin_type INTEGER NOT NULL DEFAULT -1;",
 ];
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
@@ -43,16 +41,16 @@ const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
     VALUES (:coin, :hd_wallet_rmd160, :purpose, :coin_type, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number);";
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
-    "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type;";
+    "DELETE FROM hd_account WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type;";
 
 const SELECT_ACCOUNT: &str = "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;";
+    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;";
 
 const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
     FROM hd_account
-    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type;";
+    WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type;";
 
 impl From<SqlError> for HDWalletStorageError {
     fn from(e: SqlError) -> Self {
@@ -87,7 +85,6 @@ impl HDAccountStorageItem {
     fn to_sql_params_with_wallet_id(&self, wallet_id: HDWalletId) -> OwnedSqlNamedParams {
         let mut params = wallet_id.to_sql_params();
         params.extend(owned_named_params! {
-            ":coin": wallet_id.coin.clone(),
             ":account_id": self.account_id,
             ":account_xpub": self.account_xpub.clone(),
             ":external_addresses_number": self.external_addresses_number,
@@ -101,6 +98,7 @@ impl HDWalletId {
     fn to_sql_params(&self) -> OwnedSqlNamedParams {
         owned_named_params! {
             ":hd_wallet_rmd160": self.hd_wallet_rmd160.clone(),
+            ":coin": self.coin.clone(),
             ":purpose": self.path_to_coin.purpose() as u32,
             ":coin_type": self.path_to_coin.coin_type(),
         }
@@ -328,7 +326,7 @@ impl HDWalletSqliteStorage {
         new_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let sql = format!(
-            "UPDATE hd_account SET {updating_property}=:new_value WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;",
+            "UPDATE hd_account SET {updating_property}=:new_value WHERE hd_wallet_rmd160=:hd_wallet_rmd160 AND coin=:coin AND purpose=:purpose AND coin_type=:coin_type AND account_id=:account_id;",
         );
 
         let selfi = self.clone();
