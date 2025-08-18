@@ -23,6 +23,8 @@ pub struct ConsolidateUtxoRequest {
     coin: String,
     #[serde(default)]
     merge_conditions: MergeConditions,
+    #[serde(default)]
+    broadcast: bool,
 }
 
 #[derive(Serialize)]
@@ -85,10 +87,15 @@ pub async fn consolidate_utxos_rpc(
                 ConsolidateUtxoError::InvalidAddress(format!("Failed to convert `to_address` to a script_pubkey: {e}"))
             })?;
 
-            let (transaction, spent_utxos) =
-                merge_utxos(&coin, &from_address, &to_script_pubkey, &request.merge_conditions)
-                    .await
-                    .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
+            let (transaction, spent_utxos) = merge_utxos(
+                &coin,
+                &from_address,
+                &to_script_pubkey,
+                &request.merge_conditions,
+                request.broadcast,
+            )
+            .await
+            .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
 
             let received_by_me = transaction.outputs.iter().map(|o| o.value).sum();
             let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();

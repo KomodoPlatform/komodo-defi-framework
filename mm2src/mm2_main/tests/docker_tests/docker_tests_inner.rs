@@ -3102,7 +3102,8 @@ fn test_consolidate_utxos_rpc() {
                 "merge_conditions": {
                     "merge_at": merge_at,
                     "max_merge_at_once": merge_at_once,
-                }
+                },
+                "broadcast": true
             }
         })))
         .unwrap()

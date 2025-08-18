@@ -6,8 +6,8 @@ use crate::utxo::rpc_clients::{
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::{
-    generate_and_send_tx, output_script, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
-    UtxoWeak,
+    generate_and_send_tx, generate_tx, output_script, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps,
+    UtxoSyncStatusLoopHandle, UtxoWeak,
 };
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
@@ -156,6 +156,7 @@ pub async fn merge_utxos<Coin>(
     from_address: &Address,
     to_script_pubkey: &Script,
     merge_conditions: &MergeConditions,
+    broadcast: bool,
 ) -> MmResult<(Transaction, Vec<UnspentInfo>), String>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
@@ -185,16 +186,29 @@ where
         script_pubkey: to_script_pubkey.to_bytes(),
     };
 
-    let tx = generate_and_send_tx(
-        coin,
-        unspents.clone(),
-        None,
-        FeePolicy::DeductFromOutput(0),
-        recently_spent,
-        vec![output],
-    )
-    .await
-    .map_to_mm(|e| format!("Error in generate_and_send_tx for coin={ticker}: {e}"))?;
+    let tx = if broadcast {
+        generate_and_send_tx(
+            coin,
+            unspents.clone(),
+            None,
+            FeePolicy::DeductFromOutput(0),
+            recently_spent,
+            vec![output],
+        )
+        .await
+        .map_to_mm(|e| format!("Error in generate_and_send_tx for coin={ticker}: {e}"))?
+    } else {
+        generate_tx(
+            coin,
+            unspents.clone(),
+            None,
+            FeePolicy::DeductFromOutput(0),
+            vec![output],
+        )
+        .await
+        .map_to_mm(|e| format!("Error in generate_tx for coin={ticker}: {e}"))?
+        .0
+    };
 
     Ok((tx, unspents))
 }
@@ -253,7 +267,7 @@ async fn merge_utxo_loop<T>(
         };
 
         let ticker = &coin.as_ref().conf.ticker;
-        match merge_utxos(&coin, &my_address, &script_pubkey, &merge_conditions).await {
+        match merge_utxos(&coin, &my_address, &script_pubkey, &merge_conditions, true).await {
             Ok((tx, _)) => info!(
                 "UTXO merge successful for coin={ticker}, tx_hash {:?}",
                 tx.hash().reversed()
