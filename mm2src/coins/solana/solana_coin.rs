@@ -1,4 +1,5 @@
 #![allow(unused_variables)]
+#![allow(dead_code)]
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -6,12 +7,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common::executor::{
     abortable_queue::{AbortableQueue, WeakSpawner},
-    AbortedError,
+    AbortableSystem, AbortedError,
 };
 use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::{MmError, MmResult};
+use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_rpc_client::rpc_client::RpcClient;
@@ -39,13 +40,15 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 
 pub struct SolanaCoinFields {
     ticker: String,
-    decimals: u8,
     abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<RpcClient>>,
+    protocol_info: SolanaProtocolInfo,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SolanaProtocolInfo {}
+pub struct SolanaProtocolInfo {
+    pub decimals: u8,
+}
 
 impl Deref for SolanaCoin {
     type Target = SolanaCoinFields;
@@ -61,7 +64,7 @@ pub struct SolanaInitError {
     pub kind: SolanaInitErrorKind,
 }
 
-#[derive(Display, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum SolanaInitErrorKind {
     EmptyRpcUrls,
     RpcClientInitError { reason: String },
@@ -82,9 +85,21 @@ impl SolanaCoin {
             });
         }
 
-        let nodes: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
+        let rpc_clients: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
 
-        todo!()
+        let abortable_system = ctx.abortable_system.create_subsystem().map_to_mm(|e| SolanaInitError {
+            ticker: ticker.clone(),
+            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
+        })?;
+
+        let fields = SolanaCoinFields {
+            ticker,
+            abortable_system,
+            rpc_clients: AsyncMutex::new(rpc_clients),
+            protocol_info,
+        };
+
+        Ok(SolanaCoin(Arc::new(fields)))
     }
 }
 
