@@ -3,7 +3,9 @@ use derive_more::Display;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStore, IdbObjectStoreParameters, IdbTransaction};
+use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStoreParameters, IdbTransaction};
+
+use crate::indexed_db::db_driver::IdbObjectStoreImpl;
 
 const ITEM_KEY_PATH: &str = "_item_id";
 
@@ -52,7 +54,9 @@ impl DbUpgrader {
         params.auto_increment(true);
 
         match self.db.create_object_store_with_optional_parameters(table, &params) {
-            Ok(object_store) => Ok(TableUpgrader { object_store }),
+            Ok(object_store) => Ok(TableUpgrader {
+                object_store_impl: object_store.into(),
+            }),
             Err(e) => MmError::err(OnUpgradeError::ErrorCreatingTable {
                 table: table.to_owned(),
                 description: stringify_js_error(&e),
@@ -63,7 +67,9 @@ impl DbUpgrader {
     /// Open the `table` if it was created already.
     pub fn open_table(&self, table: &str) -> OnUpgradeResult<TableUpgrader> {
         match self.transaction.object_store(table) {
-            Ok(object_store) => Ok(TableUpgrader { object_store }),
+            Ok(object_store) => Ok(TableUpgrader {
+                object_store_impl: object_store.into(),
+            }),
             Err(e) => MmError::err(OnUpgradeError::ErrorOpeningTable {
                 table: table.to_owned(),
                 description: stringify_js_error(&e),
@@ -73,7 +79,7 @@ impl DbUpgrader {
 }
 
 pub struct TableUpgrader {
-    object_store: IdbObjectStore,
+    object_store_impl: IdbObjectStoreImpl,
 }
 
 impl TableUpgrader {
@@ -82,7 +88,8 @@ impl TableUpgrader {
     pub fn create_index(&self, index: &str, unique: bool) -> OnUpgradeResult<()> {
         let mut params = IdbIndexParameters::new();
         params.unique(unique);
-        self.object_store
+        self.object_store_impl
+            .object_store
             .create_index_with_str_and_optional_parameters(index, index, &params)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingIndex {
@@ -104,7 +111,8 @@ impl TableUpgrader {
             fields_key_path.push(&JsValue::from(*field));
         }
 
-        self.object_store
+        self.object_store_impl
+            .object_store
             .create_index_with_str_sequence_and_optional_parameters(index, &fields_key_path, &params)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingIndex {
@@ -118,7 +126,8 @@ impl TableUpgrader {
     /// method is used to delete any type of index, and it works in the same way for both.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/deleteIndex
     pub fn delete_index(&self, index: &str) -> OnUpgradeResult<()> {
-        self.object_store
+        self.object_store_impl
+            .object_store
             .delete_index(index)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorDeletingIndex {
@@ -130,11 +139,12 @@ impl TableUpgrader {
     /// Clears the object store.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/clear
     pub fn clear(&self) -> OnUpgradeResult<()> {
-        self.object_store
+        self.object_store_impl
+            .object_store
             .clear()
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingTable {
-                table: self.object_store.name(),
+                table: self.object_store_impl.object_store.name(),
                 description: stringify_js_error(&e),
             })
     }

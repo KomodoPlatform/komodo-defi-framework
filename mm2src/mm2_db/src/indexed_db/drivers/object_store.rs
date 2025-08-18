@@ -15,6 +15,15 @@ pub struct IdbObjectStoreImpl {
     pub(crate) aborted: Arc<AtomicBool>,
 }
 
+impl From<IdbObjectStore> for IdbObjectStoreImpl {
+    fn from(object_store: IdbObjectStore) -> Self {
+        IdbObjectStoreImpl {
+            object_store,
+            aborted: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 impl !Send for IdbObjectStoreImpl {}
 
 impl IdbObjectStoreImpl {
