@@ -4766,7 +4766,7 @@ pub enum CoinProtocol {
         platform: String,
     },
     #[cfg(feature = "enable-solana")]
-    SOLANA(solana::SolanaProtocolInfo)
+    SOLANA(solana::SolanaProtocolInfo),
 }
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
@@ -5836,7 +5836,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"), // TODO Alright
         #[cfg(feature = "enable-solana")]
-        CoinProtocol::SOLANA(_) => return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
+        CoinProtocol::SOLANA(_) => {
+            return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet.")
+        },
     }
 }
 

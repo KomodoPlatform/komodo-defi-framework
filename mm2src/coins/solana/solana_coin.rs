@@ -14,7 +14,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
-use solana_client::rpc_client::RpcClient;
+use solana_rpc_client::rpc_client::RpcClient;
 use url::Url;
 
 use crate::{

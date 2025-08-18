@@ -11,7 +11,9 @@ enable-sia = [
 	"dep:sia-rust"
 ]
 enable-solana = [
-  "dep:solana-client"
+  "dep:solana-rpc-client",
+  "dep:solana-sdk",
+  "dep:solana-transaction-status"
 ]
 default = ["enable-solana"]
 run-docker-tests = []
@@ -122,7 +124,10 @@ zcash_extras.workspace = true
 zcash_primitives.workspace = true
 
 # Solana
-solana-client = { version = "2.3", optional = true }
+solana-rpc-client = { version = "2.3", default-features = false, optional = true }
+solana-sdk = { version = "1", default-features = false, optional = true }
+solana-transaction-status = { version = "1", default-features = false, optional = true }
+
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true
