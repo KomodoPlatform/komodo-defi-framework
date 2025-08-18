@@ -120,7 +120,7 @@ impl TableSignature for HDAccountTable {
                     table.delete_index(WALLET_ID_INDEX)?;
                     table.delete_index(WALLET_ACCOUNT_ID_INDEX)?;
                     // FIXME: Here instead of clearing the table, you need to access the table and set every purpose and coin_type field to -1.
-                    table.clear()?;
+                    // table.clear()?;
                     // Create the new indexes with the purpose and coin_type fields.
                     table.create_multi_index(
                         WALLET_ID_INDEX,

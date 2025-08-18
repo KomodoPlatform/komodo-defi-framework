@@ -135,17 +135,4 @@ impl TableUpgrader {
                 description: stringify_js_error(&e),
             })
     }
-
-    /// Clears the object store.
-    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/clear
-    pub fn clear(&self) -> OnUpgradeResult<()> {
-        self.object_store_impl
-            .object_store
-            .clear()
-            .map(|_| ())
-            .map_to_mm(|e| OnUpgradeError::ErrorCreatingTable {
-                table: self.object_store_impl.object_store.name(),
-                description: stringify_js_error(&e),
-            })
-    }
 }
