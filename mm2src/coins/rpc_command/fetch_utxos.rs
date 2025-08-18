@@ -20,6 +20,7 @@ pub struct FetchUtxosRequest {
 #[derive(Serialize)]
 pub struct FetchUtxosResponse {
     pub address: String,
+    pub count: usize,
     pub utxos: Vec<UnspentOutputs>,
 }
 
@@ -79,6 +80,7 @@ pub async fn fetch_utxos_rpc(ctx: MmArc, req: FetchUtxosRequest) -> MmResult<Fet
 
             Ok(FetchUtxosResponse {
                 address: from_address.addr_to_string(),
+                count: unspents.len(),
                 utxos: unspents
                     .into_iter()
                     .map(|unspent| UnspentOutputs {
