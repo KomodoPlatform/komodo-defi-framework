@@ -111,7 +111,7 @@ impl IdbDatabaseBuilder {
                     };
                     let transaction =
                         IdbTransactionImpl::init(Self::get_transaction_from_request(&db_request)?, table_names.clone());
-                    Self::on_upgrade_needed(event, db, transaction, handlers)?
+                    Self::on_upgrade_needed(event, db, transaction, handlers).await?
                 },
                 DbOpenEvent::Success(_) => {
                     let db = IdbDatabaseImpl {
@@ -127,7 +127,7 @@ impl IdbDatabaseBuilder {
         unreachable!("The event channel must not be closed before either 'DbOpenEvent::Success' or 'DbOpenEvent::Failed' is received");
     }
 
-    fn on_upgrade_needed(
+    async fn on_upgrade_needed(
         event: JsValue,
         db: IdbDatabaseImpl,
         transaction: IdbTransactionImpl,
@@ -150,11 +150,13 @@ impl IdbDatabaseBuilder {
 
         let upgrader = DbUpgrader::new(db, transaction);
         for on_upgrade_needed_cb in handlers {
-            on_upgrade_needed_cb(&upgrader, old_version, new_version).mm_err(|error| InitDbError::UpgradingError {
-                old_version,
-                new_version,
-                error,
-            })?;
+            on_upgrade_needed_cb(&upgrader, old_version, new_version)
+                .await
+                .mm_err(|error| InitDbError::UpgradingError {
+                    old_version,
+                    new_version,
+                    error,
+                })?;
         }
         Ok(())
     }

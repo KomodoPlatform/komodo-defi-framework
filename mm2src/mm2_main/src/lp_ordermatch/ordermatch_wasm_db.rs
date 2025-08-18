@@ -52,7 +52,7 @@ pub mod tables {
     impl TableSignature for MyActiveMakerOrdersTable {
         const TABLE_NAME: &'static str = "my_active_maker_orders";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             on_upgrade_swap_table_by_uuid_v1(upgrader, old_version, new_version, Self::TABLE_NAME)
         }
     }
@@ -66,7 +66,7 @@ pub mod tables {
     impl TableSignature for MyActiveTakerOrdersTable {
         const TABLE_NAME: &'static str = "my_active_taker_orders";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             on_upgrade_swap_table_by_uuid_v1(upgrader, old_version, new_version, Self::TABLE_NAME)
         }
     }
@@ -80,7 +80,7 @@ pub mod tables {
     impl TableSignature for MyHistoryOrdersTable {
         const TABLE_NAME: &'static str = "my_history_orders";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             on_upgrade_swap_table_by_uuid_v1(upgrader, old_version, new_version, Self::TABLE_NAME)
         }
     }
@@ -103,7 +103,7 @@ pub mod tables {
     impl TableSignature for MyFilteringHistoryOrdersTable {
         const TABLE_NAME: &'static str = "my_filtering_history_orders";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             if let (0, 1) = (old_version, new_version) {
                 let table = upgrader.create_table(Self::TABLE_NAME)?;
                 table.create_index("uuid", true)?;

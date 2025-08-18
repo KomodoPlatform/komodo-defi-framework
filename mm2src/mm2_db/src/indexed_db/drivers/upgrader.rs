@@ -1,5 +1,6 @@
 use common::stringify_js_error;
 use derive_more::Display;
+use futures::Future;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
@@ -10,7 +11,9 @@ use crate::indexed_db::db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTrans
 const ITEM_KEY_PATH: &str = "_item_id";
 
 pub type OnUpgradeResult<T> = Result<T, MmError<OnUpgradeError>>;
-pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeResult<()> + Send>;
+//pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeResult<()> + Send>;
+pub type OnUpgradeNeededCb =
+    Box<dyn FnOnce(&DbUpgrader, u32, u32) -> (impl Future<Output = OnUpgradeResult<()>>) + Send>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {

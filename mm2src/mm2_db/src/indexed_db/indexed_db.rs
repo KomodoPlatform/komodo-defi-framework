@@ -65,7 +65,7 @@ pub mod cursor_prelude {
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
     const TABLE_NAME: &'static str;
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
 }
 
 /// Essential operations for initializing an IndexedDb instance.
@@ -948,7 +948,7 @@ mod tests {
     impl TableSignature for TxTable {
         const TABLE_NAME: &'static str = "tx_table";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
                 // the table is initialized already
                 return Ok(());
@@ -1322,7 +1322,11 @@ mod tests {
         impl TableSignature for UpgradableTable {
             const TABLE_NAME: &'static str = "upgradable_table";
 
-            fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+            async fn on_upgrade_needed(
+                upgrader: &DbUpgrader,
+                old_version: u32,
+                new_version: u32,
+            ) -> OnUpgradeResult<()> {
                 let mut versions = LAST_VERSIONS.lock().expect("!old_new_versions.lock()");
                 *versions = Some((old_version, new_version));
 
@@ -1455,7 +1459,11 @@ mod tests {
         impl TableSignature for SwapTable {
             const TABLE_NAME: &'static str = "swap_table";
 
-            fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+            async fn on_upgrade_needed(
+                upgrader: &DbUpgrader,
+                old_version: u32,
+                _new_version: u32,
+            ) -> OnUpgradeResult<()> {
                 if old_version > 0 {
                     // the table is initialized already
                     return Ok(());
