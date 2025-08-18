@@ -3177,14 +3177,14 @@ fn test_fetch_utxos_rpc() {
     };
 
     let res = fetch_utxo_rpc();
-    assert!(res.utxos.len() == 11);
+    assert!(res.total_count == 11);
 
     fill_address(&coin, &coin.my_address().unwrap(), 100.into(), timeout);
     thread::sleep(Duration::from_secs(2));
 
     let res = fetch_utxo_rpc();
-    assert!(res.utxos.len() == 12);
-    assert!(res.utxos.iter().any(|utxo| utxo.value == 100.into()));
+    assert!(res.total_count == 12);
+    assert!(res.addresses[0].utxos.iter().any(|utxo| utxo.value == 100.into()));
 }
 
 #[test]

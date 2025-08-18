@@ -1243,7 +1243,15 @@ pub struct ConsolidateUtxoResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct FetchUtxosResponse {
+pub struct AddressUtxos {
     pub address: String,
+    pub count: usize,
     pub utxos: Vec<SpentUtxo>,
+    pub derivation_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FetchUtxosResponse {
+    pub total_count: usize,
+    pub addresses: Vec<AddressUtxos>,
 }
