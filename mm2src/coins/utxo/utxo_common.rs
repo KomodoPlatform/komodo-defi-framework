@@ -2156,7 +2156,7 @@ fn verify_p2pk_input_pubkey(
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
@@ -2202,7 +2202,7 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
 
     let pubkey = match script.get_instruction(1) {
         Some(Ok(instruction)) => match instruction.data {
