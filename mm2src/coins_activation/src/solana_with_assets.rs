@@ -5,12 +5,12 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,
-    solana::{SolanaCoin, SolanaInitError, SolanaProtocolInfo},
-    CoinBalance, CoinProtocol, MmCoinEnum,
+    solana::{RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo},
+    CoinBalance, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy,
 };
 use common::true_f;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use rpc_task::RpcTaskHandleShared;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ use crate::{
 
 #[derive(Clone, Deserialize)]
 pub struct SolanaActivationRequest {
-    nodes: coins::solana::RpcNode,
+    nodes: Vec<RpcNode>,
     #[serde(default)]
     tx_history: bool,
     #[serde(default = "true_f")]
@@ -108,7 +108,14 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        todo!()
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_err(|e| SolanaInitError {
+            ticker: ticker.clone(),
+            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
+        })?;
+
+        let coin = Self::init(&ctx, ticker, protocol_conf, activation_request.nodes, priv_key_policy).await?;
+
+        Ok(coin)
     }
 
     async fn enable_global_nft(

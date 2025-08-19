@@ -9,25 +9,30 @@ use common::executor::{
     abortable_queue::{AbortableQueue, WeakSpawner},
     AbortableSystem, AbortedError,
 };
+use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+use nom::AsBytes;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_rpc_client::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey as SolanaAddress;
+use solana_sdk::signature::keypair_from_seed;
+use solana_sdk::signer::Signer;
 use url::Url;
 
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
     hd_wallet::HDAddressSelector,
     BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
-    RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
-    SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-    TransactionEnum, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-    ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs,
-    WatcherOps, WithdrawFut, WithdrawRequest,
+    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut,
+    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
+    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
 };
 
 #[derive(Clone, Deserialize)]
@@ -40,6 +45,7 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 
 pub struct SolanaCoinFields {
     ticker: String,
+    address: SolanaAddress,
     abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<RpcClient>>,
     protocol_info: SolanaProtocolInfo,
@@ -64,11 +70,19 @@ pub struct SolanaInitError {
     pub kind: SolanaInitErrorKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Display, Debug, Clone)]
 pub enum SolanaInitErrorKind {
     EmptyRpcUrls,
-    RpcClientInitError { reason: String },
-    Internal { reason: String },
+    RpcClientInitError {
+        reason: String,
+    },
+    Internal {
+        reason: String,
+    },
+    #[display(fmt = "Unsupported private-key policy: {policy_type}")]
+    UnsupportedPrivKeyPolicy {
+        policy_type: &'static str,
+    },
 }
 
 impl SolanaCoin {
@@ -77,6 +91,7 @@ impl SolanaCoin {
         ticker: String,
         protocol_info: SolanaProtocolInfo,
         nodes: Vec<RpcNode>,
+        priv_key_policy: PrivKeyBuildPolicy,
     ) -> MmResult<SolanaCoin, SolanaInitError> {
         if nodes.is_empty() {
             return MmError::err(SolanaInitError {
@@ -84,6 +99,39 @@ impl SolanaCoin {
                 kind: SolanaInitErrorKind::EmptyRpcUrls,
             });
         }
+
+        let priv_key = match priv_key_policy {
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
+            PrivKeyBuildPolicy::Trezor => {
+                return MmError::err(SolanaInitError {
+                    ticker,
+                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy { policy_type: "Trezor" },
+                })
+            },
+            PrivKeyBuildPolicy::GlobalHDAccount(_) => {
+                return MmError::err(SolanaInitError {
+                    ticker,
+                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy {
+                        policy_type: "GlobalHDAccount",
+                    },
+                })
+            },
+            PrivKeyBuildPolicy::WalletConnect { .. } => {
+                return MmError::err(SolanaInitError {
+                    ticker,
+                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy {
+                        policy_type: "WalletConnect",
+                    },
+                })
+            },
+        };
+
+        let keypair = keypair_from_seed(priv_key.as_bytes()).map_to_mm(|e| SolanaInitError {
+            ticker: ticker.clone(),
+            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
+        })?;
+
+        let address = keypair.pubkey();
 
         let rpc_clients: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
 
@@ -94,6 +142,7 @@ impl SolanaCoin {
 
         let fields = SolanaCoinFields {
             ticker,
+            address,
             abortable_system,
             rpc_clients: AsyncMutex::new(rpc_clients),
             protocol_info,
@@ -231,7 +280,7 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        todo!()
+        Ok(self.address.to_string())
     }
 
     fn address_from_pubkey(&self, pubkey: &RpcH264) -> MmResult<String, AddressFromPubkeyError> {
