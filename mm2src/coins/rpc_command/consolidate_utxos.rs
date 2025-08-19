@@ -63,7 +63,8 @@ impl From<CoinFindError> for ConsolidateUtxoError {
 
 #[derive(Serialize)]
 struct SpentUtxo {
-    outpoint: String,
+    txid: String,
+    vout: u32,
     value: BigDecimal,
 }
 
@@ -129,7 +130,8 @@ pub async fn consolidate_utxos_rpc(
                 consolidated_utxos: spent_utxos
                     .into_iter()
                     .map(|spent| SpentUtxo {
-                        outpoint: format!("{}:{}", spent.outpoint.hash, spent.outpoint.index),
+                        txid: spent.outpoint.hash.reversed().to_string(),
+                        vout: spent.outpoint.index,
                         value: big_decimal_from_sat_unsigned(spent.value, coin.as_ref().decimals),
                     })
                     .collect(),

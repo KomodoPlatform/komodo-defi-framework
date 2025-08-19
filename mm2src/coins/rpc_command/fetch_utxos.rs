@@ -63,7 +63,8 @@ impl From<CoinFindError> for FetchUtxosError {
 
 #[derive(Serialize)]
 pub struct UnspentOutputs {
-    outpoint: String,
+    txid: String,
+    vout: u32,
     value: BigDecimal,
 }
 
@@ -114,7 +115,8 @@ async fn get_utxos(coin: &UtxoStandardCoin, from_address: &Address) -> MmResult<
         utxos: unspents
             .into_iter()
             .map(|unspent| UnspentOutputs {
-                outpoint: format!("{}:{}", unspent.outpoint.hash, unspent.outpoint.index),
+                txid: unspent.outpoint.hash.reversed().to_string(),
+                vout: unspent.outpoint.index,
                 value: big_decimal_from_sat_unsigned(unspent.value, coin.as_ref().decimals),
             })
             .collect(),

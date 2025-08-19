@@ -1232,7 +1232,8 @@ pub struct TokenInfoResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct SpentUtxo {
-    pub outpoint: String,
+    pub txid: String,
+    pub vout: u32,
     pub value: BigDecimal,
 }
 
