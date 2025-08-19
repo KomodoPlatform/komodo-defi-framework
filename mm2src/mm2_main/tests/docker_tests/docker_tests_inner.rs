@@ -2996,7 +2996,7 @@ fn test_utxo_merge() {
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
     block_on(mm_bob.wait_for_log(4., |log| {
-        log.contains("UTXO merge of 5 outputs successful for coin MYCOIN, tx_hash")
+        log.contains("UTXO merge of 5 outputs successful for coin=MYCOIN, tx_hash")
     }))
     .unwrap();
 
@@ -3052,7 +3052,7 @@ fn test_utxo_merge_max_merge_at_once() {
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
     block_on(mm_bob.wait_for_log(4., |log| {
-        log.contains("UTXO merge of 4 outputs successful for coin MYCOIN, tx_hash")
+        log.contains("UTXO merge of 4 outputs successful for coin=MYCOIN, tx_hash")
     }))
     .unwrap();
 
