@@ -3,14 +3,18 @@
 //! rotates through all transports in case of failures.
 
 use super::web3_transport::FeeHistoryResult;
-use super::{web3_transport::Web3Transport, EthCoin, ETH_RPC_REQUEST_TIMEOUT_S};
+use super::{web3_transport::Web3Transport, EthCoin};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use serde_json::Value;
+use std::time::Duration;
 use web3::types::{
     Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState, Trace,
     TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256, H520, H64, U256, U64,
 };
 use web3::{helpers, Transport};
+
+/// Internal timeout to try an rpc node before switching to next one
+const TRY_RPC_NODE_TIMEOUT_S: Duration = Duration::from_secs(10);
 
 impl EthCoin {
     async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
@@ -28,7 +32,7 @@ impl EthCoin {
                 Web3Transport::Metamask(metamask) => metamask.execute(method, params.clone()),
             };
 
-            match execute_fut.timeout(ETH_RPC_REQUEST_TIMEOUT_S).await {
+            match execute_fut.timeout(TRY_RPC_NODE_TIMEOUT_S).await {
                 Ok(Ok(r)) => {
                     // Bring the live client to the front of rpc_clients
                     clients.rotate_left(i);

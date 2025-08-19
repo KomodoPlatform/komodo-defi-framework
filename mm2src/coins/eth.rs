@@ -193,7 +193,9 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 pub mod eth_utils;
 pub mod tron;
 
+/// Default timeout to wait for eth rpc request to complete
 pub(crate) const ETH_RPC_REQUEST_TIMEOUT_S: Duration = Duration::from_secs(30);
+/// Default timeout to wait for web3 request to complete
 pub(crate) const WEB3_REQUEST_TIMEOUT_S: Duration = Duration::from_secs(30);
 
 pub const ETH_PROTOCOL_TYPE: &str = "ETH";
