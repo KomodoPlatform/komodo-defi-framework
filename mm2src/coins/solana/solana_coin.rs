@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,14 +12,16 @@ use common::executor::{
 };
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
+use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use nom::AsBytes;
+use num_traits::Zero;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey as SolanaAddress;
 use solana_sdk::signature::keypair_from_seed;
 use solana_sdk::signer::Signer;
 use url::Url;
@@ -131,7 +134,10 @@ impl SolanaCoin {
             kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
         })?;
 
-        let address = keypair.pubkey();
+        let address = SolanaAddress::from_str(&keypair.pubkey().to_string()).map_to_mm(|e| SolanaInitError {
+            ticker: ticker.clone(),
+            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
+        })?;
 
         let rpc_clients: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
 
@@ -179,7 +185,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn decimals(&self) -> u8 {
-        todo!()
+        self.protocol_info.decimals
     }
 
     fn convert_to_address(&self, from: &str, to_address_format: serde_json::Value) -> Result<String, String> {
@@ -276,7 +282,7 @@ impl MmCoin for SolanaCoin {
 #[async_trait]
 impl MarketCoinOps for SolanaCoin {
     fn ticker(&self) -> &str {
-        todo!()
+        &self.ticker
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
@@ -304,7 +310,26 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        todo!()
+        let coin = self.clone();
+
+        let fut = async move {
+            // TODO: Implement proper RPC rotation function
+            // and use it to get an RPC client.
+            let rpcs = coin.rpc_clients.lock().await;
+            let rpc_client = rpcs.first().expect("TODO");
+
+            let balance_u64 = rpc_client.get_balance(&coin.address).expect("TODO");
+
+            let scale = BigDecimal::from(10u64.pow(coin.protocol_info.decimals as u32));
+            let balance_decimal = BigDecimal::from(balance_u64) / scale;
+
+            Ok(CoinBalance {
+                spendable: balance_decimal,
+                unspendable: BigDecimal::zero(),
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
@@ -341,7 +366,18 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        todo!()
+        let coin = self.clone();
+
+        let fut = async move {
+            // TODO: Implement proper RPC rotation function
+            // and use it to get an RPC client.
+            let rpcs = coin.rpc_clients.lock().await;
+            let rpc_client = rpcs.first().expect("TODO");
+
+            rpc_client.get_block_height().map_err(|e| e.to_string())
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn display_priv_key(&self) -> Result<String, String> {

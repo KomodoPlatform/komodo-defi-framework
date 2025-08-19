@@ -230,6 +230,14 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
         "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
         "enable_nft" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
+        "enable_solana_with_assets" => {
+            handle_mmrpc(
+                ctx,
+                request,
+                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
+            )
+            .await
+        },
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },

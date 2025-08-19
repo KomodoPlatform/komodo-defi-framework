@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,
     solana::{RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo},
-    CoinBalance, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy,
+    CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
 };
-use common::true_f;
+use common::{true_f, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -138,7 +138,8 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
     fn token_initializers(
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        todo!()
+        // TODO
+        vec![]
     }
 
     async fn get_activation_result(
@@ -147,7 +148,16 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        todo!()
+        let balance = self.my_balance().compat().await.expect("TODO");
+
+        Ok(SolanaActivationResult {
+            ticker: self.ticker().to_owned(),
+            address: self.my_address().expect("TODO"),
+            current_block: self.current_block().compat().await.expect("TODO"),
+            balance: Some(balance),
+            tokens_balances: None,
+            tokens_tickers: None,
+        })
     }
 
     fn start_history_background_fetching(
