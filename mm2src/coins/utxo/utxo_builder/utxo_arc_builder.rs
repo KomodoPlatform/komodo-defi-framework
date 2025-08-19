@@ -268,8 +268,9 @@ async fn merge_utxo_loop<T>(
 
         let ticker = &coin.as_ref().conf.ticker;
         match merge_utxos(&coin, &my_address, &script_pubkey, &merge_conditions, true).await {
-            Ok((tx, _)) => info!(
-                "UTXO merge successful for coin={ticker}, tx_hash {:?}",
+            Ok((tx, spents)) => info!(
+                "UTXO merge of {} outputs successful for coin={ticker}, tx_hash {:?}",
+                spents.len(),
                 tx.hash().reversed()
             ),
             Err(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),

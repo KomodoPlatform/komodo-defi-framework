@@ -2995,9 +2995,10 @@ fn test_utxo_merge() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 5 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 5 outputs successful for coin MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
@@ -3050,9 +3051,10 @@ fn test_utxo_merge_max_merge_at_once() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 4 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 4 outputs successful for coin MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
