@@ -3874,7 +3874,6 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         .expect("CryptoCtx not available")
         .mm2_internal_pubkey_hex();
 
-    let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
     loop {
         if ctx.is_stopping() {
             break;
@@ -3906,7 +3905,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             for (pubkey, state) in orderbook.pubkeys_state.iter() {
                 let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
                 let to_keep =
-                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
+                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + MAKER_ORDER_TIMEOUT > now_sec();
                 if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
