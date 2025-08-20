@@ -86,6 +86,9 @@ pub enum SolanaInitErrorKind {
     UnsupportedPrivKeyPolicy {
         policy_type: &'static str,
     },
+    QueryError {
+        reason: String,
+    },
 }
 
 impl SolanaCoin {
@@ -331,7 +334,9 @@ impl MarketCoinOps for SolanaCoin {
                 .map_err(|e| BalanceError::Internal(e.into_inner()))
                 .await?;
 
-            let balance_u64 = rpc_client.get_balance(&coin.address).expect("TODO");
+            let balance_u64 = rpc_client
+                .get_balance(&coin.address)
+                .map_err(|e| BalanceError::Transport(e.to_string()))?;
 
             let scale = BigDecimal::from(10u64.pow(coin.protocol_info.decimals as u32));
             let balance_decimal = BigDecimal::from(balance_u64) / scale;

@@ -26,6 +26,8 @@ use crate::{
     prelude::{ActivationRequestInfo, CurrentBlock, TryFromCoinProtocol, TxHistory},
 };
 
+pub type SolanaCoinTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin>;
+
 #[derive(Clone, Deserialize)]
 pub struct SolanaActivationRequest {
     nodes: Vec<RpcNode>,
@@ -148,12 +150,31 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        let balance = self.my_balance().compat().await.expect("TODO");
+        let balance = self.my_balance().compat().await.map_err(|e| SolanaInitError {
+            ticker: self.ticker().to_owned(),
+            kind: SolanaInitErrorKind::QueryError {
+                reason: format!("Failed to fetch balance: {e}"),
+            },
+        })?;
+
+        let current_block = self.current_block().compat().await.map_err(|e| SolanaInitError {
+            ticker: self.ticker().to_owned(),
+            kind: SolanaInitErrorKind::QueryError {
+                reason: format!("Failed to fetch current block: {e}"),
+            },
+        })?;
+
+        let address = self.my_address().map_err(|e| SolanaInitError {
+            ticker: self.ticker().to_owned(),
+            kind: SolanaInitErrorKind::Internal {
+                reason: e.into_inner().to_string(),
+            },
+        })?;
 
         Ok(SolanaActivationResult {
             ticker: self.ticker().to_owned(),
-            address: self.my_address().expect("TODO"),
-            current_block: self.current_block().compat().await.expect("TODO"),
+            address,
+            current_block,
             balance: Some(balance),
             tokens_balances: None,
             tokens_tickers: None,
@@ -172,6 +193,6 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
     fn rpc_task_manager(
         activation_ctx: &CoinsActivationContext,
     ) -> &InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin> {
-        todo!()
+        &activation_ctx.init_solana_coin_task_manager
     }
 }
