@@ -29,10 +29,10 @@ use url::Url;
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
     hd_wallet::HDAddressSelector,
-    BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut,
-    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
+    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
+    FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+    RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
     TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
     UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
     VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
@@ -50,7 +50,7 @@ pub struct SolanaCoinFields {
     ticker: String,
     address: SolanaAddress,
     abortable_system: AbortableQueue,
-    rpc_clients: AsyncMutex<Vec<RpcClient>>,
+    rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
 }
 
@@ -139,7 +139,7 @@ impl SolanaCoin {
             kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
         })?;
 
-        let rpc_clients: Vec<RpcClient> = nodes.iter().map(|n| RpcClient::new(&n.url)).collect();
+        let rpc_clients: Vec<Arc<RpcClient>> = nodes.iter().map(|n| Arc::new(RpcClient::new(&n.url))).collect();
 
         let abortable_system = ctx.abortable_system.create_subsystem().map_to_mm(|e| SolanaInitError {
             ticker: ticker.clone(),
@@ -155,6 +155,19 @@ impl SolanaCoin {
         };
 
         Ok(SolanaCoin(Arc::new(fields)))
+    }
+
+    async fn rpc_client(&self) -> MmResult<Arc<RpcClient>, String> {
+        let mut rpcs = self.rpc_clients.lock().await;
+
+        if let Some(index) = rpcs.iter().position(|rpc| rpc.get_health().is_ok()) {
+            // Put healthy one to the front.
+            rpcs.rotate_left(index);
+
+            return Ok(rpcs[0].clone());
+        }
+
+        MmError::err("No healthy RPC client found.".to_owned())
     }
 }
 
@@ -313,10 +326,10 @@ impl MarketCoinOps for SolanaCoin {
         let coin = self.clone();
 
         let fut = async move {
-            // TODO: Implement proper RPC rotation function
-            // and use it to get an RPC client.
-            let rpcs = coin.rpc_clients.lock().await;
-            let rpc_client = rpcs.first().expect("TODO");
+            let rpc_client = coin
+                .rpc_client()
+                .map_err(|e| BalanceError::Internal(e.into_inner()))
+                .await?;
 
             let balance_u64 = rpc_client.get_balance(&coin.address).expect("TODO");
 
@@ -369,10 +382,7 @@ impl MarketCoinOps for SolanaCoin {
         let coin = self.clone();
 
         let fut = async move {
-            // TODO: Implement proper RPC rotation function
-            // and use it to get an RPC client.
-            let rpcs = coin.rpc_clients.lock().await;
-            let rpc_client = rpcs.first().expect("TODO");
+            let rpc_client = try_s!(coin.rpc_client().await);
 
             rpc_client.get_block_height().map_err(|e| e.to_string())
         };
