@@ -71,6 +71,7 @@ pub enum EnableTokenError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<RegisterCoinError> for EnableTokenError {
@@ -183,6 +184,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::TokenConfigIsNotFound { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. }
             | EnableTokenError::InvalidPayload(_)
+            | EnableTokenError::PlatformCoinMismatch
             | EnableTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
