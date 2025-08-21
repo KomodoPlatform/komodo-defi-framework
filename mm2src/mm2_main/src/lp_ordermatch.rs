@@ -364,6 +364,7 @@ fn apply_and_validate_pubkey_state_sync_response(
     response: SyncPubkeyOrderbookStateRes,
     expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
     pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
+    keep_alive_timestamp: u64,
 ) {
     let mut orderbook = orderbook_mutex.lock();
     for (pair, diff) in response.pair_orders_diff {
@@ -384,6 +385,11 @@ fn apply_and_validate_pubkey_state_sync_response(
         if let Some(expected) = expected_pair_roots.get(&pair) {
             if &new_root == expected {
                 pending_pairs.remove(&pair);
+                // Mark per-pair timestamp once accepted
+                let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
+                state
+                    .latest_root_timestamp_by_pair
+                    .insert(pair.clone(), keep_alive_timestamp);
             } else {
                 warn!(
                     "Sync validation failed for pubkey {} pair {} from {}: expected {:?}, got {:?}. Reverting pair.",
@@ -402,6 +408,7 @@ async fn request_and_apply_pubkey_state_sync_from_peer(
     peer: &str,
     expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
     pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
+    keep_alive_timestamp: u64,
 ) -> OrderbookP2PHandlerResult {
     if pending_pairs.is_empty() {
         return Ok(());
@@ -424,6 +431,7 @@ async fn request_and_apply_pubkey_state_sync_from_peer(
             resp,
             expected_pair_roots,
             pending_pairs,
+            keep_alive_timestamp,
         );
     }
 
@@ -437,6 +445,7 @@ async fn process_orders_keep_alive(
     keep_alive: new_protocol::PubkeyKeepAlive,
     i_am_relay: bool,
 ) -> OrderbookP2PHandlerResult {
+    let keep_alive_timestamp = keep_alive.timestamp;
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
 
     // Phase 1: Update local timestamps / decide whether to sync.
@@ -489,6 +498,7 @@ async fn process_orders_keep_alive(
             &peer,
             &expected_roots_by_pair,
             &mut remaining_pairs,
+            keep_alive_timestamp,
         )
         .await;
         consulted.push(peer);
@@ -3083,20 +3093,37 @@ impl Orderbook {
         i_am_relay: bool,
         propagated_from: &str,
     ) -> Result<Option<OrdermatchRequest>, MmError<OrderbookP2PHandlerError>> {
+        // Pre-scan: if any single pair is stale => the whole message is stale.
+        {
+            for (alb_pair, _) in message.trie_roots.iter() {
+                let subscribed = self
+                    .topics_subscribed_to
+                    .contains_key(&orderbook_topic_from_ordered_pair(alb_pair));
+                if !subscribed && !i_am_relay {
+                    continue;
+                }
+
+                let last_pair_timestamp = {
+                    let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+                    *pubkey_state.latest_root_timestamp_by_pair.get(alb_pair).unwrap_or(&0)
+                };
+
+                if message.timestamp <= last_pair_timestamp {
+                    log::debug!(
+                    "Ignoring PubkeyKeepAlive from {} due to stale pair {}: message.timestamp={} <= last_pair_timestamp={}",
+                    from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
+                );
+                    return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
+                        from_pubkey: from_pubkey.to_owned(),
+                        propagated_from: propagated_from.to_owned(),
+                    });
+                }
+            }
+        }
+
+        // Not stale: log and bump last_keep_alive now.
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-            if message.timestamp <= pubkey_state.latest_maker_timestamp {
-                log::debug!(
-                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
-                    from_pubkey,
-                    message.timestamp,
-                    pubkey_state.latest_maker_timestamp
-                );
-                return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
-                    from_pubkey: from_pubkey.to_owned(),
-                    propagated_from: propagated_from.to_owned(),
-                });
-            }
             if !pubkey_state.is_synced {
                 log::info!(
                     "KeepAlive received for a not fully synced pubkey {} (propagated_from={})",
@@ -3104,7 +3131,6 @@ impl Orderbook {
                     propagated_from
                 );
             }
-            pubkey_state.latest_maker_timestamp = message.timestamp;
             pubkey_state.last_keep_alive = now_sec();
         }
 
@@ -3134,6 +3160,9 @@ impl Orderbook {
                 {
                     let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
                     pubkey_state.trie_roots.insert(alb_pair.clone(), trie_root);
+                    pubkey_state
+                        .latest_root_timestamp_by_pair
+                        .insert(alb_pair.clone(), message.timestamp);
                 }
 
                 continue;
@@ -3146,7 +3175,12 @@ impl Orderbook {
             };
             if current_root != trie_root {
                 trie_roots_to_request.insert(alb_pair, trie_root);
+                continue;
             }
+            let state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            state
+                .latest_root_timestamp_by_pair
+                .insert(alb_pair.clone(), message.timestamp);
         }
 
         if trie_roots_to_request.is_empty() {
