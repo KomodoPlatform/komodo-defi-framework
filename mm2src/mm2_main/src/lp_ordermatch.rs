@@ -494,7 +494,7 @@ async fn process_orders_keep_alive(
     match (fully_synced, state.is_synced) {
         (true, false) => {
             state.is_synced = true;
-            log::debug!("Marked pubkey {} as fully synced", from_pubkey);
+            log::info!("Marked pubkey {} as fully synced", from_pubkey);
         },
         (false, true) => {
             state.is_synced = false;
@@ -3079,14 +3079,14 @@ impl Orderbook {
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
             if !pubkey_state.is_synced {
-                log::debug!(
+                log::info!(
                     "KeepAlive received for a not fully synced pubkey {} (propagated_from={})",
                     from_pubkey,
                     propagated_from
                 );
             }
             if message.timestamp <= pubkey_state.latest_maker_timestamp {
-                log::debug!(
+                warn!(
                     "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
                     from_pubkey,
                     message.timestamp,
