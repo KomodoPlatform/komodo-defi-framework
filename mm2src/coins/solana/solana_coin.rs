@@ -197,7 +197,7 @@ impl MarketCoinOps for SolanaCoin {
         todo!()
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         todo!()
     }
 

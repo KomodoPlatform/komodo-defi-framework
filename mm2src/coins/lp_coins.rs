@@ -2173,8 +2173,8 @@ pub trait MarketCoinOps {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
     }
 
-    /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal>;
+    /// Platform coin balance for tokens, e.g. ETH balance in ERC20 case
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal>;
 
     fn platform_ticker(&self) -> &str;
 
@@ -4314,6 +4314,8 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
+/// TODO: should we use #[serde(tag = "type", content = "params")] for this PrivKeyActivationPolicy like for the Eth policy,
+/// to have them identical in activation requests
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]
