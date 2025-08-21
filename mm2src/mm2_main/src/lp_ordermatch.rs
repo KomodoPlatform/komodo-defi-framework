@@ -2743,9 +2743,9 @@ struct OrderbookPubkeyState {
     /// Local receive time (seconds) when we last accepted a keep-alive from this pubkey.
     /// Used by inactivity GC to purge stale pubkeys and their orders.
     last_keep_alive: u64,
-    /// Monotonic maker-published timestamp of the last processed PubkeyKeepAlive.
-    /// Used to ignore out-of-order or replayed keep-alive messages from this pubkey.
-    latest_maker_timestamp: u64,
+    /// Monotonic maker-published timestamp for the last accepted root per pair.
+    /// Used to ignore out-of-order or replayed keep-alive roots for specific pairs.
+    latest_root_timestamp_by_pair: HashMap<AlbOrderedOrderbookPair, u64>,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
     order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
@@ -2761,8 +2761,7 @@ impl OrderbookPubkeyState {
         OrderbookPubkeyState {
             // Keep `last_keep_alive` based on local receive time. This is used for cleaning up orders of an inactive pubkey.
             last_keep_alive: now_sec(),
-            // Start at 0 so the first message from this pubkey always passes the monotonic check.
-            latest_maker_timestamp: 0,
+            latest_root_timestamp_by_pair: HashMap::default(),
             order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
@@ -3086,18 +3085,18 @@ impl Orderbook {
     ) -> Result<Option<OrdermatchRequest>, MmError<OrderbookP2PHandlerError>> {
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-            // if message.timestamp <= pubkey_state.latest_maker_timestamp {
-            //     log::debug!(
-            //         "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
-            //         from_pubkey,
-            //         message.timestamp,
-            //         pubkey_state.latest_maker_timestamp
-            //     );
-            //     return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
-            //         from_pubkey: from_pubkey.to_owned(),
-            //         propagated_from: propagated_from.to_owned(),
-            //     });
-            // }
+            if message.timestamp <= pubkey_state.latest_maker_timestamp {
+                log::debug!(
+                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
+                    from_pubkey,
+                    message.timestamp,
+                    pubkey_state.latest_maker_timestamp
+                );
+                return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
+                    from_pubkey: from_pubkey.to_owned(),
+                    propagated_from: propagated_from.to_owned(),
+                });
+            }
             if !pubkey_state.is_synced {
                 log::info!(
                     "KeepAlive received for a not fully synced pubkey {} (propagated_from={})",

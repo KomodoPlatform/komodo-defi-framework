@@ -161,10 +161,9 @@ async fn process_p2p_message(
             {
                 if e.get_inner().is_warning() {
                     log::warn!("{}", e);
+                } else {
+                    log::error!("{}", e);
                 }
-                // else {
-                //     log::error!("{}", e);
-                // }
                 return;
             }
 
