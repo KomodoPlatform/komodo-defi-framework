@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,
-    solana::{RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo},
+    solana::{RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo, SolanaToken},
     CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
 };
 use common::{true_f, Future01CompatExt};
@@ -21,12 +21,18 @@ use crate::{
         EnablePlatformCoinWithTokensError, GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
         InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
         InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction,
-        PlatformCoinWithTokensActivationOps, TokenAsMmCoinInitializer,
+        PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenAsMmCoinInitializer,
     },
-    prelude::{ActivationRequestInfo, CurrentBlock, TryFromCoinProtocol, TxHistory},
+    prelude::{ActivationRequestInfo, CurrentBlock, TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum, TxHistory},
 };
 
 pub type SolanaCoinTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin>;
+
+impl RegisterTokenInfo<SolanaToken> for SolanaCoin {
+    fn register_token_info(&self, token: &SolanaToken) {
+        todo!()
+    }
+}
 
 #[derive(Clone, Deserialize)]
 pub struct SolanaActivationRequest {
@@ -54,6 +60,18 @@ impl TryFromCoinProtocol for SolanaProtocolInfo {
         match proto {
             CoinProtocol::SOLANA(proto) => Ok(proto),
             other => MmError::err(other),
+        }
+    }
+}
+
+impl TryPlatformCoinFromMmCoinEnum for SolanaCoin {
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::Solana(coin) => Some(coin),
+            _ => None,
         }
     }
 }
