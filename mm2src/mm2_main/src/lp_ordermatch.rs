@@ -160,7 +160,7 @@ const SWAP_VERSION_DEFAULT: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum OrderbookP2PHandlerError {
     #[display(fmt = "'{_0}' is an invalid topic for the orderbook handler.")]
     InvalidTopic(String),
@@ -178,6 +178,14 @@ pub enum OrderbookP2PHandlerError {
     OrderNotFound(Uuid),
 
     Internal(String),
+
+    #[display(
+        fmt = "Received stale keep alive from pubkey '{from_pubkey}' propagated from '{propagated_from}', will ignore it"
+    )]
+    StaleKeepAlive {
+        from_pubkey: String,
+        propagated_from: String,
+    },
 }
 
 impl OrderbookP2PHandlerError {
@@ -436,7 +444,7 @@ async fn process_orders_keep_alive(
         ordermatch_ctx
             .orderbook
             .lock()
-            .process_keep_alive(&from_pubkey, keep_alive, i_am_relay, &propagated_from);
+            .process_keep_alive(&from_pubkey, keep_alive, i_am_relay, &propagated_from)?;
 
     let req = match to_request {
         Some(req) => req,
@@ -474,7 +482,7 @@ async fn process_orders_keep_alive(
         if remaining_pairs.is_empty() {
             break;
         }
-        request_and_apply_pubkey_state_sync_from_peer(
+        if let Err(e) = request_and_apply_pubkey_state_sync_from_peer(
             &ctx,
             &ordermatch_ctx.orderbook,
             &from_pubkey,
@@ -482,7 +490,13 @@ async fn process_orders_keep_alive(
             &expected_roots_by_pair,
             &mut remaining_pairs,
         )
-        .await?;
+        .await
+        {
+            error!(
+                "Failed to sync pubkey {} from peer {}: {}. Remaining pairs: {:?}",
+                from_pubkey, peer, e, remaining_pairs
+            );
+        }
         consulted.push(peer);
     }
 
@@ -3075,24 +3089,27 @@ impl Orderbook {
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
         propagated_from: &str,
-    ) -> Option<OrdermatchRequest> {
+    ) -> Result<Option<OrdermatchRequest>, MmError<OrderbookP2PHandlerError>> {
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            if message.timestamp <= pubkey_state.latest_maker_timestamp {
+                log::debug!(
+                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
+                    from_pubkey,
+                    message.timestamp,
+                    pubkey_state.latest_maker_timestamp
+                );
+                return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
+                    from_pubkey: from_pubkey.to_owned(),
+                    propagated_from: propagated_from.to_owned(),
+                });
+            }
             if !pubkey_state.is_synced {
                 log::info!(
                     "KeepAlive received for a not fully synced pubkey {} (propagated_from={})",
                     from_pubkey,
                     propagated_from
                 );
-            }
-            if message.timestamp <= pubkey_state.latest_maker_timestamp {
-                warn!(
-                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
-                    from_pubkey,
-                    message.timestamp,
-                    pubkey_state.latest_maker_timestamp
-                );
-                return None;
             }
             pubkey_state.latest_maker_timestamp = message.timestamp;
             pubkey_state.last_keep_alive = now_sec();
@@ -3140,13 +3157,13 @@ impl Orderbook {
         }
 
         if trie_roots_to_request.is_empty() {
-            return None;
+            return Ok(None);
         }
 
-        Some(OrdermatchRequest::SyncPubkeyOrderbookState {
+        Ok(Some(OrdermatchRequest::SyncPubkeyOrderbookState {
             pubkey: from_pubkey.to_owned(),
             trie_roots: trie_roots_to_request,
-        })
+        }))
     }
 
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {

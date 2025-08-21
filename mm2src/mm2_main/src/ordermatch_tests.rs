@@ -2633,6 +2633,7 @@ fn test_orderbook_pubkey_sync_request() {
 
     let request = orderbook
         .process_keep_alive(pubkey, message, false, propagated_from)
+        .unwrap()
         .unwrap();
     match request {
         OrdermatchRequest::SyncPubkeyOrderbookState {
@@ -2667,6 +2668,7 @@ fn test_orderbook_pubkey_sync_request_relay() {
 
     let request = orderbook
         .process_keep_alive(pubkey, message, true, propagated_from)
+        .unwrap()
         .unwrap();
     match request {
         OrdermatchRequest::SyncPubkeyOrderbookState {
