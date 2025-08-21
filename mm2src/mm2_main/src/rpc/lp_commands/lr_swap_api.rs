@@ -106,7 +106,7 @@ pub async fn lr_find_best_quote_rpc(
             volume: atomic_swap_volume,
             base: best_order.taker_ticker(),
             rel: best_order.maker_ticker(),
-            price: best_order.sell_price(),
+            price: best_order.buy_price(),
             method: "sell".to_owned(), // Always convert to the 'sell' action to simplify LR_0 estimations
             order_uuid: best_order.order().uuid,
             match_by: None,
