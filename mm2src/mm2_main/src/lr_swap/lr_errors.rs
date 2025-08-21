@@ -1,7 +1,8 @@
 use crate::lp_swap::swap_v2_common::SwapStateMachineError;
 use crate::lp_swap::swap_v2_rpcs::MySwapStatusError;
+use crate::lp_swap::taker_swap_v2;
 use crate::lp_swap::CheckBalanceError;
-use coins::CoinFindError;
+use coins::{BalanceError, CoinFindError, TradePreimageError};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethereum_types::U256;
@@ -36,11 +37,12 @@ pub enum LrSwapError {
     },
     OneInchError(ApiClientError), // TODO: do not attach the whole error but extract only message
     StateError(String),
-    #[allow(dead_code)]
+    #[allow(dead_code)] // TODO: remove when PR 2545 merged
     BestLrSwapNotFound {
         candidates: u32,
     },
     AtomicSwapError(String),
+    AtomicSwapAborted(taker_swap_v2::AbortReason),
     #[from_stringify("serde_json::Error")]
     ResponseParseError(String),
     #[from_stringify("coins::TransactionErr")]
@@ -49,7 +51,11 @@ pub enum LrSwapError {
     SignTransactionError(String),
     InternalError(String),
     #[display(
-        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
+        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
+        coin,
+        available,
+        required,
+        locked_by_swaps
     )]
     NotSufficientBalance {
         coin: String,
@@ -57,7 +63,12 @@ pub enum LrSwapError {
         required: BigDecimal,
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
+    #[display(
+        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
+        volume,
+        coin,
+        threshold
+    )]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
@@ -85,7 +96,7 @@ impl From<MySwapStatusError> for LrSwapError {
     fn from(e: MySwapStatusError) -> Self {
         match e {
             MySwapStatusError::NoSwapWithUuid(uuid) => {
-                LrSwapError::AtomicSwapError(format!("No swap with UUID {uuid}"))
+                LrSwapError::AtomicSwapError(format!("No swap with UUID {}", uuid))
             },
             _ => LrSwapError::InternalError(e.to_string()),
         }
@@ -145,6 +156,42 @@ impl From<CheckBalanceError> for LrSwapError {
             },
             CheckBalanceError::Transport(nested_err) => Self::TransportError(nested_err),
             CheckBalanceError::InternalError(nested_err) => Self::InternalError(nested_err),
+        }
+    }
+}
+
+impl From<TradePreimageError> for LrSwapError {
+    fn from(err: TradePreimageError) -> Self {
+        match err {
+            TradePreimageError::AmountIsTooSmall { amount, threshold } => Self::VolumeTooLow {
+                coin: "".to_owned(),
+                volume: amount,
+                threshold,
+            },
+            TradePreimageError::NotSufficientBalance {
+                coin,
+                available,
+                required,
+            } => Self::NotSufficientBalance {
+                coin,
+                available,
+                required,
+                locked_by_swaps: Default::default(),
+            },
+            TradePreimageError::Transport(nested_err) => Self::TransportError(nested_err),
+            TradePreimageError::InternalError(nested_err) => Self::InternalError(nested_err),
+            TradePreimageError::NftProtocolNotSupported => Self::NftProtocolNotSupported,
+        }
+    }
+}
+
+impl From<BalanceError> for LrSwapError {
+    fn from(e: BalanceError) -> Self {
+        match e {
+            BalanceError::Transport(transport) => Self::TransportError(transport),
+            BalanceError::InvalidResponse(rpc) => Self::TransportError(rpc),
+            BalanceError::UnexpectedDerivationMethod(_) => Self::InternalError(e.to_string()),
+            BalanceError::WalletStorageError(e) | BalanceError::Internal(e) => Self::InternalError(e),
         }
     }
 }

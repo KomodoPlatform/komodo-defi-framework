@@ -52,6 +52,7 @@ pub enum ApiIntegrationRpcError {
     #[display(fmt = "Sign transaction error {_0}")]
     SignTransactionError(String),
     #[display(fmt = "best liquidity routing swap not found, candidates: {candidates}")]
+    #[allow(dead_code)] // TODO: remove when PR 2545 merged
     BestLrSwapNotFound {
         candidates: u32,
     },
@@ -251,6 +252,9 @@ impl From<LrSwapError> for ApiIntegrationRpcError {
             LrSwapError::NoSuchCoin { coin } => ApiIntegrationRpcError::NoSuchCoin { coin },
             LrSwapError::StateError(msg) | LrSwapError::AtomicSwapError(msg) | LrSwapError::InternalError(msg) => {
                 ApiIntegrationRpcError::InternalError(msg)
+            },
+            LrSwapError::AtomicSwapAborted(abort_reason) => {
+                ApiIntegrationRpcError::InternalError(abort_reason.to_string())
             },
             LrSwapError::CoinTypeError => ApiIntegrationRpcError::CoinTypeError,
             LrSwapError::NftProtocolNotSupported => ApiIntegrationRpcError::NftProtocolNotSupported,

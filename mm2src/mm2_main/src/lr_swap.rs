@@ -24,6 +24,7 @@ pub struct LrSwapParams {
     pub dst_decimals: u8,
     pub from: EthAddress,
     pub slippage: f32,
+    pub gas: u64,
 }
 
 /// Atomic swap data for the aggregated taker swap state machine

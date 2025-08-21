@@ -168,6 +168,15 @@ impl MySwapForRpc<TakerSwapEvent> {
     pub(crate) fn is_completed(&self) -> bool {
         self.events.iter().any(|ev| matches!(*ev, TakerSwapEvent::Completed))
     }
+
+    pub(crate) fn is_refunded(&self) -> bool {
+        self.events.iter().any(|ev| {
+            matches!(
+                *ev,
+                TakerSwapEvent::TakerFundingRefunded { .. } | TakerSwapEvent::TakerPaymentRefunded { .. }
+            )
+        })
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

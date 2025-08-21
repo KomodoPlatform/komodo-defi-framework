@@ -86,6 +86,7 @@ pub(crate) fn make_classic_swap_create_params(
     .with_use_permit2(opt_params.use_permit2)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn make_atomic_swap_request(
     base: Ticker,
     rel: Ticker,
@@ -94,6 +95,7 @@ pub(crate) fn make_atomic_swap_request(
     action: TakerAction,
     match_by: MatchBy,
     order_type: OrderType,
+    rel_confs: Option<u64>,
 ) -> SellBuyRequest {
     SellBuyRequest {
         base,
@@ -112,7 +114,7 @@ pub(crate) fn make_atomic_swap_request(
         order_type,
         base_confs: None,
         base_nota: None,
-        rel_confs: None,
+        rel_confs,
         rel_nota: None,
         min_volume: None,
         save_in_history: true,

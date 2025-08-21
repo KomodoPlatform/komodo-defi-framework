@@ -154,24 +154,10 @@ pub async fn lr_execute_routed_trade_rpc(
         return MmError::err(ApiIntegrationRpcError::InvalidParam("no LR params".to_owned()));
     }
     let action = sell_buy_method(&req.atomic_swap.method).map_mm_err()?;
-    let atomic_swap_volume = match action {
-        TakerAction::Sell => {
-            if req.lr_swap_0.is_none() && req.atomic_swap.volume.is_none() {
-                return MmError::err(ApiIntegrationRpcError::InvalidParam(
-                    "no atomic swap sell amount".to_owned(),
-                ));
-            }
-            req.atomic_swap.volume
-        },
-        TakerAction::Buy => {
-            if req.lr_swap_1.is_none() && req.atomic_swap.volume.is_none() {
-                return MmError::err(ApiIntegrationRpcError::InvalidParam(
-                    "no atomic swap buy amount".to_owned(),
-                ));
-            }
-            req.atomic_swap.volume
-        },
-    };
+    if action != TakerAction::Sell {
+        return MmError::err(ApiIntegrationRpcError::InvalidParam("action must be sell".to_owned()));
+    }
+
     let atomic_swap_params = AtomicSwapParams {
         action,
         base: req.atomic_swap.base.clone(),
@@ -179,7 +165,7 @@ pub async fn lr_execute_routed_trade_rpc(
         price: req.atomic_swap.price,
         match_by: req.atomic_swap.match_by.unwrap_or_default(),
         order_type: req.atomic_swap.order_type.unwrap_or_default(),
-        base_volume: atomic_swap_volume,
+        base_volume: req.atomic_swap.volume,
     };
 
     // Validate LR step 0 (before the atomic swap):
@@ -232,6 +218,9 @@ pub async fn lr_execute_routed_trade_rpc(
             dst_contract,
             from: single_address,
             slippage: lr_swap_0.slippage,
+            // If no gas limit provided, we may fail estimations in LR_0 rollback (and if it's the platform coin to rollback).
+            // I guess this is not a reason to fail
+            gas: lr_swap_0.swap_details.gas.unwrap_or_default(),
         })
     } else {
         None
@@ -330,6 +319,7 @@ pub async fn lr_execute_routed_trade_rpc(
             dst_contract,
             from: single_address,
             slippage: lr_swap_1.slippage,
+            gas: lr_swap_1.swap_details.gas.unwrap_or_default(), // this field not used yet in LR_1 step
         })
     } else {
         None

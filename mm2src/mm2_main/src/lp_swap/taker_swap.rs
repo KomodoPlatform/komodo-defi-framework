@@ -2621,11 +2621,12 @@ impl AtomicSwap for TakerSwap {
     }
 }
 
+#[derive(Clone)]
 pub struct TakerSwapPreparedParams {
-    pub(super) dex_fee: MmNumber,
-    pub(super) fee_to_send_dex_fee: TradeFee,
-    pub(super) taker_payment_trade_fee: TradeFee,
-    pub(super) maker_payment_spend_trade_fee: TradeFee,
+    pub(crate) dex_fee: MmNumber,
+    pub(crate) fee_to_send_dex_fee: TradeFee,
+    pub(crate) taker_payment_trade_fee: TradeFee,
+    pub(crate) maker_payment_spend_trade_fee: TradeFee,
 }
 
 pub async fn check_balance_for_taker_swap(

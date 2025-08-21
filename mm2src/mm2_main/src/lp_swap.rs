@@ -125,7 +125,9 @@ mod trade_preimage;
 pub(crate) mod swap_wasm_db;
 
 pub use check_balance::check_my_coin_balance_for_swap;
-pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
+pub use check_balance::{
+    check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult, TakerFeeAdditionalInfo,
+};
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
