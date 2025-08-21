@@ -3,9 +3,9 @@ use derive_more::Display;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStoreParameters, IdbTransaction};
+use web_sys::{IdbIndexParameters, IdbObjectStoreParameters};
 
-use crate::indexed_db::db_driver::IdbObjectStoreImpl;
+use crate::indexed_db::db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl};
 
 const ITEM_KEY_PATH: &str = "_item_id";
 
@@ -38,12 +38,14 @@ pub enum OnUpgradeError {
 }
 
 pub struct DbUpgrader {
-    db: IdbDatabase,
-    transaction: IdbTransaction,
+    db: IdbDatabaseImpl,
+    transaction: IdbTransactionImpl,
 }
 
 impl DbUpgrader {
-    pub(crate) fn new(db: IdbDatabase, transaction: IdbTransaction) -> DbUpgrader { DbUpgrader { db, transaction } }
+    pub(crate) fn new(db: IdbDatabaseImpl, transaction: IdbTransactionImpl) -> DbUpgrader {
+        DbUpgrader { db, transaction }
+    }
 
     pub fn create_table(&self, table: &str) -> OnUpgradeResult<TableUpgrader> {
         // We use the [in-line](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Basic_Concepts_Behind_IndexedDB#gloss_inline_key) primary keys.
@@ -53,9 +55,12 @@ impl DbUpgrader {
         params.key_path(Some(&key_path));
         params.auto_increment(true);
 
-        match self.db.create_object_store_with_optional_parameters(table, &params) {
+        match self.db.db.create_object_store_with_optional_parameters(table, &params) {
             Ok(object_store) => Ok(TableUpgrader {
-                object_store_impl: object_store.into(),
+                object_store: IdbObjectStoreImpl {
+                    object_store,
+                    aborted: self.transaction.aborted.clone(),
+                },
             }),
             Err(e) => MmError::err(OnUpgradeError::ErrorCreatingTable {
                 table: table.to_owned(),
@@ -66,9 +71,12 @@ impl DbUpgrader {
 
     /// Open the `table` if it was created already.
     pub fn open_table(&self, table: &str) -> OnUpgradeResult<TableUpgrader> {
-        match self.transaction.object_store(table) {
+        match self.transaction.transaction.object_store(table) {
             Ok(object_store) => Ok(TableUpgrader {
-                object_store_impl: object_store.into(),
+                object_store: IdbObjectStoreImpl {
+                    object_store,
+                    aborted: self.transaction.aborted.clone(),
+                },
             }),
             Err(e) => MmError::err(OnUpgradeError::ErrorOpeningTable {
                 table: table.to_owned(),
@@ -79,7 +87,7 @@ impl DbUpgrader {
 }
 
 pub struct TableUpgrader {
-    object_store_impl: IdbObjectStoreImpl,
+    object_store: IdbObjectStoreImpl,
 }
 
 impl TableUpgrader {
@@ -88,7 +96,7 @@ impl TableUpgrader {
     pub fn create_index(&self, index: &str, unique: bool) -> OnUpgradeResult<()> {
         let mut params = IdbIndexParameters::new();
         params.unique(unique);
-        self.object_store_impl
+        self.object_store
             .object_store
             .create_index_with_str_and_optional_parameters(index, index, &params)
             .map(|_| ())
@@ -111,7 +119,7 @@ impl TableUpgrader {
             fields_key_path.push(&JsValue::from(*field));
         }
 
-        self.object_store_impl
+        self.object_store
             .object_store
             .create_index_with_str_sequence_and_optional_parameters(index, &fields_key_path, &params)
             .map(|_| ())
@@ -126,7 +134,7 @@ impl TableUpgrader {
     /// method is used to delete any type of index, and it works in the same way for both.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/deleteIndex
     pub fn delete_index(&self, index: &str) -> OnUpgradeResult<()> {
-        self.object_store_impl
+        self.object_store
             .object_store
             .delete_index(index)
             .map(|_| ())

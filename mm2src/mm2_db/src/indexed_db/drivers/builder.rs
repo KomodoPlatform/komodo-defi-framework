@@ -1,4 +1,5 @@
 use super::{construct_event_closure, DbUpgrader, IdbDatabaseImpl, OnUpgradeError, OnUpgradeNeededCb, OPEN_DATABASES};
+use crate::indexed_db::db_driver::IdbTransactionImpl;
 use crate::indexed_db::get_idb_factory;
 use common::{log::info, stringify_js_error};
 use derive_more::Display;
@@ -95,17 +96,31 @@ impl IdbDatabaseBuilder {
             match event {
                 DbOpenEvent::Failed(e) => return MmError::err(InitDbError::OpeningError(stringify_js_error(&e))),
                 DbOpenEvent::UpgradeNeeded(event) => {
-                    Self::on_upgrade_needed(event, &db_request, &mut on_upgrade_needed_handlers)?
+                    let handlers = match on_upgrade_needed_handlers.take() {
+                        Some(handlers) => handlers,
+                        None => {
+                            return MmError::err(InitDbError::UnexpectedState(
+                                "'IndexedDbBuilder::on_upgraded_needed' was called twice".to_owned(),
+                            ))
+                        },
+                    };
+                    let db = IdbDatabaseImpl {
+                        db: Self::get_db_from_request(&db_request)?,
+                        db_name: self.db_name.clone(),
+                        tables: table_names.clone(),
+                    };
+                    let transaction =
+                        IdbTransactionImpl::init(Self::get_transaction_from_request(&db_request)?, table_names.clone());
+                    Self::on_upgrade_needed(event, db, transaction, handlers)?
                 },
                 DbOpenEvent::Success(_) => {
-                    let db = Self::get_db_from_request(&db_request)?;
-                    Self::cache_open_db(self.db_name.clone());
-
-                    return Ok(IdbDatabaseImpl {
-                        db,
-                        db_name: self.db_name,
+                    let db = IdbDatabaseImpl {
+                        db: Self::get_db_from_request(&db_request)?,
+                        db_name: self.db_name.clone(),
                         tables: table_names,
-                    });
+                    };
+                    Self::cache_open_db(self.db_name);
+                    return Ok(db);
                 },
             }
         }
@@ -114,21 +129,10 @@ impl IdbDatabaseBuilder {
 
     fn on_upgrade_needed(
         event: JsValue,
-        db_request: &IdbOpenDbRequest,
-        handlers: &mut Option<Vec<OnUpgradeNeededCb>>,
+        db: IdbDatabaseImpl,
+        transaction: IdbTransactionImpl,
+        handlers: Vec<OnUpgradeNeededCb>,
     ) -> InitDbResult<()> {
-        let handlers = match handlers.take() {
-            Some(handlers) => handlers,
-            None => {
-                return MmError::err(InitDbError::UnexpectedState(
-                    "'IndexedDbBuilder::on_upgraded_needed' was called twice".to_owned(),
-                ))
-            },
-        };
-
-        let db = Self::get_db_from_request(db_request)?;
-        let transaction = Self::get_transaction_from_request(db_request)?;
-
         let version_event = match event.dyn_into::<IdbVersionChangeEvent>() {
             Ok(version) => version,
             Err(e) => {

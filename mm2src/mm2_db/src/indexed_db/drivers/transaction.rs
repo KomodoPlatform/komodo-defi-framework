@@ -52,9 +52,9 @@ pub enum DbTransactionError {
 }
 
 pub struct IdbTransactionImpl {
-    transaction: IdbTransaction,
+    pub(crate) transaction: IdbTransaction,
     tables: HashSet<String>,
-    aborted: Arc<AtomicBool>,
+    pub(crate) aborted: Arc<AtomicBool>,
     /// It's not used directly, but we need to hold the closures in memory till `transaciton` exists.
     #[allow(dead_code)]
     onabort_closure: Closure<dyn FnMut(JsValue)>,
@@ -63,7 +63,7 @@ pub struct IdbTransactionImpl {
 impl !Send for IdbTransactionImpl {}
 
 impl IdbTransactionImpl {
-    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn is_aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
 
     pub(crate) fn open_table(&self, table_name: &str) -> DbTransactionResult<IdbObjectStoreImpl> {
         if self.aborted.load(Ordering::Relaxed) {

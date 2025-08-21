@@ -278,7 +278,7 @@ impl DbTransaction<'_> {
                     Self::open_table(&transaction, table_name, result_tx)
                 },
                 internal::DbTransactionEvent::IsAborted { result_tx } => {
-                    result_tx.send(Ok(transaction.aborted())).ok();
+                    result_tx.send(Ok(transaction.is_aborted())).ok();
                 },
             }
         }
