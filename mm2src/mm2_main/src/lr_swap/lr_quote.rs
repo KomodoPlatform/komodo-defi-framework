@@ -8,7 +8,7 @@ use super::lr_helpers::get_coin_for_one_inch;
 use crate::lp_swap::taker_swap::TakerSwapPreparedParams;
 use crate::lr_swap::ClassicSwapDataExt;
 use crate::rpc::lp_commands::lr_swap_api::lr_api_types::{AskOrBidOrder, AsksForCoin, BidsForCoin};
-use coins::eth::{mm_number_from_u256, mm_number_to_u256, wei_from_coins_mm_number, wei_to_coins_mm_number, EthCoin};
+use coins::eth::{mm_number_from_u256, wei_from_coins_mm_number, wei_to_coins_mm_number, EthCoin};
 use coins::hd_wallet::AddrToString;
 use coins::{lp_coinfind_or_err, MarketCoinOps};
 use coins::{DexFee, MmCoin, Ticker};
@@ -29,8 +29,12 @@ use trading_api::one_inch_api::client::{
 use trading_api::one_inch_api::errors::OneInchError;
 use trading_api::one_inch_api::portfolio_types::{CrossPriceParams, CrossPricesSeries, DataGranularity};
 
-/// Query price history every 5 min (to estimate src/dst price)
+/// To estimate src/dst price query price history for every 5 min
 const CROSS_PRICES_GRANULARITY: DataGranularity = DataGranularity::FiveMin;
+/// Use no more than this number of price history samples to estimate src/dst price
+/// NOTE: we need the most actual price for estimation, however for limit = 1 the provider often returns an empty result
+#[allow(unused)]
+const CROSS_PRICES_LIMIT: u32 = 10;
 
 type ClassicSwapDataResult = MmResult<ClassicSwapData, OneInchError>;
 
@@ -391,7 +395,6 @@ impl LrSwapCandidates {
     fn update_lr_prices(lr_data_refs: Vec<&mut LrStepData>, lr_prices: HashMap<(Ticker, Ticker), Option<MmNumber>>) {
         for item in lr_data_refs {
             if let Some(prices) = lr_prices.get(&(item._src_token.clone(), item._dst_token.clone())) {
-                // multiple items with the same src_token/dst_token could exist
                 item.lr_price = prices.clone();
             }
         }
@@ -442,6 +445,13 @@ impl LrSwapCandidates {
                 let (dst_coin, dst_contract) = get_coin_for_one_inch(ctx, &lr_data_0._dst_token).await?;
                 let src_decimals = src_coin.decimals();
                 let dst_decimals = dst_coin.decimals();
+                log::debug!(
+                    "src_coin={} src_decimals={} dst_coin={} dst_decimals={}",
+                    src_coin.ticker(),
+                    src_decimals,
+                    dst_coin.ticker(),
+                    dst_decimals
+                );
 
                 #[cfg(feature = "for-tests")]
                 {
@@ -505,7 +515,8 @@ impl LrSwapCandidates {
             .into_iter()
             .zip(prices_in_series)
             .map(|((src, dst), series)| {
-                let dst_price = cross_prices_close(series); // estimate SRC/DST price as average from series
+                // Get src/dst price. NOTE: cross_prices return prices in ETH coins or token units (not in smallest units)
+                let dst_price = cross_prices_close(series);
                 ((src, dst), dst_price)
             })
             .collect::<HashMap<_, _>>();
@@ -540,10 +551,12 @@ impl LrSwapCandidates {
                 );
                 continue;
             };
-            let dst_amount = mm_number_from_u256(dst_amount);
+            // Get in coin units
+            // Note: cross_prices API price is returned in src_coin / dst_coin units
+            let dst_amount = wei_to_coins_mm_number(dst_amount, lr_data_0.dst_decimals()?).map_mm_err()?;
             if let Some(src_amount) = &dst_amount.checked_div(lr_price) {
-                // Note: lr_price is calculated in smallest units
-                lr_data_0.src_amount = Some(mm_number_to_u256(src_amount)?);
+                lr_data_0.src_amount =
+                    Some(wei_from_coins_mm_number(src_amount, lr_data_0.src_decimals()?).map_mm_err()?);
                 log::debug!(
                     "estimate_lr_0_source_amounts maker_order.taker_ticker={} lr_price={} lr_data_0.src_amount={:?}",
                     candidate.maker_order.taker_ticker(),
@@ -574,16 +587,18 @@ impl LrSwapCandidates {
                 let Some(ref lr_price) = lr_data_1.lr_price else {
                     continue; // No LR provider price - skipping
                 };
+                // Get in coin units
+                // Note: cross prices API price is returned in coin / coin units (not in smallest units))
                 let dst_amount = wei_from_coins_mm_number(user_dst_amount, lr_data_1.dst_decimals()?).map_mm_err()?;
                 let dst_amount = mm_number_from_u256(dst_amount);
                 if let Some(src_amount) = &dst_amount.checked_div(lr_price) {
-                    // Note: lr_price is calculated in smallest units (not coin units)
-                    lr_data_1.src_amount = Some(mm_number_to_u256(src_amount)?);
+                    lr_data_1.src_amount =
+                        Some(wei_from_coins_mm_number(src_amount, lr_data_1.src_decimals()?).map_mm_err()?);
                     log::debug!(
-                        "estimate_lr_1_source_amounts_from_dest lr_data_1._src_token={} lr_price={} lr_data.src_amount={:?}",
+                        "estimate_lr_1_source_amounts_from_dest lr_data_1._src_token={} lr_price={} lr_data_1.src_amount={:?}",
                         lr_data_1._src_token,
                         lr_price.to_decimal(),
-                        src_amount
+                        lr_data_1.src_amount
                     );
                 }
             } else {
@@ -1023,7 +1038,7 @@ fn cross_prices_average(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
         return None;
     }
     let total: MmNumber = series.iter().fold(MmNumber::from(0), |acc, price_data| {
-        acc + MmNumber::from(price_data.avg.clone())
+        acc + MmNumber::from(&price_data.avg)
     });
     Some(total / MmNumber::from(series.len() as u64))
 }
