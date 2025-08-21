@@ -293,6 +293,24 @@ pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     spawn_abortable(fut)
 }
 
+/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// to stop it. This function waits for interval seconds first before starting the broadcast.
+pub fn broadcast_swap_msg_every_delayed<T: 'static + Serialize + Clone + Send>(
+    ctx: MmArc,
+    topic: String,
+    msg: T,
+    interval_sec: f64,
+    p2p_privkey: Option<KeyPair>,
+) -> AbortOnDropHandle {
+    let fut = async move {
+        loop {
+            Timer::sleep(interval_sec).await;
+            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
+        }
+    };
+    spawn_abortable(fut)
+}
+
 /// Broadcast the swap message once
 pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
     let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
