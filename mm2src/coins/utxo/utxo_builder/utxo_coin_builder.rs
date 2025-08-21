@@ -8,7 +8,7 @@ use crate::utxo::rpc_clients::{
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoFeeConfig};
-use crate::utxo::wallet_connect::{get_pubkey_via_wallatconnect_signature, get_walletconnect_address};
+use crate::utxo::wallet_connect::{get_pubkey_via_walletconnect_signature, get_walletconnect_address};
 use crate::utxo::{
     output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoHDWallet,
     UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT,
@@ -307,7 +307,7 @@ where
             let sign_message_prefix = conf.sign_message_prefix.as_ref().ok_or_else(|| {
                 UtxoCoinBuildError::Internal("sign_message_prefix is not set in coins config".to_string())
             })?;
-            get_pubkey_via_wallatconnect_signature(&wc_ctx, session_topic, &chain_id, &address, sign_message_prefix)
+            get_pubkey_via_walletconnect_signature(&wc_ctx, session_topic, &chain_id, &address, sign_message_prefix)
                 .await
                 .map_mm_err()?
         },

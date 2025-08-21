@@ -478,7 +478,7 @@ impl SwapOps for UtxoStandardCoin {
         // Since watcher support require signing the watcher message with the same private key used in the swap,
         // we disable watcher support for private key policies that don't give us access to the private key.
         // TODO: Enable watcher support for WalletConnect by asking WalletConnect to sign the watcher message for us.
-        self.as_ref().priv_key_policy.is_native()
+        self.as_ref().priv_key_policy.is_internal()
     }
 }
 

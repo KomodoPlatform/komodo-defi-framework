@@ -88,7 +88,7 @@ struct SignMessageResponse {
 }
 
 /// Get the public key associated with some address via WalletConnect signature.
-pub async fn get_pubkey_via_wallatconnect_signature(
+pub async fn get_pubkey_via_walletconnect_signature(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
@@ -290,7 +290,7 @@ pub async fn sign_p2sh_with_walletconnect(
 ///
 /// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
 /// `prev_txs` is a map of previous transactions that contain the P2PKH inputs being spent. P2WPKH inputs don't need their previous transactions.
-pub async fn sign_p2pkh_with_walletconect(
+pub async fn sign_p2pkh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,

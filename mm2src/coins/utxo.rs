@@ -124,7 +124,7 @@ use crate::hd_wallet::{
     AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
 };
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::utxo::wallet_connect::sign_p2pkh_with_walletconect;
+use crate::utxo::wallet_connect::sign_p2pkh_with_walletconnect;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
@@ -602,7 +602,7 @@ pub struct UtxoCoinConf {
     pub checksum_type: ChecksumType,
     /// Fork id used in sighash
     pub fork_id: u32,
-    /// A CAIP-2 complaiant chain ID. This is used to identify the UTXO chain in WalletConnect and other cross-chain protocols.
+    /// A CAIP-2 compliant chain ID. This is used to identify the UTXO chain in WalletConnect and other cross-chain protocols.
     /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
     pub chain_id: Option<WcChainId>,
     /// Signature version
@@ -1929,7 +1929,7 @@ where
                 ))
                     })?;
             try_tx_s!(
-                sign_p2pkh_with_walletconect(&wc_ctx, session_topic, chain_id, &my_address, &unsigned, prev_p2pkh_txs)
+                sign_p2pkh_with_walletconnect(&wc_ctx, session_topic, chain_id, &my_address, &unsigned, prev_p2pkh_txs)
                     .await
             )
         },

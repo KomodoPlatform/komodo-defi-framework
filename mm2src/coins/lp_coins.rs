@@ -4469,7 +4469,7 @@ impl<T> PrivKeyPolicy<T> {
         matches!(self, PrivKeyPolicy::Trezor)
     }
 
-    fn is_native(&self) -> bool {
+    fn is_internal(&self) -> bool {
         matches!(self, PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::HDWallet { .. })
     }
 }
