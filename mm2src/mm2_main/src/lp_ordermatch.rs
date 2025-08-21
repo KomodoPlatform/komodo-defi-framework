@@ -482,7 +482,7 @@ async fn process_orders_keep_alive(
         if remaining_pairs.is_empty() {
             break;
         }
-        if let Err(e) = request_and_apply_pubkey_state_sync_from_peer(
+        let _ = request_and_apply_pubkey_state_sync_from_peer(
             &ctx,
             &ordermatch_ctx.orderbook,
             &from_pubkey,
@@ -490,13 +490,7 @@ async fn process_orders_keep_alive(
             &expected_roots_by_pair,
             &mut remaining_pairs,
         )
-        .await
-        {
-            error!(
-                "Failed to sync pubkey {} from peer {}: {}. Remaining pairs: {:?}",
-                from_pubkey, peer, e, remaining_pairs
-            );
-        }
+        .await;
         consulted.push(peer);
     }
 
@@ -3092,18 +3086,18 @@ impl Orderbook {
     ) -> Result<Option<OrdermatchRequest>, MmError<OrderbookP2PHandlerError>> {
         {
             let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-            if message.timestamp <= pubkey_state.latest_maker_timestamp {
-                log::debug!(
-                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
-                    from_pubkey,
-                    message.timestamp,
-                    pubkey_state.latest_maker_timestamp
-                );
-                return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
-                    from_pubkey: from_pubkey.to_owned(),
-                    propagated_from: propagated_from.to_owned(),
-                });
-            }
+            // if message.timestamp <= pubkey_state.latest_maker_timestamp {
+            //     log::debug!(
+            //         "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
+            //         from_pubkey,
+            //         message.timestamp,
+            //         pubkey_state.latest_maker_timestamp
+            //     );
+            //     return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
+            //         from_pubkey: from_pubkey.to_owned(),
+            //         propagated_from: propagated_from.to_owned(),
+            //     });
+            // }
             if !pubkey_state.is_synced {
                 log::info!(
                     "KeepAlive received for a not fully synced pubkey {} (propagated_from={})",
