@@ -63,8 +63,8 @@ use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
 use coins::{
     add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
-    get_swap_transaction_fee_policy, nft, ongoing_undelegations_info, remove_delegation,
-    set_swap_transaction_fee_policy, sign_message, sign_raw_transaction, validators_info, verify_message, withdraw,
+    get_swap_gas_fee_policy, nft, ongoing_undelegations_info, remove_delegation, set_swap_gas_fee_policy, sign_message,
+    sign_raw_transaction, validators_info, verify_message, withdraw,
 };
 use coins_activation::{
     cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin, cancel_init_token,
@@ -274,8 +274,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
-        "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
-        "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
+        "get_swap_gas_fee_policy" => handle_mmrpc(ctx, request, get_swap_gas_fee_policy).await,
+        "set_swap_gas_fee_policy" => handle_mmrpc(ctx, request, set_swap_gas_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         "wc_new_connection" => handle_mmrpc(ctx, request, new_connection).await,
