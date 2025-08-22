@@ -7,6 +7,13 @@ use mm2_err_handle::prelude::MapToMmResult;
 use mm2_number::{BigDecimal, MmNumber};
 use secp256k1::PublicKey;
 
+#[macro_export]
+macro_rules! is_eth_platform_coin {
+    ($coin: expr) => {
+        matches!($coin.coin_type, EthCoinType::Eth)
+    };
+}
+
 pub(crate) fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
     decoded.get(index).cloned().ok_or(format!(
         "Missing input in function {}: No input found at index {}",
@@ -53,7 +60,7 @@ pub fn u256_to_big_decimal(number: U256, decimals: u8) -> NumConversResult<BigDe
 }
 
 /// Shifts 'number' with decimal point right by 'decimals' places and converts it to U256 value
-pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
+pub fn u256_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
     let mut amount = amount.to_string();
     let dot = amount.find('.');
     let decimals = decimals as usize;
@@ -75,7 +82,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 /// Converts BigDecimal gwei value to wei value as U256
 #[inline(always)]
 pub fn wei_from_gwei_decimal(bigdec: &BigDecimal) -> NumConversResult<U256> {
-    wei_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
+    u256_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
 }
 
 /// Converts a U256 wei value to an gwei value as a BigDecimal
@@ -103,7 +110,7 @@ pub fn mm_number_from_u256(u256: U256) -> MmNumber {
 
 #[inline]
 pub fn wei_from_coins_mm_number(mm_number: &MmNumber, decimals: u8) -> NumConversResult<U256> {
-    wei_from_big_decimal(&mm_number.to_decimal(), decimals)
+    u256_from_big_decimal(&mm_number.to_decimal(), decimals)
 }
 
 #[inline]

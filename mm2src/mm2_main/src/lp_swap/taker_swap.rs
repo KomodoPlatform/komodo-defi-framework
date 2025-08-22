@@ -1125,7 +1125,7 @@ impl TakerSwap {
         };
 
         let params = TakerSwapPreparedParams {
-            dex_fee: dex_fee.total_spend_amount(),
+            dex_fee: dex_fee.total_amount(),
             fee_to_send_dex_fee: fee_to_send_dex_fee.clone(),
             taker_payment_trade_fee: taker_payment_trade_fee.clone(),
             maker_payment_spend_trade_fee: maker_payment_spend_trade_fee.clone(),
@@ -2571,7 +2571,7 @@ impl AtomicSwap for TakerSwap {
         if self.r().taker_fee.is_none() {
             result.push(LockedAmount {
                 coin: self.taker_coin.ticker().to_owned(),
-                amount: taker_fee.total_spend_amount(),
+                amount: taker_fee.total_amount(),
                 trade_fee,
             });
         }
@@ -2621,11 +2621,12 @@ impl AtomicSwap for TakerSwap {
     }
 }
 
+#[derive(Clone)]
 pub struct TakerSwapPreparedParams {
-    pub(super) dex_fee: MmNumber,
-    pub(super) fee_to_send_dex_fee: TradeFee,
-    pub(super) taker_payment_trade_fee: TradeFee,
-    pub(super) maker_payment_spend_trade_fee: TradeFee,
+    pub(crate) dex_fee: MmNumber,
+    pub(crate) fee_to_send_dex_fee: TradeFee,
+    pub(crate) taker_payment_trade_fee: TradeFee,
+    pub(crate) maker_payment_spend_trade_fee: TradeFee,
 }
 
 pub async fn check_balance_for_taker_swap(
@@ -2714,7 +2715,7 @@ pub async fn taker_swap_trade_preimage(
     );
     let taker_fee = TradeFee {
         coin: my_coin_ticker.to_owned(),
-        amount: dex_fee.total_spend_amount(),
+        amount: dex_fee.total_amount(),
         paid_from_trading_vol: false,
     };
 
@@ -2735,7 +2736,7 @@ pub async fn taker_swap_trade_preimage(
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, other_coin_ticker))?;
 
     let prepared_params = TakerSwapPreparedParams {
-        dex_fee: dex_fee.total_spend_amount(),
+        dex_fee: dex_fee.total_amount(),
         fee_to_send_dex_fee: fee_to_send_taker_fee.clone(),
         taker_payment_trade_fee: my_coin_trade_fee.clone(),
         maker_payment_spend_trade_fee: other_coin_trade_fee.clone(),
@@ -2905,7 +2906,7 @@ pub async fn calc_max_taker_vol(
             balance.to_fraction(),
             locked.to_fraction(),
             max_trade_fee.amount.to_fraction(),
-            max_dex_fee.total_spend_amount().to_fraction(),
+            max_dex_fee.total_amount().to_fraction(),
             max_fee_to_send_taker_fee.amount.to_fraction()
         );
         max_taker_vol_from_available(min_max_possible, my_coin, other_coin, &min_tx_amount)
@@ -2977,7 +2978,7 @@ pub async fn create_taker_swap_default_params(
         .await
         .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
     Ok(TakerSwapPreparedParams {
-        dex_fee: dex_fee.total_spend_amount(),
+        dex_fee: dex_fee.total_amount(),
         fee_to_send_dex_fee,
         taker_payment_trade_fee,
         maker_payment_spend_trade_fee,
@@ -3417,7 +3418,7 @@ mod taker_swap_tests {
             let coin = TestCoin::new(base);
             let mock_min_tx_amount = min_tx_amount.clone();
             TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(mock_min_tx_amount.clone().into()));
-            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).total_spend_amount();
+            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).total_amount();
             assert!(min_tx_amount < dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
