@@ -3728,6 +3728,8 @@ pub enum MmCoinEnum {
     SiaCoin(SiaCoin),
     #[cfg(feature = "enable-solana")]
     Solana(solana::SolanaCoin),
+    #[cfg(feature = "enable-solana")]
+    SolanaToken(solana::SolanaToken),
     #[cfg(any(test, feature = "for-tests"))]
     Test(TestCoin),
 }
@@ -3801,6 +3803,13 @@ impl From<solana::SolanaCoin> for MmCoinEnum {
     }
 }
 
+#[cfg(feature = "enable-solana")]
+impl From<solana::SolanaToken> for MmCoinEnum {
+    fn from(c: solana::SolanaToken) -> MmCoinEnum {
+        MmCoinEnum::SolanaToken(c)
+    }
+}
+
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum {
         MmCoinEnum::ZCoin(c)
@@ -3834,6 +3843,8 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::SiaCoin(ref c) => c,
             #[cfg(feature = "enable-solana")]
             MmCoinEnum::Solana(ref c) => c,
+            #[cfg(feature = "enable-solana")]
+            MmCoinEnum::SolanaToken(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::Test(ref c) => c,
         }
@@ -4765,6 +4776,10 @@ pub enum CoinProtocol {
     NFT {
         platform: String,
     },
+    #[cfg(feature = "enable-solana")]
+    SOLANA(solana::SolanaProtocolInfo),
+    #[cfg(feature = "enable-solana")]
+    SOLANATOKEN(solana::SolanaTokenProtocolInfo),
 }
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
@@ -4809,6 +4824,10 @@ impl CoinProtocol {
             | CoinProtocol::ZHTLC(_) => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANA(_) => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANATOKEN(_) => None,
         }
     }
 
@@ -4832,6 +4851,10 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { .. } => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANA(_) => None,
+            #[cfg(feature = "enable-solana")]
+            CoinProtocol::SOLANATOKEN(_) => None,
         }
     }
 
@@ -5184,6 +5207,10 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::SIA => {
             return ERR!("SIA protocol is not supported by lp_coininit. Use task::enable_sia::init");
         },
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => return ERR!("SOLANA is not supported by lp_coininit"),
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANATOKEN(_) => return ERR!("SOLANATOKEN is not supported by lp_coininit"),
     };
 
     let register_params = RegisterCoinParams {
@@ -5827,6 +5854,14 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"), // TODO Alright
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => {
+            return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet.")
+        },
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANATOKEN(_) => {
+            return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
+        },
     }
 }
 

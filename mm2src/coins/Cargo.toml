@@ -10,8 +10,13 @@ enable-sia = [
 	"dep:blake2b_simd",
 	"dep:sia-rust"
 ]
-enable-solana = []
-default = []
+enable-solana = [
+  "dep:solana-pubkey",
+  "dep:solana-rpc-client",
+  "dep:solana-sdk",
+  "dep:solana-transaction-status"
+]
+default = ["enable-solana"]
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
@@ -118,6 +123,13 @@ zbase32.workspace = true
 zcash_client_backend.workspace = true
 zcash_extras.workspace = true
 zcash_primitives.workspace = true
+
+# Solana
+solana-pubkey = { version = "2.4", default-features = false, optional = true }
+solana-rpc-client = { version = "2.3", default-features = false, optional = true }
+solana-sdk = { version = "1", default-features = false, optional = true }
+solana-transaction-status = { version = "1", default-features = false, optional = true }
+
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true
