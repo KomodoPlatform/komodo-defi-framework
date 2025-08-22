@@ -1,0 +1,172 @@
+name: PR WASM Preview Deployment
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
+
+jobs:
+  build-deploy:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    container: komodoofficial/ci-container:latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: pre scripts for ci container
+        run: |
+          git config --global --add safe.directory /__w/komodo-defi-framework/komodo-defi-framework
+          echo "/bin" >> $GITHUB_PATH
+          echo "/usr/bin" >> $GITHUB_PATH
+          echo "/root/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Calculate build tag
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+
+      - name: Build cache
+        uses: ./.github/actions/build-cache
+
+      - name: Build WASM
+        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
+
+      - name: Checkout React web interface
+        uses: actions/checkout@v3
+        with:
+          repository: KomodoPlatform/react-komodefi-wasm
+          path: react-komodefi-wasm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+        working-directory: ./react-komodefi-wasm
+
+      - name: Install dependencies
+        run: |
+          corepack install
+          yarn install
+        working-directory: ./react-komodefi-wasm
+
+      - name: Update coins configuration
+        run: ./update_coins.sh
+        working-directory: ./react-komodefi-wasm
+
+      - name: Update wasm build
+        run: |
+          # Copy WASM files from build output to React app
+          cp ../target/target-wasm-release/kdflib_bg.wasm public/kdflib_bg.wasm
+          
+          sed -i "s|input = new URL('kdflib_bg.wasm', import.meta.url);|input = new URL('kdflib_bg.wasm', process.env.NEXT_PUBLIC_BASE_PATH);|" ../target/target-wasm-release/kdflib.js
+          
+          # Copy JS and TypeScript files
+          cp ../target/target-wasm-release/kdflib.js src/js/kdflib.js
+          cp ../target/target-wasm-release/kdflib.d.ts src/types/kdflib.d.ts
+          
+          rm -rf src/js/snippets/
+          cp -r ../target/target-wasm-release/snippets src/js/
+          
+          # Create .env file with version info
+          echo "NEXT_PUBLIC_KDF_WASM_LIB_VERSION=${{ env.KDF_BUILD_TAG }}" > .env
+          echo "NEXT_PUBLIC_BASE_PATH=\"\"" >> .env
+        working-directory: ./react-komodefi-wasm
+
+      - name: Build React app
+        run: yarn build
+        working-directory: ./react-komodefi-wasm
+        env:
+          NODE_ENV: production
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        id: cloudflare-deploy
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ./react-komodefi-wasm/out --project-name=kdf-wasm-playground --branch=${{ github.event.pull_request.head.ref }} --commit-message="PR ${{ github.event.pull_request.number }} - ${{ env.KDF_BUILD_TAG }}"
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const deploymentUrl = '${{ steps.cloudflare-deploy.outputs.deployment-url }}';
+            const prNumber = context.issue.number;
+            const buildTag = '${{ env.KDF_BUILD_TAG }}';
+            const targetBranch = '${{ github.base_ref }}';
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('KDF WASM Playground Previews')
+            );
+            
+            let existingDeployments = [];
+            if (botComment) {
+              // Parse existing deployments from the comment
+              const lines = botComment.body.split('\n');
+              for (const line of lines) {
+                // Match lines with format: `commit`: url
+                if (line.includes('`') && line.includes('http')) {
+                  existingDeployments.push(line.trim());
+                }
+              }
+            }
+            
+            // Add new deployment
+            const newDeployment = `\`${buildTag}\`: ${deploymentUrl}`;
+            existingDeployments.push(newDeployment);
+            
+            // Create updated comment with all deployments
+            const comment = `## KDF WASM Playground Previews\n\n${existingDeployments.join('\n')}`;
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: comment
+              });
+            }
