@@ -2156,7 +2156,7 @@ fn verify_p2pk_input_pubkey(
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
@@ -2202,15 +2202,12 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
 
     let pubkey = match script.get_instruction(1) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
-                None => return ERR!("No data at instruction 1 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        Some(Ok(instruction)) => match instruction.data {
+            Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
+            None => return ERR!("No data at instruction 1 of script {:?}", script),
         },
         Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
         None => return ERR!("None instruction 1 of script {:?}", script),
@@ -5672,6 +5669,22 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
+}
+
+#[test]
+fn test_pubkey_from_axe_script_sig() {
+    let script_sig = Script::from("45304202205fa91d3dc0c88b1b0c2b5ecdf08b49c0458b6f10ff6b758b82c1934210f367fc021e51a96cf672048a44fef3256ba9a061b408f842b6b523624c28d6b5bbd1680121023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let expected_pub = H264::from("023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let actual_pub = pubkey_from_script_sig(&script_sig).unwrap();
+    assert_eq!(expected_pub, actual_pub);
+}
+
+#[test]
+fn test_pubkey_from_empty_script_sig() {
+    let script_sig = Script::from("");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
+    let script_sig = Script::from("00");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
 }
 
 #[test]
