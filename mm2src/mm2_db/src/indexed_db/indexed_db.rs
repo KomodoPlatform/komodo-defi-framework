@@ -21,7 +21,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
 use web_sys::{Window, WorkerGlobalScope};
@@ -137,7 +139,18 @@ impl IndexedDbBuilder {
     }
 
     pub fn with_table<Table: TableSignature>(mut self) -> IndexedDbBuilder {
-        let on_upgrade_needed_cb = Box::new(Table::on_upgrade_needed);
+        // let on_upgrade_needed_cb = |upgrader, old_version, new_version| {
+        //     Box::pin(Table::on_upgrade_needed(upgrader, old_version, new_version)) as _
+        // };
+        fn on_upgrade_needed_cb<'a, Table: TableSignature>(
+            upgrader: &'a DbUpgrader,
+            old_version: u32,
+            new_version: u32,
+        ) -> Pin<Box<dyn Future<Output = OnUpgradeResult<()>> + 'a + Send>> {
+            Box::pin(async { Table::on_upgrade_needed(upgrader, old_version, new_version).await })
+        }
+
+        let on_upgrade_needed_cb = Box::new(on_upgrade_needed_cb::<Table>);
         self.tables.insert(Table::TABLE_NAME.to_owned(), on_upgrade_needed_cb);
         self
     }

@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use common::stringify_js_error;
 use derive_more::Display;
 use futures::Future;
@@ -12,8 +14,11 @@ const ITEM_KEY_PATH: &str = "_item_id";
 
 pub type OnUpgradeResult<T> = Result<T, MmError<OnUpgradeError>>;
 //pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeResult<()> + Send>;
-pub type OnUpgradeNeededCb =
-    Box<dyn FnOnce(&DbUpgrader, u32, u32) -> (impl Future<Output = OnUpgradeResult<()>>) + Send>;
+pub type OnUpgradeNeededCb = Box<
+    dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> Pin<Box<dyn Future<Output = OnUpgradeResult<()>> + Send + 'a>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
