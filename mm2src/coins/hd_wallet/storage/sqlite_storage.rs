@@ -1,13 +1,16 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                       HDWalletStorageResult};
+use crate::hd_wallet::{
+    HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps, HDWalletStorageResult,
+};
 use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
-use db_common::sqlite::{query_single_row, query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams,
-                        SqliteConnShared, SqliteConnWeak};
+use db_common::sqlite::{
+    query_single_row, query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
+    SqliteConnWeak,
+};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -285,9 +288,9 @@ impl HDWalletSqliteStorage {
             .or_mm_err(|| HDWalletStorageError::Internal("'HDWalletSqliteStorage::conn' doesn't exist".to_owned()))
     }
 
-    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<'_, Connection>> {
         conn.lock()
-            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
+            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
 
     /// Migrates the database schema to the latest version.
@@ -309,7 +312,7 @@ impl HDWalletSqliteStorage {
                 // Perform the actual migration and the version pump in a single transaction to ensure atomicity.
                 let tx = conn
                     .transaction()
-                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error starting transaction: {}", e)))?;
+                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error starting transaction: {e}")))?;
 
                 // Perform migrations if needed.
                 match current_version {
@@ -322,21 +325,21 @@ impl HDWalletSqliteStorage {
                     },
                     DB_VERSION..=u32::MAX => {
                         return MmError::err(HDWalletStorageError::Internal(format!(
-                            "Unsupported database version: {}",
-                            current_version
+                            "Unsupported database version: {current_version}",
                         )));
                     },
                 }
 
                 // Update the migration version.
-                tx.execute("INSERT INTO migration (current_migration) VALUES (?1);", [
-                    current_version + 1,
-                ])
+                tx.execute(
+                    "INSERT INTO migration (current_migration) VALUES (?1);",
+                    [current_version + 1],
+                )
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)?;
 
                 tx.commit()
-                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error committing transaction: {}", e)))?;
+                    .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error committing transaction: {e}")))?;
             }
 
             Ok(())

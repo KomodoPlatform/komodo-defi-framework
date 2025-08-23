@@ -22,24 +22,21 @@ pub type OnUpgradeNeededCb = Box<
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
-    #[display(fmt = "Error occurred due to creating the '{}' table: {}", table, description)]
+    #[display(fmt = "Error occurred due to creating the '{table}' table: {description}")]
     ErrorCreatingTable { table: String, description: String },
-    #[display(fmt = "Error occurred due to opening the '{}' table: {}", table, description)]
+    #[display(fmt = "Error occurred due to opening the '{table}' table: {description}")]
     ErrorOpeningTable { table: String, description: String },
-    #[display(fmt = "Error occurred due to creating the '{}' index: {}", index, description)]
+    #[display(fmt = "Error occurred due to creating the '{index}' index: {description}")]
     ErrorCreatingIndex { index: String, description: String },
     #[display(
-        fmt = "Upgrade attempt to an unsupported version: {}, old: {}, new: {}",
-        unsupported_version,
-        old_version,
-        new_version
+        fmt = "Upgrade attempt to an unsupported version: {unsupported_version}, old: {old_version}, new: {new_version}"
     )]
     UnsupportedVersion {
         unsupported_version: u32,
         old_version: u32,
         new_version: u32,
     },
-    #[display(fmt = "Error occurred due to deleting the '{}' index: {}", index, description)]
+    #[display(fmt = "Error occurred due to deleting the '{index}' index: {description}")]
     ErrorDeletingIndex { index: String, description: String },
     #[display(fmt = "Error occurred due to clearing the '{}' table: {}", table, description)]
     ErrorClearingTable { table: String, description: String },
@@ -59,15 +56,16 @@ impl DbUpgrader {
         // We use the [in-line](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Basic_Concepts_Behind_IndexedDB#gloss_inline_key) primary keys.
         let key_path = JsValue::from(ITEM_KEY_PATH);
 
-        let mut params = IdbObjectStoreParameters::new();
-        params.key_path(Some(&key_path));
-        params.auto_increment(true);
+        let params = IdbObjectStoreParameters::new();
+        params.set_key_path(&key_path);
+        params.set_auto_increment(true);
 
         match self.db.db.create_object_store_with_optional_parameters(table, &params) {
             Ok(object_store) => Ok(TableUpgrader {
                 object_store: IdbObjectStoreImpl {
                     object_store,
                     aborted: self.transaction.aborted.clone(),
+                    _not_send: Default::default(),
                 },
             }),
             Err(e) => MmError::err(OnUpgradeError::ErrorCreatingTable {
@@ -84,6 +82,7 @@ impl DbUpgrader {
                 object_store: IdbObjectStoreImpl {
                     object_store,
                     aborted: self.transaction.aborted.clone(),
+                    _not_send: Default::default(),
                 },
             }),
             Err(e) => MmError::err(OnUpgradeError::ErrorOpeningTable {
@@ -102,8 +101,8 @@ impl TableUpgrader {
     /// Creates an index.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_index(&self, index: &str, unique: bool) -> OnUpgradeResult<()> {
-        let mut params = IdbIndexParameters::new();
-        params.unique(unique);
+        let params = IdbIndexParameters::new();
+        params.set_unique(unique);
         self.object_store
             .object_store
             .create_index_with_str_and_optional_parameters(index, index, &params)
@@ -119,8 +118,8 @@ impl TableUpgrader {
     /// Such indexes are used to find records that satisfy constraints imposed on multiple fields.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_multi_index(&self, index: &str, fields: &[&str], unique: bool) -> OnUpgradeResult<()> {
-        let mut params = IdbIndexParameters::new();
-        params.unique(unique);
+        let params = IdbIndexParameters::new();
+        params.set_unique(unique);
 
         let fields_key_path = Array::new();
         for field in fields {

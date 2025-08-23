@@ -48,13 +48,17 @@ mod db_lock;
 mod indexed_cursor;
 
 pub use be_big_uint::BeBigUint;
-pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
-                    OnUpgradeError, OnUpgradeResult};
+pub use db_driver::{
+    DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId, OnUpgradeError,
+    OnUpgradeResult,
+};
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};
-use indexed_cursor::{cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorFiltersExt,
-                     CursorResult, DbCursorEventTx};
+use indexed_cursor::{
+    cursor_event_loop, CursorBuilder, CursorDriver, CursorError, CursorFilters, CursorFiltersExt, CursorResult,
+    DbCursorEventTx,
+};
 
 type DbEventTx = mpsc::UnboundedSender<internal::DbEvent>;
 type DbTransactionEventTx = mpsc::UnboundedSender<internal::DbTransactionEvent>;
@@ -93,7 +97,9 @@ pub struct DbIdentifier {
 }
 
 impl DbIdentifier {
-    pub fn db_name(&self) -> &'static str { self.db_name }
+    pub fn db_name(&self) -> &'static str {
+        self.db_name
+    }
 
     pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: Option<H160>) -> DbIdentifier {
         DbIdentifier {
@@ -147,7 +153,7 @@ impl IndexedDbBuilder {
             old_version: u32,
             new_version: u32,
         ) -> Pin<Box<dyn Future<Output = OnUpgradeResult<()>> + 'a + Send>> {
-            Box::pin(async { Table::on_upgrade_needed(upgrader, old_version, new_version).await })
+            Box::pin(Table::on_upgrade_needed(upgrader, old_version, new_version))
         }
 
         let on_upgrade_needed_cb = Box::new(on_upgrade_needed_cb::<Table>);
@@ -208,11 +214,11 @@ where
     Error: WithInternal + NotMmError,
 {
     if let Err(e) = event_tx.unbounded_send(event) {
-        return MmError::err(Error::internal(format!("Error sending event: {}", e)));
+        return MmError::err(Error::internal(format!("Error sending event: {e}")));
     }
     match result_rx.await {
         Ok(result) => result,
-        Err(e) => MmError::err(Error::internal(format!("Error receiving result: {}", e))),
+        Err(e) => MmError::err(Error::internal(format!("Error receiving result: {e}"))),
     }
 }
 
@@ -1084,7 +1090,7 @@ mod tests {
         {
             AddOrIgnoreResult::Added(item_id) => item_id,
             AddOrIgnoreResult::ExistAlready(unknown_tx_id) => {
-                panic!("Transaction should be added: found '{}'", unknown_tx_id)
+                panic!("Transaction should be added: found '{unknown_tx_id}'")
             },
         };
         let found_tx_id = match table
@@ -1207,8 +1213,8 @@ mod tests {
             .await
             .expect_err("'DbTable::add_item' should have failed");
         match err.into_inner() {
-            DbTransactionError::ErrorUploadingItem(err) => debug!("error: {}", err),
-            e => panic!("Expected 'DbTransactionError::ErrorUploadingItem', found: {:?}", e),
+            DbTransactionError::ErrorUploadingItem(err) => debug!("error: {err}"),
+            e => panic!("Expected 'DbTransactionError::ErrorUploadingItem', found: {e:?}"),
         }
         assert_eq!(table.aborted().await, Ok(true));
         assert_eq!(transaction.aborted().await, Ok(true));
@@ -1231,10 +1237,10 @@ mod tests {
             .get_items("ticker", "RICK")
             .await
             .expect("Couldn't get items by the index 'ticker=RICK'");
-        assert_eq!(actual_rick_txs, vec![
-            (rick_tx_1_id, rick_tx_1_updated),
-            (rick_tx_2_id, rick_tx_2),
-        ]);
+        assert_eq!(
+            actual_rick_txs,
+            vec![(rick_tx_1_id, rick_tx_1_updated), (rick_tx_2_id, rick_tx_2),]
+        );
     }
 
     #[wasm_bindgen_test]
@@ -1357,7 +1363,7 @@ mod tests {
                         let table = upgrader.open_table("upgradable_table")?;
                         table.create_index("second_index", false)?;
                     },
-                    v => panic!("Unexpected old, new versions: {:?}", v),
+                    v => panic!("Unexpected old, new versions: {v:?}"),
                 }
                 Ok(())
             }
@@ -1378,15 +1384,14 @@ mod tests {
                 .with_table::<UpgradableTable>()
                 .build()
                 .await
-                .map_err(|e| format!("{}", e))?;
+                .map_err(|e| format!("{e}"))?;
 
             let actual_versions = LAST_VERSIONS.lock().unwrap();
             if *actual_versions == expected_old_new_versions {
                 Ok(())
             } else {
                 Err(format!(
-                    "Expected {:?}, found {:?}",
-                    expected_old_new_versions, actual_versions
+                    "Expected {expected_old_new_versions:?}, found {actual_versions:?}"
                 ))
             }
         }
@@ -1423,9 +1428,12 @@ mod tests {
             .await
         {
             Ok(_) => panic!("!IndexedDb::init should have failed"),
-            Err(e) => assert_eq!(e.into_inner(), InitDbError::DbIsOpenAlready {
-                db_name: db_identifier.to_string()
-            }),
+            Err(e) => assert_eq!(
+                e.into_inner(),
+                InitDbError::DbIsOpenAlready {
+                    db_name: db_identifier.to_string()
+                }
+            ),
         }
     }
 

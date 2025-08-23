@@ -131,8 +131,7 @@ impl Qrc20Coin {
             .map_mm_err()?;
         if status != U256::from(PaymentState::Sent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "Payment state is not PAYMENT_STATE_SENT, got {}",
-                status
+                "Payment state is not PAYMENT_STATE_SENT, got {status}"
             )));
         }
 
@@ -488,20 +487,24 @@ impl Qrc20Coin {
         let tokens = self
             .utxo
             .rpc_client
-            .rpc_contract_call(ViewContractCallType::Allowance, &self.contract_address, &[
-                Token::Address(
-                    qtum::contract_addr_from_utxo_addr(my_address.clone())
-                        .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
-                ),
-                Token::Address(spender),
-            ])
+            .rpc_contract_call(
+                ViewContractCallType::Allowance,
+                &self.contract_address,
+                &[
+                    Token::Address(
+                        qtum::contract_addr_from_utxo_addr(my_address.clone())
+                            .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
+                    ),
+                    Token::Address(spender),
+                ],
+            )
             .compat()
             .await?;
 
         match tokens.first() {
             Some(Token::Uint(number)) => Ok(*number),
             Some(_) => {
-                let error = format!(r#"Expected U256 as "allowance" result but got {:?}"#, tokens);
+                let error = format!(r#"Expected U256 as "allowance" result but got {tokens:?}"#);
                 MmError::err(UtxoRpcError::InvalidResponse(error))
             },
             None => {
@@ -517,9 +520,11 @@ impl Qrc20Coin {
         let decoded = self
             .utxo
             .rpc_client
-            .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
-                Token::FixedBytes(swap_id),
-            ])
+            .rpc_contract_call(
+                ViewContractCallType::Payments,
+                swap_contract_address,
+                &[Token::FixedBytes(swap_id)],
+            )
             .compat()
             .await?;
         if decoded.len() < 3 {
@@ -1077,7 +1082,7 @@ fn check_if_contract_call_completed(receipt: &TxReceipt) -> Result<(), String> {
     match receipt.excepted {
         Some(ref ex) if ex != "None" && ex != "none" => {
             let msg = match receipt.excepted_message {
-                Some(ref m) if !m.is_empty() => format!(": {}", m),
+                Some(ref m) if !m.is_empty() => format!(": {m}"),
                 _ => String::default(),
             };
             ERR!("Contract call failed with an error: {}{}", ex, msg)

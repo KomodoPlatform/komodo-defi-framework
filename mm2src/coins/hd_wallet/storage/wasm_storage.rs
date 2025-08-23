@@ -1,13 +1,15 @@
-use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                       HDWalletStorageResult};
+use crate::hd_wallet::{
+    HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps, HDWalletStorageResult,
+};
 use crate::CoinsContext;
 use async_trait::async_trait;
 use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{cursor_prelude::*, OnUpgradeError};
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb,
-                         IndexedDbBuilder, InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb,
-                         TableSignature, WeakDb};
+use mm2_db::indexed_db::{
+    DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
+    InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb, TableSignature, WeakDb,
+};
 use mm2_err_handle::prelude::*;
 
 const DB_VERSION: u32 = 2;
@@ -71,7 +73,9 @@ impl From<CursorError> for HDWalletStorageError {
 }
 
 impl From<InitDbError> for HDWalletStorageError {
-    fn from(e: InitDbError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        HDWalletStorageError::Internal(e.to_string())
+    }
 }
 
 /// The table has the following individually non-unique indexes: `coin`, `hd_wallet_rmd160`, `account_id`,
@@ -242,7 +246,9 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         Ok(Vec::new())
     }
 
-    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> { Ok(()) }
+    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        Ok(())
+    }
 
     async fn load_account(
         &self,

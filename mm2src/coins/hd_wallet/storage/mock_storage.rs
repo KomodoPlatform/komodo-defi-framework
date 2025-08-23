@@ -1,7 +1,8 @@
 use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 
 pub(crate) struct HDWalletMockStorage;
 
@@ -23,7 +24,9 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
         unimplemented!()
     }
 
-    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> { unimplemented!() }
+    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        unimplemented!()
+    }
 
     async fn load_account(
         &self,
@@ -59,5 +62,7 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
         unimplemented!()
     }
 
-    async fn clear_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> { unimplemented!() }
+    async fn clear_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        unimplemented!()
+    }
 }

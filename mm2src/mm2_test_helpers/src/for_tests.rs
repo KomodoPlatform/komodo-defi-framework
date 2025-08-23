@@ -485,9 +485,13 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json { zombie_conf_inner(None, 0) }
+pub fn zombie_conf() -> Json {
+    zombie_conf_inner(None, 0)
+}
 
-pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10), 1) }
+pub fn zombie_conf_for_docker() -> Json {
+    zombie_conf_inner(Some(10), 1)
+}
 
 pub fn zombie_conf_inner(custom_blocktime: Option<u8>, required_confirmations: u8) -> Json {
     json!({
@@ -848,9 +852,13 @@ pub fn eth_testnet_conf_trezor() -> Json {
 }
 
 /// ETH configuration used for dockerized Geth dev node
-pub fn eth_dev_conf() -> Json { eth_conf("ETH") }
+pub fn eth_dev_conf() -> Json {
+    eth_conf("ETH")
+}
 
-pub fn eth1_dev_conf() -> Json { eth_conf("ETH1") }
+pub fn eth1_dev_conf() -> Json {
+    eth_conf("ETH1")
+}
 
 fn eth_conf(coin: &str) -> Json {
     json!({
@@ -910,7 +918,9 @@ pub fn nft_dev_conf() -> Json {
     })
 }
 
-fn set_chain_id(conf: &mut Json, chain_id: u64) { conf["chain_id"] = json!(chain_id); }
+fn set_chain_id(conf: &mut Json, chain_id: u64) {
+    conf["chain_id"] = json!(chain_id);
+}
 
 pub fn eth_sepolia_conf() -> Json {
     json!({
@@ -1150,10 +1160,14 @@ pub fn mm_ctx_with_iguana(passphrase: Option<&str>) -> MmArc {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+pub fn mm_ctx_with_custom_db() -> MmArc {
+    MmCtxBuilder::new().with_test_db_namespace().into_mm_arc()
+}
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn mm_ctx_with_custom_db() -> MmArc { mm_ctx_with_custom_db_with_conf(None) }
+pub fn mm_ctx_with_custom_db() -> MmArc {
+    mm_ctx_with_custom_db_with_conf(None)
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
@@ -1199,7 +1213,9 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+pub async fn mm_ctx_with_custom_async_db() -> MmArc {
+    MmCtxBuilder::new().with_test_db_namespace().into_mm_arc()
+}
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -1207,7 +1223,9 @@ pub struct RaiiKill {
     running: bool,
 }
 impl RaiiKill {
-    pub fn from_handle(handle: Child) -> RaiiKill { RaiiKill { handle, running: true } }
+    pub fn from_handle(handle: Child) -> RaiiKill {
+        RaiiKill { handle, running: true }
+    }
     pub fn running(&mut self) -> bool {
         if !self.running {
             return false;
@@ -1553,8 +1571,7 @@ impl MarketMakerIt {
         .with_timeout_secs(timeout_sec)
         .await
         .map_err(|e| ERRL!("{:?}", e))
-        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
-        .flatten()
+        .and_then(|inner_result| inner_result)
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1618,13 +1635,19 @@ impl MarketMakerIt {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) { mm_dump(&self.log_path) }
+    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) {
+        mm_dump(&self.log_path)
+    }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) { (RaiiDump {}, RaiiDump {}) }
+    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) {
+        (RaiiDump {}, RaiiDump {})
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn my_seed_addr(&self) -> String { format!("{}", self.ip) }
+    pub fn my_seed_addr(&self) -> String {
+        format!("{}", self.ip)
+    }
 
     /// # Panic
     ///
@@ -3000,8 +3023,8 @@ pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str
             "password": password,
         }
     }))
-        .await
-        .unwrap()
+    .await
+    .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {

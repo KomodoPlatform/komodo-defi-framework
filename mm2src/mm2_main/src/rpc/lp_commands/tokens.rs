@@ -2,8 +2,9 @@
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenInfo};
 use coins::eth::valid_addr_from_str;
 use coins::eth::{u256_to_big_decimal, wei_from_big_decimal, EthCoin, Web3RpcError};
-use coins::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction,
-            TransactionErr};
+use coins::{
+    lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction, TransactionErr,
+};
 use common::HttpStatusCode;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
@@ -37,13 +38,13 @@ pub struct TokenInfoResponse {
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TokenInfoError {
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "Custom tokens are not supported for {} protocol yet!", protocol)]
+    #[display(fmt = "Custom tokens are not supported for {protocol} protocol yet!")]
     UnsupportedTokenProtocol { protocol: String },
-    #[display(fmt = "Invalid request {}", _0)]
+    #[display(fmt = "Invalid request {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Error retrieving token info {}", _0)]
+    #[display(fmt = "Error retrieving token info {_0}")]
     RetrieveInfoError(String),
 }
 
@@ -84,7 +85,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
                         protocol: platform.to_string(),
                     })?;
             let contract_address = valid_addr_from_str(contract_address_str).map_to_mm(|e| {
-                let error = format!("Invalid contract address: {}", e);
+                let error = format!("Invalid contract address: {e}");
                 TokenInfoError::InvalidRequest(error)
             })?;
 
@@ -106,18 +107,18 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
 #[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum Erc20CallError {
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "Coin not supported {}", coin)]
+    #[display(fmt = "Coin not supported {coin}")]
     CoinNotSupported { coin: String },
     #[from_stringify("NumConversError")]
-    #[display(fmt = "Invalid param: {}", _0)]
+    #[display(fmt = "Invalid param: {_0}")]
     InvalidParam(String),
     #[from_stringify("TransactionErr")]
-    #[display(fmt = "Transaction error {}", _0)]
+    #[display(fmt = "Transaction error {_0}")]
     TransactionError(String),
     #[from_stringify("Web3RpcError")]
-    #[display(fmt = "Web3 RPC error {}", _0)]
+    #[display(fmt = "Web3 RPC error {_0}")]
     Web3RpcError(String),
 }
 

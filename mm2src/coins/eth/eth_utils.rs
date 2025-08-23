@@ -32,7 +32,7 @@ pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
 pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, String> {
     let pubkey_bytes = try_s!(hex::decode(pubkey));
     let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
-    Ok(format!("{:#02x}", addr))
+    Ok(format!("{addr:#02x}"))
 }
 
 pub(crate) fn display_u256_with_decimal_point(number: U256, decimals: u8) -> String {
@@ -69,7 +69,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     } else {
         amount.insert_str(amount.len(), &"0".repeat(decimals));
     }
-    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+    U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{e:?}")))
 }
 
 /// Converts BigDecimal gwei value to wei value as U256
@@ -80,12 +80,16 @@ pub fn wei_from_gwei_decimal(bigdec: &BigDecimal) -> NumConversResult<U256> {
 
 /// Converts a U256 wei value to an gwei value as a BigDecimal
 #[inline(always)]
-pub fn wei_to_gwei_decimal(wei: U256) -> NumConversResult<BigDecimal> { u256_to_big_decimal(wei, ETH_GWEI_DECIMALS) }
+pub fn wei_to_gwei_decimal(wei: U256) -> NumConversResult<BigDecimal> {
+    u256_to_big_decimal(wei, ETH_GWEI_DECIMALS)
+}
 
 /// Converts a U256 wei value to an ETH value as a BigDecimal
 /// TODO: use wei_to_eth_decimal instead of u256_to_big_decimal(gas_cost_wei, ETH_DECIMALS)
 #[inline(always)]
-pub fn wei_to_eth_decimal(wei: U256) -> NumConversResult<BigDecimal> { u256_to_big_decimal(wei, ETH_DECIMALS) }
+pub fn wei_to_eth_decimal(wei: U256) -> NumConversResult<BigDecimal> {
+    u256_to_big_decimal(wei, ETH_DECIMALS)
+}
 
 #[inline]
 pub fn mm_number_to_u256(mm_number: &MmNumber) -> Result<U256, FromDecStrErr> {
@@ -93,7 +97,9 @@ pub fn mm_number_to_u256(mm_number: &MmNumber) -> Result<U256, FromDecStrErr> {
 }
 
 #[inline]
-pub fn mm_number_from_u256(u256: U256) -> MmNumber { MmNumber::from(u256.to_string().as_str()) }
+pub fn mm_number_from_u256(u256: U256) -> MmNumber {
+    MmNumber::from(u256.to_string().as_str())
+}
 
 #[inline]
 pub fn wei_from_coins_mm_number(mm_number: &MmNumber, decimals: u8) -> NumConversResult<U256> {
