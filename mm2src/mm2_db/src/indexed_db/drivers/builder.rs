@@ -95,13 +95,14 @@ impl IdbDatabaseBuilder {
                 DbOpenEvent::Failed(e) => {
                     let event = e.dyn_into::<Event>().unwrap();
                     let error = format!(
-                        "event={:?}, target={:?}, js_typeof={:?}, to_string={:?}, as_string={:?}, value_of={:?}",
+                        "event={:?}, target={:?}, js_typeof={:?}, to_string={:?}, as_string={:?}, value_of={:?}, d_value_of={:?}",
                         event,
                         event.target(),
                         event.js_typeof(),
                         event.to_string(),
                         event.as_string(),
-                        event.value_of()
+                        event.value_of(),
+                        event.value_of().value_of()
                     );
                     //return MmError::err(InitDbError::OpeningError(stringify_js_error(&e))),
                     return MmError::err(InitDbError::OpeningError(error));
