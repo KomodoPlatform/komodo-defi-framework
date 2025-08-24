@@ -9,6 +9,7 @@ use mm2_err_handle::prelude::*;
 use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::Event;
 use web_sys::{IdbDatabase, IdbOpenDbRequest, IdbTransaction, IdbVersionChangeEvent};
 
 pub type InitDbResult<T> = Result<T, MmError<InitDbError>>;
@@ -92,8 +93,18 @@ impl IdbDatabaseBuilder {
         while let Some(event) = rx.next().await {
             match event {
                 DbOpenEvent::Failed(e) => {
+                    let event = e.dyn_into::<Event>().unwrap();
+                    let error = format!(
+                        "event={:?}, target={:?}, js_typeof={:?}, to_string={:?}, as_string={:?}, value_of={:?}",
+                        event,
+                        event.target(),
+                        event.js_typeof(),
+                        event.to_string(),
+                        event.as_string(),
+                        event.value_of()
+                    );
                     //return MmError::err(InitDbError::OpeningError(stringify_js_error(&e))),
-                    return MmError::err(InitDbError::OpeningError(format!("error here {e:?}")));
+                    return MmError::err(InitDbError::OpeningError(error));
                 },
                 DbOpenEvent::UpgradeNeeded(event) => {
                     let handlers = match on_upgrade_needed_handlers.take() {
