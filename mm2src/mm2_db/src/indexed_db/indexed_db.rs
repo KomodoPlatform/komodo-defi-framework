@@ -13,7 +13,8 @@ use common::log::debug;
 use common::stringify_js_error;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
-use futures::StreamExt;
+use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
 use mm2_core::DbNamespaceId;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
@@ -23,7 +24,6 @@ use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
 use web_sys::{Window, WorkerGlobalScope};
@@ -71,7 +71,12 @@ pub mod cursor_prelude {
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
     const TABLE_NAME: &'static str;
 
-    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
+    // This is an async function (returns `impl Future`) with a `Send` constraint on the return type.
+    fn on_upgrade_needed(
+        upgrader: &DbUpgrader,
+        old_version: u32,
+        new_version: u32,
+    ) -> impl Future<Output = OnUpgradeResult<()>> + Send;
 }
 
 /// Essential operations for initializing an IndexedDb instance.
@@ -145,15 +150,12 @@ impl IndexedDbBuilder {
     }
 
     pub fn with_table<Table: TableSignature>(mut self) -> IndexedDbBuilder {
-        // let on_upgrade_needed_cb = |upgrader, old_version, new_version| {
-        //     Box::pin(Table::on_upgrade_needed(upgrader, old_version, new_version)) as _
-        // };
         fn on_upgrade_needed_cb<'a, Table: TableSignature>(
             upgrader: &'a DbUpgrader,
             old_version: u32,
             new_version: u32,
-        ) -> Pin<Box<dyn Future<Output = OnUpgradeResult<()>> + 'a + Send>> {
-            Box::pin(Table::on_upgrade_needed(upgrader, old_version, new_version))
+        ) -> BoxFuture<'a, OnUpgradeResult<()>> {
+            Table::on_upgrade_needed(upgrader, old_version, new_version).boxed()
         }
 
         let on_upgrade_needed_cb = Box::new(on_upgrade_needed_cb::<Table>);

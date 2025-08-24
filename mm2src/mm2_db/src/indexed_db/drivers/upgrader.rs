@@ -1,8 +1,6 @@
-use std::pin::Pin;
-
 use common::stringify_js_error;
 use derive_more::Display;
-use futures::Future;
+use futures::future::BoxFuture;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
@@ -13,12 +11,8 @@ use crate::indexed_db::db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTrans
 const ITEM_KEY_PATH: &str = "_item_id";
 
 pub type OnUpgradeResult<T> = Result<T, MmError<OnUpgradeError>>;
-//pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeResult<()> + Send>;
-pub type OnUpgradeNeededCb = Box<
-    dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> Pin<Box<dyn Future<Output = OnUpgradeResult<()>> + Send + 'a>>
-        + Send
-        + Sync,
->;
+pub type OnUpgradeNeededCb =
+    Box<dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> BoxFuture<'a, OnUpgradeResult<()>> + Send>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
@@ -46,6 +40,9 @@ pub struct DbUpgrader {
     db: IdbDatabaseImpl,
     transaction: IdbTransactionImpl,
 }
+
+unsafe impl Send for DbUpgrader {}
+unsafe impl Sync for DbUpgrader {}
 
 impl DbUpgrader {
     pub(crate) fn new(db: IdbDatabaseImpl, transaction: IdbTransactionImpl) -> DbUpgrader {
