@@ -38,7 +38,7 @@ pub enum OnUpgradeError {
     },
     #[display(fmt = "Error occurred due to deleting the '{index}' index: {description}")]
     ErrorDeletingIndex { index: String, description: String },
-    #[display(fmt = "Error occurred due to clearing the '{}' table: {}", table, description)]
+    #[display(fmt = "Error occurred due to clearing the '{table}' table: {description}")]
     ErrorClearingTable { table: String, description: String },
 }
 
