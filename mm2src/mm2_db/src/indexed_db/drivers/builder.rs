@@ -91,7 +91,10 @@ impl IdbDatabaseBuilder {
         let mut on_upgrade_needed_handlers = Some(on_upgrade_needed_handlers);
         while let Some(event) = rx.next().await {
             match event {
-                DbOpenEvent::Failed(e) => return MmError::err(InitDbError::OpeningError(stringify_js_error(&e))),
+                DbOpenEvent::Failed(e) => {
+                    //return MmError::err(InitDbError::OpeningError(stringify_js_error(&e))),
+                    return MmError::err(InitDbError::OpeningError(format!("error here {e:?}")));
+                },
                 DbOpenEvent::UpgradeNeeded(event) => {
                     let handlers = match on_upgrade_needed_handlers.take() {
                         Some(handlers) => handlers,
