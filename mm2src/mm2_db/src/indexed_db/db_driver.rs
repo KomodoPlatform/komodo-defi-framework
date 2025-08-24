@@ -56,7 +56,7 @@ impl InternalItem {
 }
 
 pub struct IdbDatabaseImpl {
-    db: IdbDatabase,
+    pub(crate) db: IdbDatabase,
     db_name: String,
     tables: HashSet<String>,
     _not_send: common::NotSend,

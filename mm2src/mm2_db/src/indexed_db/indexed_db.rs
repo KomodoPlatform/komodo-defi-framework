@@ -13,7 +13,8 @@ use common::log::debug;
 use common::stringify_js_error;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
-use futures::StreamExt;
+use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
 use mm2_core::DbNamespaceId;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
@@ -21,6 +22,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
@@ -69,7 +71,12 @@ pub mod cursor_prelude {
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
     const TABLE_NAME: &'static str;
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
+    // This is an async function (returns `impl Future`) with a `Send` constraint on the return type.
+    fn on_upgrade_needed(
+        upgrader: &DbUpgrader,
+        old_version: u32,
+        new_version: u32,
+    ) -> impl Future<Output = OnUpgradeResult<()>> + Send;
 }
 
 /// Essential operations for initializing an IndexedDb instance.
@@ -143,7 +150,15 @@ impl IndexedDbBuilder {
     }
 
     pub fn with_table<Table: TableSignature>(mut self) -> IndexedDbBuilder {
-        let on_upgrade_needed_cb = Box::new(Table::on_upgrade_needed);
+        fn on_upgrade_needed_cb<'a, Table: TableSignature>(
+            upgrader: &'a DbUpgrader,
+            old_version: u32,
+            new_version: u32,
+        ) -> BoxFuture<'a, OnUpgradeResult<()>> {
+            Table::on_upgrade_needed(upgrader, old_version, new_version).boxed()
+        }
+
+        let on_upgrade_needed_cb = Box::new(on_upgrade_needed_cb::<Table>);
         self.tables.insert(Table::TABLE_NAME.to_owned(), on_upgrade_needed_cb);
         self
     }
@@ -284,7 +299,7 @@ impl DbTransaction<'_> {
                     Self::open_table(&transaction, table_name, result_tx)
                 },
                 internal::DbTransactionEvent::IsAborted { result_tx } => {
-                    result_tx.send(Ok(transaction.aborted())).ok();
+                    result_tx.send(Ok(transaction.is_aborted())).ok();
                 },
             }
         }
@@ -954,7 +969,7 @@ mod tests {
     impl TableSignature for TxTable {
         const TABLE_NAME: &'static str = "tx_table";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
                 // the table is initialized already
                 return Ok(());
@@ -1328,7 +1343,11 @@ mod tests {
         impl TableSignature for UpgradableTable {
             const TABLE_NAME: &'static str = "upgradable_table";
 
-            fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+            async fn on_upgrade_needed(
+                upgrader: &DbUpgrader,
+                old_version: u32,
+                new_version: u32,
+            ) -> OnUpgradeResult<()> {
                 let mut versions = LAST_VERSIONS.lock().expect("!old_new_versions.lock()");
                 *versions = Some((old_version, new_version));
 
@@ -1463,7 +1482,11 @@ mod tests {
         impl TableSignature for SwapTable {
             const TABLE_NAME: &'static str = "swap_table";
 
-            fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+            async fn on_upgrade_needed(
+                upgrader: &DbUpgrader,
+                old_version: u32,
+                _new_version: u32,
+            ) -> OnUpgradeResult<()> {
                 if old_version > 0 {
                     // the table is initialized already
                     return Ok(());

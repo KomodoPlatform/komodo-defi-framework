@@ -5,20 +5,22 @@ use crate::CoinsContext;
 use async_trait::async_trait;
 use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::cursor_prelude::*;
+use mm2_db::indexed_db::{cursor_prelude::*, OnUpgradeError};
 use mm2_db::indexed_db::{
     DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
     InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb, TableSignature, WeakDb,
 };
 use mm2_err_handle::prelude::*;
 
-const DB_VERSION: u32 = 1;
+const DB_VERSION: u32 = 2;
 /// An index of the `HDAccountTable` table that consists of the following properties:
-/// * coin - coin ticker
+/// * purpose - the purpose of the HD account
+/// * coin_type - the coin type of the HD account
 /// * hd_wallet_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
 const WALLET_ID_INDEX: &str = "wallet_id";
 /// A **unique** index of the `HDAccountTable` table that consists of the following properties:
-/// * coin - coin ticker
+/// * purpose - the purpose of the HD account
+/// * coin_type - the coin type of the HD account
 /// * hd_wallet_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
 /// * account_id - HD account id
 const WALLET_ACCOUNT_ID_INDEX: &str = "wallet_account_id";
@@ -88,6 +90,10 @@ struct HDAccountTable {
     /// [`HDWalletId::hd_wallet_rmd160`].
     /// Non-unique index that is used to fetch/remove items from the storage.
     hd_wallet_rmd160: String,
+    /// The purpose of the HD account.
+    purpose: u32,
+    /// The coin type of the HD account.
+    coin_type: u32,
     /// HD Account ID.
     /// Non-unique index that is used to fetch/remove items from the storage.
     account_id: u32,
@@ -100,15 +106,50 @@ struct HDAccountTable {
 impl TableSignature for HDAccountTable {
     const TABLE_NAME: &'static str = "hd_account";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if let (0, 1) = (old_version, new_version) {
-            let table = upgrader.create_table(Self::TABLE_NAME)?;
-            table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
-            table.create_multi_index(
-                WALLET_ACCOUNT_ID_INDEX,
-                &["coin", "hd_wallet_rmd160", "account_id"],
-                true,
-            )?;
+    async fn on_upgrade_needed(
+        upgrader: &DbUpgrader,
+        mut current_version: u32,
+        new_version: u32,
+    ) -> OnUpgradeResult<()> {
+        while current_version < new_version {
+            match current_version {
+                0 => {
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
+                    table.create_multi_index(
+                        WALLET_ACCOUNT_ID_INDEX,
+                        &["coin", "hd_wallet_rmd160", "account_id"],
+                        true,
+                    )?;
+                },
+                1 => {
+                    let table = upgrader.open_table(Self::TABLE_NAME)?;
+                    // Delete the old indexes and clear the table before creating new ones.
+                    table.delete_index(WALLET_ID_INDEX)?;
+                    table.delete_index(WALLET_ACCOUNT_ID_INDEX)?;
+                    // FIXME: Here instead of clearing the table, you need to access the table and set every purpose and coin_type field to -1.
+                    // let items = table.object_store_impl.get_all_items().await; (we need this current method to be async)
+                    // Create the new indexes with the purpose and coin_type fields.
+                    table.create_multi_index(
+                        WALLET_ID_INDEX,
+                        &["hd_wallet_rmd160", "coin", "purpose", "coin_type"],
+                        false,
+                    )?;
+                    table.create_multi_index(
+                        WALLET_ACCOUNT_ID_INDEX,
+                        &["hd_wallet_rmd160", "coin", "purpose", "coin_type", "account_id"],
+                        true,
+                    )?;
+                },
+                unsupported_version @ DB_VERSION..=u32::MAX => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version: current_version,
+                        new_version,
+                    });
+                },
+            };
+            current_version += 1;
         }
 
         Ok(())
@@ -121,6 +162,8 @@ impl HDAccountTable {
             coin: wallet_id.coin,
             hd_wallet_rmd160: wallet_id.hd_wallet_rmd160,
             account_id: account_info.account_id,
+            purpose: wallet_id.path_to_coin.purpose() as u32,
+            coin_type: wallet_id.path_to_coin.coin_type(),
             account_xpub: account_info.account_xpub,
             external_addresses_number: account_info.external_addresses_number,
             internal_addresses_number: account_info.internal_addresses_number,
@@ -181,9 +224,13 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin)
-            .map_mm_err()?
             .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.purpose() as u32)
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.coin_type())
             .map_mm_err()?;
         Ok(table
             .get_items_by_multi_index(index_keys)
@@ -192,6 +239,15 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .into_iter()
             .map(|(_item_id, item)| HDAccountStorageItem::from(item))
             .collect())
+    }
+
+    async fn load_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        // We won't have any bad accounts since we purged the wasm DB upon migration.
+        Ok(Vec::new())
+    }
+
+    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        Ok(())
     }
 
     async fn load_account(
@@ -263,9 +319,13 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin)
-            .map_mm_err()?
             .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.purpose() as u32)
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.coin_type())
             .map_mm_err()?;
         table.delete_items_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(())
@@ -289,9 +349,13 @@ impl HDWalletIndexedDbStorage {
         account_id: u32,
     ) -> HDWalletStorageResult<Option<(ItemId, HDAccountTable)>> {
         let index_keys = MultiIndex::new(WALLET_ACCOUNT_ID_INDEX)
-            .with_value(wallet_id.coin)
-            .map_mm_err()?
             .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.purpose() as u32)
+            .map_mm_err()?
+            .with_value(wallet_id.path_to_coin.coin_type())
             .map_mm_err()?
             .with_value(account_id)
             .map_mm_err()?;
