@@ -9,6 +9,8 @@ on:
       - opened
       - synchronize
       - reopened
+    paths:
+      - 'mm2src/**'
 
 env:
   JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
