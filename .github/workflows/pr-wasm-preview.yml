@@ -116,6 +116,8 @@ jobs:
           # Create .env file with version info
           echo "NEXT_PUBLIC_KDF_WASM_LIB_VERSION=${{ env.KDF_BUILD_TAG }}" > .env
           echo "NEXT_PUBLIC_BASE_PATH=\"\"" >> .env
+          echo "NEXT_PUBLIC_KDF_PR_URL=\"https://github.com/KomodoPlatform/komodo-defi-framework/pull/${{ github.event.pull_request.number }}\"" >> .env
+          echo "NEXT_PUBLIC_KDF_TREE=\"https://github.com/KomodoPlatform/komodo-defi-framework/tree/${{ github.event.pull_request.head.ref }}\"" >> .env
         working-directory: ./react-komodefi-wasm
 
       - name: Cache Next.js build
