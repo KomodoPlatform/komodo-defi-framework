@@ -70,7 +70,6 @@ jobs:
       
       - name: Cache yarn dependencies
         uses: actions/cache@v4
-        id: yarn-cache
         with:
           path: |
             ./react-komodefi-wasm/.yarn/cache
