@@ -41,8 +41,8 @@
     <a href="https://discord.gg/3rzDPAr">
         <img src="https://img.shields.io/discord/412898016371015680?logo=discord" alt="chat on Discord">
     </a>
-    <a href="https://twitter.com/komodoplatform">
-        <img src="https://img.shields.io/twitter/follow/komodoplatform?style=social&logo=twitter" alt="follow on Twitter">
+    <a href="https://x.com/GleecOfficial">
+        <img src="https://img.shields.io/twitter/follow/GleecOfficial?style=social&logo=twitter" alt="follow on Twitter">
     </a>
 </p>
 
